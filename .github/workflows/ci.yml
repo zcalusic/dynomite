@@ -41,6 +41,9 @@ jobs:
       - name: Unit tests
         run: make -j "$(nproc)" check VERBOSE=1
 
+      - name: Distribution check
+        run: make -j "$(nproc)" distcheck VERBOSE=1
+
   test:
     name: Functional tests
     runs-on: ubuntu-latest
