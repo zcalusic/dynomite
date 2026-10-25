@@ -1,35 +1,32 @@
 # Contributing to Dynomite
 
-Documentation for Dynomite is available in the following locations:
-- <a href="http://www.dynomitedb.com/docs/" target="_blank">Dynomite docs</a>
-- [wiki]( https://github.com/Netflix/dynomite/wiki )
+This is an unofficial fork of [Netflix/dynomite](https://github.com/Netflix/dynomite), see
+[README.md](README.md). Bug reports and pull requests for this fork belong here, not upstream.
 
-The Dynomite team is following the Gitflow workflow. The active development branch is [dev](https://github.com/Netflix/dynomite/tree/dev), the stable branch is [master](https://github.com/Netflix/dynomite/tree/master).
+## Reporting bugs
 
-Contributions will be accepted to the [dev](https://github.com/Netflix/dynomite/tree/dev) only.
+Please open an [issue](https://github.com/zcalusic/dynomite/issues) and include:
 
+- the Dynomite version (`dynomite -V`) and how it was built,
+- the configuration file, with any secrets removed,
+- the datastore (Redis or Memcached) and its version,
+- what you did, what you expected, and what happened instead, including relevant log output.
 
-## How to provide a patch for a new feature
+## Pull requests
 
-1. If it is a major feature, please create an [Issue]( https://github.com/Netflix/dynomite/issues ) and discuss with the project leaders. 
+Pull requests go against the `master` branch, the only branch in this fork.
 
-2. If in step 1 you get an acknowledge from the project leaders, use the
-   following procedure to submit a patch:
+1. Keep each pull request focused on one change, with a commit message that explains why the
+   change is needed.
+2. Build Dynomite and run the functional tests, as described in [README.md](README.md#tests):
 
-    a. Fork Dynomite on github ( http://help.github.com/fork-a-repo/ )
+       $ test/run_tests.sh
 
-    b. Create a topic branch (git checkout -b my_branch)
+3. [CI](https://github.com/zcalusic/dynomite/actions/workflows/ci.yml) builds Dynomite and runs
+   the same tests on Debian trixie for every pull request; it needs to pass.
 
-    c. Push to your branch (git push origin my_branch)
+## Documentation
 
-    d. Initiate a pull request on github ( http://help.github.com/en/articles/creating-a-pull-request/ )
-
-    e. Done :)
-
-For minor fixes just open a pull request to the [dev]( https://github.com/Netflix/dynomite/tree/dev ) branch on Github.
-
-## Questions
-
-If you have questions or want to report a bug please create an [Issue]( https://github.com/Netflix/dynomite/issues ) or chat with us on [![Dev chat at https://gitter.im/Netflix/dynomite](https://badges.gitter.im/Netflix/dynomite.svg)](https://gitter.im/Netflix/dynomite?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-
-
+The upstream [wiki](https://github.com/Netflix/dynomite/wiki) still documents Dynomite's
+architecture and features. Where it and this fork's [README.md](README.md) disagree, the README
+describes this fork.
