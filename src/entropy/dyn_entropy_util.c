@@ -543,7 +543,7 @@ static void entropy_callback(void *arg1, void *arg2) {
     log_error("Expected magic number: %d", MAGIC_NUMBER);
     goto error;
   } else {
-    log_debug("Protocol magic number: %d", magic);
+    log_debug(LOG_DEBUG, "Protocol magic number: %d", magic);
   }
 
   if (sndOrRcv != 1 && sndOrRcv != 2) {
