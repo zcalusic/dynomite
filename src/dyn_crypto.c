@@ -277,14 +277,14 @@ rstatus_t aes_encrypt(const unsigned char *msg, size_t msg_len,
   if (!EVP_EncryptInit_ex(aes_encrypt_ctx, aes_cipher, NULL, arg_aes_key,
                           arg_aes_key)) {
     log_debug(LOG_VERB, "This is bad data in EVP_EncryptInit_ex : '%.*s'",
-              msg_len, msg);
+              (int)msg_len, msg);
     return DN_ERROR;
   }
 
   if (!EVP_EncryptUpdate(aes_encrypt_ctx, *enc_msg, &block_len,
                          (unsigned char *)msg, (int)msg_len)) {
     log_debug(LOG_VERB, "This is bad data in EVP_EncryptUpdate : '%.*s'",
-              msg_len, msg);
+              (int)msg_len, msg);
     return DN_ERROR;
   }
   enc_msg_len += block_len;
@@ -292,7 +292,7 @@ rstatus_t aes_encrypt(const unsigned char *msg, size_t msg_len,
   if (!EVP_EncryptFinal_ex(aes_encrypt_ctx, *enc_msg + enc_msg_len,
                            &block_len)) {
     log_debug(LOG_VERB, "This is bad data in EVP_EncryptFinal_ex : '%.*s'",
-              msg_len, msg);
+              (int)msg_len, msg);
     return DN_ERROR;
   }
 
@@ -480,14 +480,14 @@ rstatus_t aes_decrypt(unsigned char *enc_msg, size_t enc_msg_len,
   if (!EVP_DecryptInit_ex(aes_decrypt_ctx, aes_cipher, NULL, arg_aes_key,
                           arg_aes_key)) {
     log_debug(LOG_VERB, "This is bad data in EVP_DecryptInit_ex : '%.*s'",
-              enc_msg_len, enc_msg);
+              (int)enc_msg_len, enc_msg);
     return DN_ERROR;
   }
 
   if (!EVP_DecryptUpdate(aes_decrypt_ctx, (unsigned char *)*dec_msg,
                          (int *)&block_len, enc_msg, (int)enc_msg_len)) {
     log_debug(LOG_VERB, "This is bad data in EVP_DecryptUpdate : '%.*s'",
-              enc_msg_len, enc_msg);
+              (int)enc_msg_len, enc_msg);
     return DN_ERROR;
   }
   dec_len += block_len;
@@ -495,7 +495,7 @@ rstatus_t aes_decrypt(unsigned char *enc_msg, size_t enc_msg_len,
   if (!EVP_DecryptFinal_ex(aes_decrypt_ctx, (unsigned char *)*dec_msg + dec_len,
                            (int *)&block_len)) {
     log_debug(LOG_VERB, "This is bad data in EVP_DecryptFinal_ex : '%.*s'",
-              enc_msg_len, enc_msg);
+              (int)enc_msg_len, enc_msg);
     return DN_ERROR;
   }
   dec_len += block_len;

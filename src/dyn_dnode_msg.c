@@ -106,11 +106,11 @@ static bool dyn_parse_core(struct msg *r) {
         break;
 
       case DYN_MSG_ID:
-        log_debug(LOG_VVERB, "DYN_MSG_ID num = %d", num);
+        log_debug(LOG_VVERB, "DYN_MSG_ID num = %" PRIu64, num);
         if (isdigit(ch)) {
           num = num * 10 + (uint64_t)(ch - '0');
         } else if (ch == ' ' && isdigit(*(p - 1))) {
-          log_debug(LOG_VERB, "MSG ID : %d", num);
+          log_debug(LOG_VERB, "MSG ID : %" PRIu64, num);
           dmsg->id = num;
           dyn_state = DYN_TYPE_ID;
           num = 0;
@@ -124,11 +124,11 @@ static bool dyn_parse_core(struct msg *r) {
         break;
 
       case DYN_TYPE_ID:
-        log_debug(LOG_VVERB, "DYN_TYPE_ID: num = %d", num);
+        log_debug(LOG_VVERB, "DYN_TYPE_ID: num = %" PRIu64, num);
         if (isdigit(ch)) {
           num = num * 10 + (uint64_t)(ch - '0');
         } else if (ch == ' ' && isdigit(*(p - 1))) {
-          log_debug(LOG_VERB, "Type Id: %d", num);
+          log_debug(LOG_VERB, "Type Id: %" PRIu64, num);
           dmsg->type = num;
           dyn_state = DYN_BIT_FIELD;
           num = 0;
@@ -142,11 +142,11 @@ static bool dyn_parse_core(struct msg *r) {
         break;
 
       case DYN_BIT_FIELD:
-        log_debug(LOG_VVERB, "DYN_FLAGS_FIELD, num = %d", num);
+        log_debug(LOG_VVERB, "DYN_FLAGS_FIELD, num = %" PRIu64, num);
         if (isdigit(ch)) {
           num = num * 10 + (uint64_t)(ch - '0');
         } else if (ch == ' ' && isdigit(*(p - 1))) {
-          log_debug(LOG_VERB, "DYN_FLAGS_FIELD: %d", num);
+          log_debug(LOG_VERB, "DYN_FLAGS_FIELD: %" PRIu64, num);
           dmsg->flags = num & 0xF;
           dyn_state = DYN_VERSION;
           num = 0;
@@ -160,11 +160,11 @@ static bool dyn_parse_core(struct msg *r) {
         break;
 
       case DYN_VERSION:
-        log_debug(LOG_VVERB, "DYN_VERSION: num = %d", num);
+        log_debug(LOG_VVERB, "DYN_VERSION: num = %" PRIu64, num);
         if (isdigit(ch)) {
           num = num * 10 + (uint64_t)(ch - '0');
         } else if (ch == ' ' && isdigit(*(p - 1))) {
-          log_debug(LOG_VERB, "VERSION : %d", num);
+          log_debug(LOG_VERB, "VERSION : %" PRIu64, num);
           dmsg->version = num;
           dyn_state = DYN_SAME_DC;
           num = 0;
@@ -194,13 +194,13 @@ static bool dyn_parse_core(struct msg *r) {
         break;
 
       case DYN_DATA_LEN:
-        log_debug(LOG_VVERB, "DYN_DATA_LEN: num = %d", num);
+        log_debug(LOG_VVERB, "DYN_DATA_LEN: num = %" PRIu64, num);
         if (ch == '*') {
           break;
         } else if (isdigit(ch)) {
           num = num * 10 + (uint64_t)(ch - '0');
         } else if (ch == ' ' && isdigit(*(p - 1))) {
-          log_debug(LOG_VERB, "Data len: %d", num);
+          log_debug(LOG_VERB, "Data len: %" PRIu64, num);
           dmsg->mlen = (uint32_t)num;
           dyn_state = DYN_DATA;
           num = 0;
@@ -241,7 +241,7 @@ static bool dyn_parse_core(struct msg *r) {
         if (isdigit(ch)) {
           num = num * 10 + (uint64_t)(ch - '0');
         } else if (ch == CR) {
-          log_debug(LOG_VERB, "Payload len: %d", num);
+          log_debug(LOG_VERB, "Payload len: %" PRIu64, num);
           dmsg->plen = (uint32_t)num;
           num = 0;
           dyn_state = DYN_CRLF_BEFORE_DONE;
@@ -357,8 +357,9 @@ done:
   r->pos = p;
   dmsg->source_address = r->owner->addr;
   log_debug(LOG_DEBUG,
-            "MSG ID: %d, type: %d, secured %d, version %d, "
-            "same_dc %d, datalen %u, payload len: %u",
+            "MSG ID: %" PRIu64
+            ", type: %d, secured %d, version %d, same_dc %d, datalen %u, "
+            "payload len: %u",
             dmsg->id, dmsg->type, dmsg->flags & 0x1, dmsg->version,
             dmsg->same_dc, dmsg->mlen, dmsg->plen);
 
@@ -629,7 +630,7 @@ void dmsg_dump(struct dmsg *dmsg) {
 }
 
 void dmsg_init(void) {
-  log_debug(LOG_VVVERB, "dmsg size %d", sizeof(struct dmsg));
+  log_debug(LOG_VVVERB, "dmsg size %zu", sizeof(struct dmsg));
 
   dmsg_id = 0;
   TAILQ_INIT(&free_dmsgq);

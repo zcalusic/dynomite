@@ -94,7 +94,7 @@ uint8_t dns_get_seeds(struct context *ctx, struct mbuf *seeds_buf) {
     return DN_NOOPS;
   }
   if (r >= sizeof(buf)) {
-    log_debug(LOG_DEBUG, "DNS reply is too large for %s: %d, bufsize: %d",
+    log_debug(LOG_DEBUG, "DNS reply is too large for %s: %d, bufsize: %zu",
               dnsName, r, sizeof(buf));
     return DN_NOOPS;
   }

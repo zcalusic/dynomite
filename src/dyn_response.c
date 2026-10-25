@@ -164,8 +164,10 @@ void rsp_send_done(struct context *ctx, struct conn *conn, struct msg *rsp) {
 
   log_debug(LOG_VERB, "conn %p rsp %p done", conn, rsp);
   struct msg *req = rsp->peer;
-  ASSERT_LOG(req, "response %d does not have a corresponding request", rsp->id);
-  ASSERT_LOG(!req->rsp_sent, "request %d:%d already had a response sent",
+  ASSERT_LOG(req, "response %" PRIu64 " does not have a corresponding request",
+             rsp->id);
+  ASSERT_LOG(!req->rsp_sent,
+             "request %" PRIu64 ":%" PRIu64 " already had a response sent",
              req->id, req->parent_id);
 
   ASSERT(!rsp->is_request && req->is_request);
@@ -177,12 +179,12 @@ void rsp_send_done(struct context *ctx, struct conn *conn, struct msg *rsp) {
 
   // Remove it from the dict
   if (!req->awaiting_rsps) {
-    log_debug(LOG_VERB, "conn %p removing message %d:%d", conn, req->id,
-              req->parent_id);
+    log_debug(LOG_VERB, "conn %p removing message %" PRIu64 ":%" PRIu64, conn,
+              req->id, req->parent_id);
     dictDelete(conn->outstanding_msgs_dict, &req->id);
     req_put(req);
   } else {
-    log_info("req %d:%d still awaiting rsps %d", req->id, req->parent_id,
-             req->awaiting_rsps);
+    log_info("req %" PRIu64 ":%" PRIu64 " still awaiting rsps %d", req->id,
+             req->parent_id, req->awaiting_rsps);
   }
 }

@@ -911,7 +911,7 @@ static void req_server_enqueue_imsgq(struct context *ctx, struct conn *conn,
   }
 
   TAILQ_INSERT_TAIL(&conn->imsg_q, req, s_tqe);
-  log_debug(LOG_VERB, "conn %p enqueue inq %d:%d", conn, req->id,
+  log_debug(LOG_VERB, "conn %p enqueue inq %" PRIu64 ":%" PRIu64, conn, req->id,
             req->parent_id);
 
   histo_add(&ctx->stats->server_in_queue, TAILQ_COUNT(&conn->imsg_q));
@@ -925,7 +925,7 @@ static void req_server_dequeue_imsgq(struct context *ctx, struct conn *conn,
   ASSERT(conn->type == CONN_SERVER);
 
   TAILQ_REMOVE(&conn->imsg_q, req, s_tqe);
-  log_debug(LOG_VERB, "conn %p dequeue inq %d:%d", conn, req->id,
+  log_debug(LOG_VERB, "conn %p dequeue inq %" PRIu64 ":%" PRIu64, conn, req->id,
             req->parent_id);
   usec_t delay = dn_usec_now() - req->request_inqueue_enqueue_time_us;
   histo_add(&ctx->stats->server_queue_wait_time_histo, delay);
@@ -941,8 +941,8 @@ static void req_server_enqueue_omsgq(struct context *ctx, struct conn *conn,
   ASSERT(conn->type == CONN_SERVER);
 
   TAILQ_INSERT_TAIL(&conn->omsg_q, req, s_tqe);
-  log_debug(LOG_VERB, "conn %p enqueue outq %d:%d", conn, req->id,
-            req->parent_id);
+  log_debug(LOG_VERB, "conn %p enqueue outq %" PRIu64 ":%" PRIu64, conn,
+            req->id, req->parent_id);
 
   histo_add(&ctx->stats->server_out_queue, TAILQ_COUNT(&conn->omsg_q));
   stats_server_incr(ctx, out_queue);
@@ -957,8 +957,8 @@ static void req_server_dequeue_omsgq(struct context *ctx, struct conn *conn,
   msg_tmo_delete(req);
 
   TAILQ_REMOVE(&conn->omsg_q, req, s_tqe);
-  log_debug(LOG_VERB, "conn %p dequeue outq %d:%d", conn, req->id,
-            req->parent_id);
+  log_debug(LOG_VERB, "conn %p dequeue outq %" PRIu64 ":%" PRIu64, conn,
+            req->id, req->parent_id);
 
   histo_add(&ctx->stats->server_out_queue, TAILQ_COUNT(&conn->omsg_q));
   stats_server_decr(ctx, out_queue);

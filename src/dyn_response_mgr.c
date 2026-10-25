@@ -314,11 +314,13 @@ void rspmgr_free_other_responses(struct response_mgr *rspmgr,
 }
 
 rstatus_t rspmgr_submit_response(struct response_mgr *rspmgr, struct msg *rsp) {
-  log_info("req %d submitting response %d awaiting_rsps %d", rspmgr->msg->id,
-           rsp->id, rspmgr->msg->awaiting_rsps);
+  log_info("req %" PRIu64 " submitting response %" PRIu64 " awaiting_rsps %d",
+           rspmgr->msg->id, rsp->id, rspmgr->msg->awaiting_rsps);
   if (rsp->is_error) {
-    log_debug(LOG_VERB, "Received error response %d:%d for req %d:%d", rsp->id,
-              rsp->parent_id, rspmgr->msg->id, rspmgr->msg->parent_id);
+    log_debug(LOG_VERB,
+              "Received error response %" PRIu64 ":%" PRIu64 " for req %" PRIu64
+              ":%" PRIu64,
+              rsp->id, rsp->parent_id, rspmgr->msg->id, rspmgr->msg->parent_id);
     rspmgr->error_responses++;
     if (rspmgr->err_rsp == NULL)
       rspmgr->err_rsp = rsp;
@@ -326,8 +328,9 @@ rstatus_t rspmgr_submit_response(struct response_mgr *rspmgr, struct msg *rsp) {
       rsp_put(rsp);
   } else {
     rspmgr->checksums[rspmgr->good_responses] = msg_payload_crc32(rsp);
-    log_debug(LOG_VERB, "Good response %d:%d checksum %u", rsp->id,
-              rsp->parent_id, rspmgr->checksums[rspmgr->good_responses]);
+    log_debug(LOG_VERB, "Good response %" PRIu64 ":%" PRIu64 " checksum %u",
+              rsp->id, rsp->parent_id,
+              rspmgr->checksums[rspmgr->good_responses]);
     rspmgr->responses[rspmgr->good_responses++] = rsp;
   }
   msg_decr_awaiting_rsps(rspmgr->msg);

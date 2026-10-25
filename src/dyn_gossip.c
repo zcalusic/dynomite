@@ -324,7 +324,7 @@ static rstatus_t gossip_forward_state(struct server_pool *sp) {
 
   log_debug(LOG_VERB,
             "\tForwarding my current gossip states           : '%.*s'",
-            (pos - data), data);
+            (int)(pos - data), data);
 
   dictReleaseIterator(dc_it);
 
@@ -1030,7 +1030,7 @@ void gossip_debug(void) {
                   node->is_local);
 
         print_dyn_token(&node->token, 8);
-        log_debug(LOG_VERB, "\t\tFinger print    : %" PRIu64 " ",
+        log_debug(LOG_VERB, "\t\tFinger print    : %lld ",
                   dictFingerprint(g_rack->dict_token_nodes));
       }
     }

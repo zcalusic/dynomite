@@ -140,9 +140,9 @@ void _log(const char *file, int line, int panic, const char *fmt, ...) {
   strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", localtime(&curTime.tv_sec));
 
   // May be not the perfect place to fix this
-  len +=
-      dn_scnprintf(buf + len, size - len, "[%.*s.%03d] %s:%d ", strlen(buffer),
-                   buffer, (int64_t)curTime.tv_usec / 1000, file, line);
+  len += dn_scnprintf(buf + len, size - len, "[%.*s.%03d] %s:%d ",
+                      (int)strlen(buffer), buffer,
+                      (int)(curTime.tv_usec / 1000), file, line);
 
   va_start(args, fmt);
 

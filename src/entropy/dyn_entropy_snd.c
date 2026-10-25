@@ -103,7 +103,7 @@ static rstatus_t header_send(struct stat file_stat, int peer_socket,
     return DN_ERROR;
   }
 
-  loga("The size of header is %d",
+  loga("The size of header is %zu",
        sizeof(header_buff));  // TODO: this can be moved to log_info
   return DN_OK;
 }
@@ -264,7 +264,7 @@ rstatus_t entropy_snd_start(int peer_socket, int header_size, int buffer_size,
       } else {
         ciphertext_len =
             entropy_encrypt(data_buff, last_chunk_size, ciphertext);
-        loga("Size of last chunk: %d", sizeof(data_buff));
+        loga("Size of last chunk: %zu", sizeof(data_buff));
       }
       if (ciphertext_len < 0) {
         log_error("Error encrypting the AOF chunk --> %s", strerror(errno));

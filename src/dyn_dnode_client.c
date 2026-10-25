@@ -209,14 +209,16 @@ static rstatus_t dnode_client_handle_response(struct context *ctx, struct conn *
   // Fetch the original request
   struct msg *req = dictFetchValue(conn->outstanding_msgs_dict, &reqid);
   if (!req) {
-    log_notice("looks like we already cleanedup the request for %d", reqid);
+    log_notice("looks like we already cleanedup the request for %" PRIu64,
+               reqid);
     rsp_put(rsp);
     return DN_OK;
   }
 
   // dnode client has no extra logic of coalescing etc like the
   // client/coordinator. Hence all work for this request is done at this time
-  ASSERT_LOG(!req->selected_rsp, "req %lu:%lu has selected_rsp set", req->id,
+  ASSERT_LOG(!req->selected_rsp,
+             "req %" PRIu64 ":%" PRIu64 " has selected_rsp set", req->id,
              req->parent_id);
   status = msg_handle_response(ctx, req, rsp);
   if (conn->waiting_to_unref) {
@@ -270,15 +272,15 @@ static void dnode_req_forward(struct context *ctx, struct conn *conn,
                               struct msg *req) {
   struct server_pool *pool;
 
-  log_debug(LOG_DEBUG, "%s DNODE REQ RECEIVED dmsg->id %u", print_obj(conn),
-            req->dmsg->id);
+  log_debug(LOG_DEBUG, "%s DNODE REQ RECEIVED dmsg->id %" PRIu64,
+            print_obj(conn), req->dmsg->id);
 
   ASSERT(conn->type == CONN_DNODE_PEER_CLIENT);
 
   pool = conn->owner;
 
-  log_debug(LOG_DEBUG, "%s adding message %d:%d", print_obj(conn), req->id,
-            req->parent_id);
+  log_debug(LOG_DEBUG, "%s adding message %" PRIu64 ":%" PRIu64,
+            print_obj(conn), req->id, req->parent_id);
   dictAdd(conn->outstanding_msgs_dict, &req->id, req);
 
   uint32_t keylen = 0;
@@ -332,7 +334,8 @@ static void dnode_req_recv_done(struct context *ctx, struct conn *conn,
     return;
   }
 
-  log_debug(LOG_VERB, "received req %d:%d", req->id, req->parent_id);
+  log_debug(LOG_VERB, "received req %" PRIu64 ":%" PRIu64, req->id,
+            req->parent_id);
   dnode_req_forward(ctx, conn, req);
 }
 
@@ -459,7 +462,7 @@ static struct msg *dnode_rsp_send_next(struct context *ctx, struct conn *conn) {
         }
 
         if (log_loggable(LOG_VVERB)) {
-          log_debug(LOG_VERB, "#encrypted bytes : %d", encrypted_bytes);
+          log_debug(LOG_VERB, "#encrypted bytes : %zu", encrypted_bytes);
         }
 
         dmsg_write(header_buf, msg_id, msg_type, conn, msg_length(rsp));
@@ -472,7 +475,8 @@ static struct msg *dnode_rsp_send_next(struct context *ctx, struct conn *conn) {
 
     } else {
       // write dnode header
-      log_debug(LOG_VERB, "sending dnode response with msg_id %u", msg_id);
+      log_debug(LOG_VERB, "sending dnode response with msg_id %" PRIu64,
+                msg_id);
       dmsg_write(header_buf, msg_id, msg_type, conn, msg_length(rsp));
     }
 
@@ -507,7 +511,7 @@ static void dnode_rsp_send_done(struct context *ctx, struct conn *conn,
 
   ASSERT(!rsp->is_request && req->is_request);
   ASSERT(req->selected_rsp == rsp);
-  log_debug(LOG_DEBUG, "%s DNODE RSP SENT dmsg->id %u", print_obj(conn),
+  log_debug(LOG_DEBUG, "%s DNODE RSP SENT dmsg->id %" PRIu64, print_obj(conn),
             req->dmsg->id);
 
   /* dequeue request from client outq */

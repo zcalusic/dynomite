@@ -242,7 +242,8 @@ static rstatus_t client_handle_response(struct context *ctx, struct conn *conn, 
   // Fetch the original request
   struct msg *req = dictFetchValue(conn->outstanding_msgs_dict, &reqid);
   if (!req) {
-    log_notice("looks like we already cleanedup the request for %d", reqid);
+    log_notice("looks like we already cleanedup the request for %" PRIu64,
+               reqid);
     rsp_put(rsp);
     return DN_OK;
   }

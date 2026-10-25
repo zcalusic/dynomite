@@ -80,7 +80,7 @@ void stats_describe(void) {
                stats_pool_desc[i].desc);
   }
 
-  log_stderr("");
+  log_stderr("%s", "");
 
   log_stderr("server stats:");
   for (i = 0; i < NELEMS(stats_server_desc); i++) {
@@ -408,7 +408,7 @@ static rstatus_t stats_add_string(struct stats_buffer *buf, struct string *key,
   n = dn_snprintf(pos, room, "\"%.*s\":\"%.*s\",", key->len, key->data,
                   val->len, val->data);
   if (n < 0 || n >= (int)room) {
-    log_debug(LOG_ERR, "no room size:%u len %u", buf->size, buf->len);
+    log_debug(LOG_ERR, "no room size:%zu len %zu", buf->size, buf->len);
     return DN_ERROR;
   }
 
@@ -436,7 +436,7 @@ static rstatus_t stats_add_num_last(struct stats_buffer *buf,
   }
 
   if (n < 0 || n >= (int)room) {
-    log_debug(LOG_ERR, "no room size:%u len %u", buf->size, buf->len);
+    log_debug(LOG_ERR, "no room size:%zu len %zu", buf->size, buf->len);
     return DN_ERROR;
   }
 
@@ -456,7 +456,7 @@ static rstatus_t stats_add_num_str(struct stats_buffer *buf, const char *key,
 
   n = dn_snprintf(pos, room, "\"%s\":%" PRId64 ",\n", key, val);
   if (n < 0 || n >= (int)room) {
-    log_debug(LOG_ERR, "no room size:%u len %u", buf->size, buf->len);
+    log_debug(LOG_ERR, "no room size:%zu len %zu", buf->size, buf->len);
     return DN_ERROR;
   }
   buf->len += (size_t)n;
@@ -608,7 +608,7 @@ static rstatus_t stats_begin_nesting(struct stats_buffer *buf,
   else
     n = dn_snprintf(pos, room, "%c", arr ? '[' : '{');
   if (n < 0 || n >= (int)room) {
-    log_debug(LOG_ERR, "failed, len:%u size %u", buf->len, buf->size);
+    log_debug(LOG_ERR, "failed, len:%zu size %zu", buf->len, buf->size);
     return DN_ERROR;
   }
 
@@ -1149,7 +1149,7 @@ static rstatus_t stats_send_rsp(struct stats *st) {
     if (stats_make_info_rsp(st) != DN_OK)
       return stats_http_rsp(sd, err_resp.data, err_resp.len);
     else {
-      log_debug(LOG_VERB, "send stats on sd %d %d bytes", sd, st->buf.len);
+      log_debug(LOG_VERB, "send stats on sd %d %zu bytes", sd, st->buf.len);
       return stats_http_rsp(sd, st->buf.data, st->buf.len);
     }
   } else if (cmd == CMD_HELP) {

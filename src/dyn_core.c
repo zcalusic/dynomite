@@ -306,18 +306,18 @@ rstatus_t core_start(struct instance *nci) {
   struct server_pool *sp = &ctx->pool;
 
   if (sp->mbuf_size == UNSET_NUM) {
-    loga("mbuf_size not in YAML: using deprecated way  %d",
+    loga("mbuf_size not in YAML: using deprecated way  %zu",
          nci->mbuf_chunk_size);
     mbuf_init(nci->mbuf_chunk_size);
   } else {
-    loga("YAML provided mbuf_size: %d", sp->mbuf_size);
+    loga("YAML provided mbuf_size: %zu", sp->mbuf_size);
     mbuf_init(sp->mbuf_size);
   }
   if (sp->alloc_msgs_max == UNSET_NUM) {
-    loga("max_msgs not in YAML: using deprecated way %d", nci->alloc_msgs_max);
+    loga("max_msgs not in YAML: using deprecated way %zu", nci->alloc_msgs_max);
     msg_init(nci->alloc_msgs_max);
   } else {
-    loga("YAML provided max_msgs: %d", sp->alloc_msgs_max);
+    loga("YAML provided max_msgs: %zu", sp->alloc_msgs_max);
     msg_init(sp->alloc_msgs_max);
   }
 
@@ -458,7 +458,7 @@ static void core_timeout(struct context *ctx) {
       return;
     }
 
-    log_warn("%s on %s timedout, timeout was %d", print_obj(req),
+    log_warn("%s on %s timedout, timeout was %" PRIu64, print_obj(req),
              print_obj(conn), req->tmo_rbe.timeout);
 
     msg_tmo_delete(req);
@@ -605,7 +605,7 @@ void core_debug(struct context *ctx) {
  * @return rstatus_t Return status code.
  */
 static rstatus_t core_process_messages(void) {
-  log_debug(LOG_VVVERB, "length of C2G_OutQ : %d", CBUF_Len(C2G_OutQ));
+  log_debug(LOG_VVVERB, "length of C2G_OutQ : %ld", CBUF_Len(C2G_OutQ));
 
   // Continue to process messages while the circular buffer is not empty
   while (!CBUF_IsEmpty(C2G_OutQ)) {

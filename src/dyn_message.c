@@ -270,9 +270,8 @@ void msg_tmo_insert(struct msg *req, struct conn *conn) {
 
   if (log_loggable(LOG_VERB)) {
     log_debug(LOG_VERB,
-              "insert req %" PRIu64
-              " into tmo rbt with expiry of "
-              "%d msec",
+              "insert req %" PRIu64 " into tmo rbt with expiry of %" PRIu64
+              " msec",
               req->id, timeout);
   }
 }
@@ -624,7 +623,7 @@ void msg_put(struct msg *msg) {
   }
 
   if (msg->is_request && msg->awaiting_rsps != 0 && msg->expect_datastore_reply !=0) {
-    log_error("Not freeing req %d, awaiting_rsps = %u", msg->id,
+    log_error("Not freeing req %" PRIu64 ", awaiting_rsps = %u", msg->id,
               msg->awaiting_rsps);
     return;
   }
@@ -740,7 +739,7 @@ void msg_dump(int level, struct msg *msg) {
  * @param[in] alloc_msgs_max Dynomite instance.
  */
 void msg_init(size_t msgs_max) {
-  log_debug(LOG_DEBUG, "msg size %d", sizeof(struct msg));
+  log_debug(LOG_DEBUG, "msg size %zu", sizeof(struct msg));
   msg_id = 0;
   frag_id = 0;
   alloc_msgs_max = msgs_max;

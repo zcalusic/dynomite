@@ -152,8 +152,8 @@ uint8_t florida_get_seeds(struct context *ctx, struct mbuf *seeds_buf) {
     if (!ok) ok = (uint8_t *)strstr((char *)buf, "200 OK\r\n");
     if (ok == NULL) {
       log_error("Received Error from Florida while getting seeds");
-      loga_hexdump(buf, rx_total, "Florida Response with %ld bytes of data",
-                   rx_total);
+      loga_hexdump(buf, rx_total,
+                   "Florida Response with %" PRIu32 " bytes of data", rx_total);
       close(sock);
       dn_free(remote);
       return DN_ERROR;

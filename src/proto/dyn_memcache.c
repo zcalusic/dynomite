@@ -349,9 +349,8 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
           int keylen = p - r->token;
           if (keylen > MEMCACHE_MAX_KEY_LENGTH) {
             log_error("parsed bad req %" PRIu64
-                      " of type %d with key "
-                      "prefix '%.*s...' and length %d that exceeds "
-                      "maximum key length",
+                      " of type %d with key prefix '%.*s...' and length %td "
+                      "that exceeds maximum key length",
                       r->id, r->type, 16, r->token, p - r->token);
             goto error;
           } else if (keylen == 0) {
@@ -735,9 +734,7 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
   }
 
   log_hexdump(LOG_VERB, b->pos, mbuf_length(b),
-              "parsed req %" PRIu64
-              " res %d "
-              "type %d state %d rpos %d of %d",
+              "parsed req %" PRIu64 " res %d type %d state %d rpos %td of %td",
               r->id, r->result, r->type, r->state, r->pos - b->pos,
               b->last - b->pos);
   return;
@@ -750,9 +747,7 @@ done:
   r->result = MSG_PARSE_OK;
 
   log_hexdump(LOG_VERB, b->pos, mbuf_length(b),
-              "parsed req %" PRIu64
-              " res %d "
-              "type %d state %d rpos %d of %d",
+              "parsed req %" PRIu64 " res %d type %d state %d rpos %td of %td",
               r->id, r->result, r->type, r->state, r->pos - b->pos,
               b->last - b->pos);
   return;
@@ -1205,9 +1200,7 @@ void memcache_parse_rsp(struct msg *r, struct context *ctx) {
   }
 
   log_hexdump(LOG_VERB, b->pos, mbuf_length(b),
-              "parsed rsp %" PRIu64
-              " res %d "
-              "type %d state %d rpos %d of %d",
+              "parsed rsp %" PRIu64 " res %d type %d state %d rpos %td of %td",
               r->id, r->result, r->type, r->state, r->pos - b->pos,
               b->last - b->pos);
   return;
@@ -1221,9 +1214,7 @@ done:
   r->result = MSG_PARSE_OK;
 
   log_hexdump(LOG_VERB, b->pos, mbuf_length(b),
-              "parsed rsp %" PRIu64
-              " res %d "
-              "type %d state %d rpos %d of %d",
+              "parsed rsp %" PRIu64 " res %d type %d state %d rpos %td of %td",
               r->id, r->result, r->type, r->state, r->pos - b->pos,
               b->last - b->pos);
   return;

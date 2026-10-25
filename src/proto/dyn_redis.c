@@ -617,7 +617,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           state = SW_REQ_TYPE_LF;
           goto done;
         } else {
-          log_hexdump(LOG_VERB, b->pos, mbuf_length(b), "PING ERROR %d, %s",
+          log_hexdump(LOG_VERB, b->pos, mbuf_length(b), "PING ERROR %td, %s",
                       p - m, p);
           goto error;
         }
@@ -696,12 +696,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         // only 'CLIENT SETINFO' is supported; it's answered locally.
         if (r->type == MSG_REQ_REDIS_CLIENT) {
           if ((p - m) != 7 || !str7icmp(m, 's', 'e', 't', 'i', 'n', 'f', 'o')) {
-            log_error("parsed unsupported command 'CLIENT %.*s'", p - m, m);
+            log_error("parsed unsupported command 'CLIENT %.*s'", (int)(p - m),
+                      m);
             goto error;
           }
           r->type = MSG_REQ_REDIS_CLIENT_SETINFO;
           r->is_read = 1;
-          log_debug(LOG_VERB, "parsed command 'CLIENT %.*s'", p - m, m);
+          log_debug(LOG_VERB, "parsed command 'CLIENT %.*s'", (int)(p - m), m);
           state = SW_REQ_TYPE_LF;
           break;
         }
@@ -1612,11 +1613,11 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         }
 
         if (r->type == MSG_UNKNOWN) {
-          log_error("parsed unsupported command '%.*s'", p - m, m);
+          log_error("parsed unsupported command '%.*s'", (int)(p - m), m);
           goto error;
         }
 
-        log_debug(LOG_VERB, "parsed command '%.*s'", p - m, m);
+        log_debug(LOG_VERB, "parsed command '%.*s'", (int)(p - m), m);
 
         state = SW_REQ_TYPE_LF;
         break;
@@ -1633,8 +1634,10 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             goto error;
           }
           state = SW_REQ_TYPE_LEN;
-          log_debug(LOG_VERB, "parsed partial command '%.*s'. Continuing to parse" \
-              "remainaing part of command", p - m, m);
+          log_debug(LOG_VERB,
+                    "parsed partial command '%.*s'. Continuing to parse"
+                    "remainaing part of command",
+                    (int)(p - m), m);
           break;
         }
 
@@ -1699,9 +1702,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           }
           if (r->rlen >= mbuf_data_size()) {
             log_error("parsed bad req %" PRIu64
-                      " of type %d with key "
-                      "length %d that greater than or equal to maximum"
-                      " redis key length of %d",
+                      " of type %d with key length %d that greater than or "
+                      "equal to maximum redis key length of %zu",
                       r->id, r->type, r->rlen, mbuf_data_size());
             goto error;
           }
@@ -1874,7 +1876,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
       case SW_ARG1:
 
         if (r->type == MSG_REQ_REDIS_CONFIG && !str3icmp(m, 'g', 'e', 't')) {
-          log_error("Redis CONFIG command not supported '%.*s'", p - m, m);
+          log_error("Redis CONFIG command not supported '%.*s'", (int)(p - m),
+                    m);
           goto error;
         }
 
@@ -2388,9 +2391,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
   }
 
   log_hexdump(LOG_VERB, b->pos, mbuf_length(b),
-              "parsed req %" PRIu64
-              " res %d "
-              "type %d state %d rpos %d of %d",
+              "parsed req %" PRIu64 " res %d type %d state %d rpos %td of %td",
               r->id, r->result, r->type, r->state, r->pos - b->pos,
               b->last - b->pos);
   return;
@@ -2404,9 +2405,7 @@ done:
   r->result = MSG_PARSE_OK;
 
   log_hexdump(LOG_VERB, b->pos, mbuf_length(b),
-              "parsed req %" PRIu64
-              " res %d "
-              "type %d state %d rpos %d of %d",
+              "parsed req %" PRIu64 " res %d type %d state %d rpos %td of %td",
               r->id, r->result, r->type, r->state, r->pos - b->pos,
               b->last - b->pos);
   return;
@@ -3007,9 +3006,7 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
   }
 
   log_hexdump(LOG_VERB, b->pos, mbuf_length(b),
-              "parsed rsp %" PRIu64
-              " res %d "
-              "type %d state %d rpos %d of %d",
+              "parsed rsp %" PRIu64 " res %d type %d state %d rpos %td of %td",
               r->id, r->result, r->type, r->state, r->pos - b->pos,
               b->last - b->pos);
   return;
@@ -3023,9 +3020,7 @@ done:
   r->result = MSG_PARSE_OK;
   r->is_error = redis_error(r);
   log_hexdump(LOG_VERB, b->pos, mbuf_length(b),
-              "parsed rsp %" PRIu64
-              " res %d "
-              "type %d state %d rpos %d of %d",
+              "parsed rsp %" PRIu64 " res %d type %d state %d rpos %td of %td",
               r->id, r->result, r->type, r->state, r->pos - b->pos,
               b->last - b->pos);
   return;
@@ -3297,7 +3292,7 @@ static void redis_post_coalesce_mget(struct msg *request) {
     if (sub_msg == NULL) {
       struct keypos *kpos = array_get(request->keys, i);
       log_warn("Response missing for key %.*s, %s marking %s as error",
-               kpos->tag_end - kpos->tag_start, kpos->tag_start,
+               (int)(kpos->tag_end - kpos->tag_start), kpos->tag_start,
                print_obj(request), print_obj(response->owner));
       response->owner->err = 1;
       return;

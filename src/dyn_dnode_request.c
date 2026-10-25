@@ -119,7 +119,7 @@ rstatus_t dnode_peer_req_forward(struct context *ctx, struct conn *c_conn,
         return status;
       }
 
-      log_debug(LOG_VVERB, "#encrypted bytes : %d", encrypted_bytes);
+      log_debug(LOG_VVERB, "#encrypted bytes : %zu", encrypted_bytes);
 
       dmsg_write(header_buf, req->id, msg_type, p_conn, msg_length(req));
     } else {

@@ -338,7 +338,7 @@ static void conf_dump(struct conf *cf) {
   log_debug(LOG_VVERB, "%.*s", cp->name.len, cp->name.data);
   log_debug(LOG_VVERB, "  listen: %.*s", cp->listen.pname.len,
             cp->listen.pname.data);
-  log_debug(LOG_VVERB, "  timeout: %d", cp->timeout);
+  log_debug(LOG_VVERB, "  timeout: %" PRIu64, cp->timeout);
   log_debug(LOG_VVERB, "  backlog: %d", cp->backlog);
   log_debug(LOG_VVERB, "  hash: %d", cp->hash);
   log_debug(LOG_VVERB, "  hash_tag: \"%.*s\"", cp->hash_tag.len,
@@ -352,7 +352,7 @@ static void conf_dump(struct conf *cf) {
   log_debug(LOG_VVERB, "  data_store: %d (%s)", g_data_store, temp_log);
   log_debug(LOG_VVERB, "  preconnect: %d", cp->preconnect);
   log_debug(LOG_VVERB, "  auto_eject_hosts: %d", cp->auto_eject_hosts);
-  log_debug(LOG_VVERB, "  server_retry_timeout: %d (msec)",
+  log_debug(LOG_VVERB, "  server_retry_timeout: %" PRIu64 " (msec)",
             cp->server_retry_timeout_ms);
   log_debug(LOG_VVERB, "  server_failure_limit: %d", cp->server_failure_limit);
 
@@ -396,8 +396,8 @@ static void conf_dump(struct conf *cf) {
   log_debug(LOG_VVERB, "  enable_gossip: %s",
             cp->enable_gossip ? "true" : "false");
 
-  log_debug(LOG_VVERB, "  mbuf_size: %d", cp->mbuf_size);
-  log_debug(LOG_VVERB, "  max_msgs: %d", cp->alloc_msgs_max);
+  log_debug(LOG_VVERB, "  mbuf_size: %zu", cp->mbuf_size);
+  log_debug(LOG_VVERB, "  max_msgs: %zu", cp->alloc_msgs_max);
 
   log_debug(LOG_VVERB, "  dc: \"%.*s\"", cp->dc.len, cp->dc.data);
   log_debug(LOG_VVERB, "  datastore_connections: %d",
@@ -1888,10 +1888,8 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
 
     if (cp->mbuf_size < CONF_DEFAULT_MBUF_MIN_SIZE ||
         cp->mbuf_size > CONF_DEFAULT_MBUF_MAX_SIZE) {
-      log_stderr(
-          "mbuf_size: mbuf chunk size must be between %zu and"
-          " %zu bytes",
-          CONF_DEFAULT_MBUF_MIN_SIZE, CONF_DEFAULT_MBUF_MAX_SIZE);
+      log_stderr("mbuf_size: mbuf chunk size must be between %d and %d bytes",
+                 CONF_DEFAULT_MBUF_MIN_SIZE, CONF_DEFAULT_MBUF_MAX_SIZE);
       return DN_ERROR;
     }
 
@@ -1918,8 +1916,8 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
     if (cp->alloc_msgs_max < CONF_DEFAULT_MIN_ALLOC_MSGS ||
         cp->alloc_msgs_max > CONF_DEFAULT_MAX_ALLOC_MSGS) {
       log_stderr(
-          "max_msgs: max allocated messages buffer must be between %zu and"
-          " %zu messages",
+          "max_msgs: max allocated messages buffer must be between %d and %d "
+          "messages",
           CONF_DEFAULT_MIN_ALLOC_MSGS, CONF_DEFAULT_MAX_ALLOC_MSGS);
       return DN_ERROR;
     }

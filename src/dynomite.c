@@ -386,8 +386,7 @@ static rstatus_t dn_get_options(int argc, char **argv, struct instance *nci) {
 
         if (value < DN_MBUF_MIN_SIZE || value > DN_MBUF_MAX_SIZE) {
           log_stderr(
-              "dynomite: mbuf chunk size must be between %zu and"
-              " %zu bytes",
+              "dynomite: mbuf chunk size must be between %d and %d bytes",
               DN_MBUF_MIN_SIZE, DN_MBUF_MAX_SIZE);
           return DN_ERROR;
         }
@@ -412,8 +411,8 @@ static rstatus_t dn_get_options(int argc, char **argv, struct instance *nci) {
 
         if (value < DN_MIN_ALLOC_MSGS || value > DN_MAX_ALLOC_MSGS) {
           log_stderr(
-              "dynomite: max allocated messages buffer must be between %zu and"
-              " %zu messages",
+              "dynomite: max allocated messages buffer must be between %d and "
+              "%d messages",
               DN_MIN_ALLOC_MSGS, DN_MAX_ALLOC_MSGS);
           return DN_ERROR;
         }

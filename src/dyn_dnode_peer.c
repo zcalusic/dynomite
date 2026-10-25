@@ -287,7 +287,8 @@ static void dnode_peer_ack_err(struct context *ctx, struct conn *conn,
        && (!conn->same_dc)) ||
       (req->owner == conn))  // a gossip message that originated on this conn
   {
-    log_info("%s Closing, swallow req %u:%u len %" PRIu32 " type %d",
+    log_info("%s Closing, swallow req %" PRIu64 ":%" PRIu64 " len %" PRIu32
+             " type %d",
              print_obj(conn), req->id, req->parent_id, req->mlen, req->type);
     req_put(req);
     return;
@@ -296,8 +297,8 @@ static void dnode_peer_ack_err(struct context *ctx, struct conn *conn,
   // At other connections, these responses would be swallowed.
   ASSERT_LOG(
       (c_conn->type == CONN_CLIENT) || (c_conn->type == CONN_DNODE_PEER_CLIENT),
-      "conn:%s c_conn:%s, req %d:%d", print_obj(conn), print_obj(c_conn),
-      req->id, req->parent_id);
+      "conn:%s c_conn:%s, req %" PRIu64 ":%" PRIu64, print_obj(conn),
+      print_obj(c_conn), req->id, req->parent_id);
 
   // Create an appropriate response for the request so its propagated up;
   // This response gets dropped in rsp_make_error anyways. But since this is
@@ -318,7 +319,8 @@ static void dnode_peer_ack_err(struct context *ctx, struct conn *conn,
   rsp->dmsg->id = req->id;
   rsp->owner = conn;
 
-  log_info("%s Closing req %u:%u len %" PRIu32 " type %d %c %s",
+  log_info("%s Closing req %" PRIu64 ":%" PRIu64 " len %" PRIu32
+           " type %d %c %s",
            print_obj(conn), req->id, req->parent_id, req->mlen, req->type,
            conn->err ? ':' : ' ', conn->err ? strerror(conn->err) : " ");
   rstatus_t status = conn_handle_response(ctx,
@@ -980,7 +982,8 @@ static void dnode_rsp_forward_match(struct context *ctx, struct conn *peer_conn,
   }
 
   log_debug(LOG_DEBUG,
-            "%s DNODE RSP RECEIVED dmsg->id %u req %u:%u rsp %u:%u, ",
+            "%s DNODE RSP RECEIVED dmsg->id %" PRIu64 " req %" PRIu64
+            ":%" PRIu64 " rsp %" PRIu64 ":%" PRIu64 ", ",
             print_obj(peer_conn), rsp->dmsg->id, req->id, req->parent_id,
             rsp->id, rsp->parent_id);
   ASSERT(req != NULL);
@@ -1010,7 +1013,7 @@ static void dnode_rsp_forward_match(struct context *ctx, struct conn *peer_conn,
                                 req->parent_id ? req->parent_id : req->id, rsp);
   IGNORE_RET_VAL(status);
   if (req->swallow) {
-    log_info("swallow request %d:%d", req->id, req->parent_id);
+    log_info("swallow request %" PRIu64 ":%" PRIu64, req->id, req->parent_id);
     req_put(req);
   }
 }
@@ -1052,7 +1055,8 @@ static void dnode_rsp_forward(struct context *ctx, struct conn *peer_conn,
       return;
     }
     // Report a mismatch and try to rectify
-    log_error("%s MISMATCH: rsp_dmsg_id %u req %u:%u dnode rsp %u:%u",
+    log_error("%s MISMATCH: rsp_dmsg_id %" PRIu64 " req %" PRIu64 ":%" PRIu64
+              " dnode rsp %" PRIu64 ":%" PRIu64,
               print_obj(peer_conn), rsp->dmsg->id, req->id, req->parent_id,
               rsp->id, rsp->parent_id);
     if (c_conn && conn_to_ctx(c_conn))
@@ -1089,11 +1093,11 @@ static void dnode_rsp_forward(struct context *ctx, struct conn *peer_conn,
       }
     }
 
-    log_error(
-        "%s MISMATCHED DNODE RSP RECEIVED dmsg->id %u req %u:%u rsp %u:%u, "
-        "skipping....",
-        print_obj(peer_conn), rsp->dmsg->id, req->id, req->parent_id, rsp->id,
-        rsp->parent_id);
+    log_error("%s MISMATCHED DNODE RSP RECEIVED dmsg->id %" PRIu64
+              " req %" PRIu64 ":%" PRIu64 " rsp %" PRIu64 ":%" PRIu64
+              ", skipping....",
+              print_obj(peer_conn), rsp->dmsg->id, req->id, req->parent_id,
+              rsp->id, rsp->parent_id);
     ASSERT(req != NULL);
     ASSERT(req->is_request && !req->done);
 
@@ -1116,15 +1120,16 @@ static void dnode_rsp_forward(struct context *ctx, struct conn *peer_conn,
     /* establish err_rsp <-> req (response <-> request) link */
     err_rsp->peer = req;
 
-    log_error(
-        "Peer connection s %d skipping request %u:%u, dummy err_rsp %u:%u",
-        peer_conn->sd, req->id, req->parent_id, err_rsp->id,
-        err_rsp->parent_id);
+    log_error("Peer connection s %d skipping request %" PRIu64 ":%" PRIu64
+              ", dummy err_rsp %" PRIu64 ":%" PRIu64,
+              peer_conn->sd, req->id, req->parent_id, err_rsp->id,
+              err_rsp->parent_id);
     rstatus_t status = conn_handle_response(ctx,
         c_conn, req->parent_id ? req->parent_id : req->id, err_rsp);
     IGNORE_RET_VAL(status);
     if (req->swallow) {
-      log_debug(LOG_INFO, "swallow request %d:%d", req->id, req->parent_id);
+      log_debug(LOG_INFO, "swallow request %" PRIu64 ":%" PRIu64, req->id,
+                req->parent_id);
       req_put(req);
     }
   }
@@ -1271,7 +1276,7 @@ static void dnode_req_peer_enqueue_imsgq(struct context *ctx, struct conn *conn,
     msg_tmo_insert(req, conn);
   }
   TAILQ_INSERT_TAIL(&conn->imsg_q, req, s_tqe);
-  log_debug(LOG_VERB, "conn %p enqueue inq %d:%d", conn, req->id,
+  log_debug(LOG_VERB, "conn %p enqueue inq %" PRIu64 ":%" PRIu64, conn, req->id,
             req->parent_id);
 
   if (conn->same_dc) {
@@ -1299,7 +1304,7 @@ static void dnode_req_peer_dequeue_imsgq(struct context *ctx, struct conn *conn,
       histo_add(&ctx->stats->cross_region_queue_wait_time_histo, delay_us);
   }
   TAILQ_REMOVE(&conn->imsg_q, req, s_tqe);
-  log_debug(LOG_VERB, "conn %p dequeue inq %d:%d", conn, req->id,
+  log_debug(LOG_VERB, "conn %p dequeue inq %" PRIu64 ":%" PRIu64, conn, req->id,
             req->parent_id);
 
   if (conn->same_dc) {
@@ -1319,8 +1324,8 @@ static void dnode_req_peer_enqueue_omsgq(struct context *ctx, struct conn *conn,
   ASSERT(conn->type == CONN_DNODE_PEER_SERVER);
 
   TAILQ_INSERT_TAIL(&conn->omsg_q, req, s_tqe);
-  log_debug(LOG_VERB, "conn %p enqueue outq %d:%d", conn, req->id,
-            req->parent_id);
+  log_debug(LOG_VERB, "conn %p enqueue outq %" PRIu64 ":%" PRIu64, conn,
+            req->id, req->parent_id);
 
   if (conn->same_dc) {
     histo_add(&ctx->stats->peer_out_queue, TAILQ_COUNT(&conn->omsg_q));

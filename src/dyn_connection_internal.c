@@ -189,7 +189,7 @@ void _conn_put(struct conn *conn) {
  * Initialize connections.
  */
 void _conn_init(void) {
-  log_debug(LOG_DEBUG, "conn size %d", sizeof(struct conn));
+  log_debug(LOG_DEBUG, "conn size %zu", sizeof(struct conn));
   nfree_connq = 0;
   TAILQ_INIT(&free_connq);
 }

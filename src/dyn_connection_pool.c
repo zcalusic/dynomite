@@ -195,7 +195,7 @@ void conn_pool_notify_conn_errored(conn_pool_t *cp) {
 
   cp->scheduled_reconnect_task = schedule_task_1(
       _conn_pool_reconnect_task, cp, cp->current_timeout_sec * 1000);
-  log_notice("%s %s Scheduled reconnect task %p after %u secs",
+  log_notice("%s %s Scheduled reconnect task %p after %" PRIu64 " secs",
              print_obj(cp->owner), print_obj(cp), cp->scheduled_reconnect_task,
              cp->current_timeout_sec);
 

@@ -121,7 +121,7 @@ struct mbuf *mbuf_get(void) {
 static void mbuf_free(struct mbuf *mbuf) {
   uint8_t *buf;
 
-  log_debug(LOG_VVERB, "put mbuf %p len %d", mbuf, mbuf->last - mbuf->pos);
+  log_debug(LOG_VVERB, "put mbuf %p len %td", mbuf, mbuf->last - mbuf->pos);
 
   ASSERT(STAILQ_NEXT(mbuf, next) == NULL);
   ASSERT(mbuf->magic == MBUF_MAGIC);
@@ -144,7 +144,7 @@ void mbuf_dump(struct mbuf *mbuf) {
 }
 
 void mbuf_put(struct mbuf *mbuf) {
-  log_debug(LOG_VVERB, "put mbuf %p len %d", mbuf, mbuf->last - mbuf->pos);
+  log_debug(LOG_VVERB, "put mbuf %p len %td", mbuf, mbuf->last - mbuf->pos);
 
   ASSERT(STAILQ_NEXT(mbuf, next) == NULL);
   ASSERT(mbuf->magic == MBUF_MAGIC);
@@ -193,19 +193,19 @@ size_t mbuf_data_size(void) { return mbuf_offset; }
  */
 void mbuf_insert(struct mhdr *mhdr, struct mbuf *mbuf) {
   STAILQ_INSERT_TAIL(mhdr, mbuf, next);
-  log_debug(LOG_VVERB, "insert mbuf %p len %d", mbuf, mbuf->last - mbuf->pos);
+  log_debug(LOG_VVERB, "insert mbuf %p len %td", mbuf, mbuf->last - mbuf->pos);
 }
 
 void mbuf_insert_head(struct mhdr *mhdr, struct mbuf *mbuf) {
   STAILQ_INSERT_HEAD(mhdr, mbuf, next);
-  log_debug(LOG_VVERB, "insert head mbuf %p len %d", mbuf,
+  log_debug(LOG_VVERB, "insert head mbuf %p len %td", mbuf,
             mbuf->last - mbuf->pos);
 }
 
 void mbuf_insert_after(struct mhdr *mhdr, struct mbuf *mbuf,
                        struct mbuf *nbuf) {
   STAILQ_INSERT_AFTER(mhdr, nbuf, mbuf, next);
-  log_debug(LOG_VVERB, "insert head mbuf %p len %d", mbuf,
+  log_debug(LOG_VVERB, "insert head mbuf %p len %td", mbuf,
             mbuf->last - mbuf->pos);
 }
 
@@ -213,7 +213,7 @@ void mbuf_insert_after(struct mhdr *mhdr, struct mbuf *mbuf,
  * Remove mbuf from the mhdr Q
  */
 void mbuf_remove(struct mhdr *mhdr, struct mbuf *mbuf) {
-  log_debug(LOG_VVERB, "remove mbuf %p len %d", mbuf, mbuf->last - mbuf->pos);
+  log_debug(LOG_VVERB, "remove mbuf %p len %td", mbuf, mbuf->last - mbuf->pos);
 
   STAILQ_REMOVE(mhdr, mbuf, mbuf, next);
   STAILQ_NEXT(mbuf, next) = NULL;
@@ -296,7 +296,7 @@ void mbuf_init(size_t mbuf_size) {
   mbuf_chunk_size = mbuf_size + MBUF_ESIZE;
   mbuf_offset = mbuf_chunk_size - MBUF_HSIZE;
 
-  log_debug(LOG_DEBUG, "mbuf hsize %d chunk size %zu offset %zu length %zu",
+  log_debug(LOG_DEBUG, "mbuf hsize %zu chunk size %zu offset %zu length %zu",
             MBUF_HSIZE, mbuf_chunk_size, mbuf_offset, mbuf_offset);
 }
 
@@ -387,7 +387,7 @@ struct mbuf *mbuf_alloc(const size_t size) {
 void mbuf_dealloc(struct mbuf *mbuf) {
   uint8_t *buf;
 
-  log_debug(LOG_VVERB, "free mbuf %p len %d", mbuf, mbuf->last - mbuf->pos);
+  log_debug(LOG_VVERB, "free mbuf %p len %td", mbuf, mbuf->last - mbuf->pos);
 
   ASSERT(STAILQ_NEXT(mbuf, next) == NULL);
   ASSERT(mbuf->magic == MBUF_MAGIC);
