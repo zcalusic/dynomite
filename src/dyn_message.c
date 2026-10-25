@@ -933,7 +933,7 @@ static rstatus_t msg_parsed(struct context *ctx, struct conn *conn,
 
 static rstatus_t msg_repair(struct context *ctx, struct conn *conn,
                             struct msg *msg) {
-  struct mbuf *nbuf, *mbuf;
+  struct mbuf *nbuf;
 
   nbuf = mbuf_split(&msg->mhdr, msg->pos, NULL, NULL);
   if (nbuf == NULL) {

@@ -133,25 +133,6 @@ static rstatus_t core_event_base_create(struct context *ctx) {
 }
 
 /**
- *
- * NOTE: DEPRECATED and not currently used in the codebase.
- *
- * Initialize anti-entropy.
- * @param[in,out] ctx Context.
- * @return rstatus_t Return status code.
- */
-static rstatus_t core_entropy_init(struct context *ctx) {
-  struct instance *nci = ctx->instance;
-  /* initializing anti-entropy */
-  ctx->entropy = entropy_init(ctx, nci->entropy_port, nci->entropy_addr);
-  if (ctx->entropy == NULL) {
-    log_error("Failed to create entropy!!!");
-  }
-
-  return DN_OK;
-}
-
-/**
  * Create the Dynomite server performance statistics and assign it to the
  * context, plus initialize anti-entropy.
  * @param[in,out] ctx Context.

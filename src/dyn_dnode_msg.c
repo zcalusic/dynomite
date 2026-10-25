@@ -415,7 +415,6 @@ static void data_store_parse_req(struct msg *r, struct context *ctx) {
 void dyn_parse_req(struct msg *r, struct context *ctx) {
   bool done_parsing = false;
   struct mbuf *b = STAILQ_LAST(&r->mhdr, mbuf, next);
-  const struct string* hash_tag = &ctx->pool.hash_tag;
 
   if (dyn_parse_core(r)) {
     struct dmsg *dmsg = r->dmsg;

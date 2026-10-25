@@ -47,7 +47,7 @@ static void print_usage() {
 }
 
 static int dn_get_options(int argc, char **argv) {
-  int c, value;
+  int c;
 
   opterr = 0;
 

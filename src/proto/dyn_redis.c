@@ -3319,9 +3319,7 @@ static void redis_post_coalesce_mget(struct msg *request) {
  * the fragmented request is consider to be done
  */
 void redis_post_coalesce(struct msg *req) {
-  struct msg *rsp = req->selected_rsp; /* peer response */
-
-  ASSERT(!rsp->is_request);
+  ASSERT(!req->selected_rsp->is_request);
   ASSERT(req->is_request && (req->frag_owner == req));
   if (req->is_error || req->is_ferror) {
     /* do nothing, if msg is in error */

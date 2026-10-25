@@ -249,7 +249,6 @@ static rstatus_t get_values_from_source(int num_tokens, int start_pos,
 
 rstatus_t post_parse_optional_args(struct msg *orig_msg) {
   struct write_with_ts *out_struct = &orig_msg->msg_info;
-  struct cmd_info *orig_cmd_info = &proto_cmd_info[orig_msg->type];
 
   switch (orig_msg->type) {
     case MSG_REQ_REDIS_ZADD: ;
@@ -260,8 +259,6 @@ rstatus_t post_parse_optional_args(struct msg *orig_msg) {
       // provided.
       bool nx = false;
       bool xx = false;
-      bool ch = false;
-      bool incr = false;
       while (idx < num_args) {
         struct argpos *opt_arg = (struct argpos*)array_get(orig_msg->args, idx);
         if (opt_arg == NULL) return DN_ERROR;
@@ -271,11 +268,8 @@ rstatus_t post_parse_optional_args(struct msg *orig_msg) {
           nx = true;
         } else if (dn_strcasecmp(opt_arg_start, "XX") == 0) {
           xx = true;
-        } else if (dn_strcasecmp(opt_arg_start, "INCR") == 0) {
-          incr = true;
-        } else if (dn_strcasecmp(opt_arg_start, "CH") == 0) {
-          ch = true;
-        } else {
+        } else if (dn_strcasecmp(opt_arg_start, "INCR") != 0 &&
+                   dn_strcasecmp(opt_arg_start, "CH") != 0) {
           break;
         }
         ++idx;
