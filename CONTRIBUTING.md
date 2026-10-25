@@ -18,8 +18,10 @@ Pull requests go against the `master` branch, the only branch in this fork.
 
 1. Keep each pull request focused on one change, with a commit message that explains why the
    change is needed.
-2. Build Dynomite and run the functional tests, as described in [README.md](README.md#tests):
+2. Build Dynomite and run the unit and functional tests, as described in
+   [README.md](README.md#tests):
 
+       $ make check
        $ test/run_tests.sh
 
 3. [CI](https://github.com/zcalusic/dynomite/actions/workflows/ci.yml) builds Dynomite and runs

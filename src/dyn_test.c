@@ -334,32 +334,6 @@ static rstatus_t test_msg_recv_chain(struct conn *conn, struct msg *msg) {
   return DN_OK;
 }
 
-static rstatus_t rsa_test(void) {
-  static unsigned char encrypted_buf[256];
-  static unsigned char decrypted_buf[AES_KEYLEN + 1];
-  static unsigned char *msg;
-
-  print_banner("RSA");
-  int i = 0;
-  for (; i < 3; i++) {
-    msg = generate_aes_key();
-
-    log_debug(LOG_VERB, "i = %d", i);
-    SCOPED_CHARPTR(encoded_aes_key) = base64_encode(msg, AES_KEYLEN);
-    log_debug(LOG_VERB, "AES key           : %s \n", encoded_aes_key);
-
-    dyn_rsa_encrypt(msg, encrypted_buf);
-
-    dyn_rsa_decrypt(encrypted_buf, decrypted_buf);
-
-    SCOPED_CHARPTR(encoded_decrypted_buf) =
-        base64_encode(decrypted_buf, AES_KEYLEN);
-    log_debug(LOG_VERB, "Decrypted message : %s \n", encoded_decrypted_buf);
-  }
-
-  return DN_OK;
-}
-
 static void gen_random(unsigned char *s, const int len) {
   static const unsigned char possible_data[] =
       "0123456789"
@@ -382,7 +356,7 @@ static rstatus_t aes_test(void) {
   loga("aesKey is '%s'", aes_key_print);
 
   size_t i = 0;
-  size_t count = 10000000;
+  size_t count = 1000000;
   loga("Running %lu encryption/decryption messages", count);
   for (; i < count; i++) {
     gen_random(msg, rand() % MAX_MSG_LEN);
@@ -530,80 +504,11 @@ static void init_peer_conn(struct conn *conn) {
   conn->sd = 0;
   conn->ops = &peer_ops;
 }
-/* Inspection test */
-static rstatus_t aes_msg_test(struct node *server) {
-  print_banner("AES MSG");
-  // unsigned char* aes_key = generate_aes_key();
-  struct conn *conn = conn_get(server, init_peer_conn);
-  struct msg *msg = msg_get(conn, true, __FUNCTION__);
-
-  struct mbuf *mbuf1 = mbuf_get();
-  struct string s1 = string("abc");
-  mbuf_write_string(mbuf1, &s1);
-  STAILQ_INSERT_HEAD(&msg->mhdr, mbuf1, next);
-
-  struct mbuf *mbuf2 = mbuf_get();
-  struct string s2 = string("abcabc");
-  mbuf_write_string(mbuf2, &s2);
-  STAILQ_INSERT_TAIL(&msg->mhdr, mbuf2, next);
-
-  /*
-  loga("dumping the content of the original msg: ");
-  msg_dump(msg);
-
-  dyn_aes_encrypt_msg(msg, aes_key);
-
-  loga("dumping the content of encrypted msg");
-  msg_dump(msg);
-
-  dyn_aes_decrypt_msg(msg, aes_key);
-
-  loga("dumping the content of decrytped msg");
-  msg_dump(msg);
-  */
-
-  return DN_OK;
-}
-
-/*
-
-static rstatus_t
-aes_msg_test2(struct node *server)
-{
-    unsigned char* aes_key = generate_aes_key();
-    struct conn *conn = conn_get_peer(server, false, true);
-    struct msg *msg = msg_get(conn, true, __FUNCTION__);
-
-    struct mbuf *mbuf1 = mbuf_get();
-    mbuf_write_bytes(mbuf1, data, mbuf_remaining_space(mbuf1));
-    STAILQ_INSERT_HEAD(&msg->mhdr, mbuf1, next);
-
-    struct mbuf *mbuf2 = mbuf_get();
-    mbuf_write_bytes(mbuf2, data + mbuf_remaining_space(mbuf2), strlen(data) -
-mbuf_remaining_space(mbuf2)); STAILQ_INSERT_TAIL(&msg->mhdr, mbuf2, next);
-
-    loga("dumping the content of the original msg: ");
-    msg_dump(msg);
-
-    dyn_aes_encrypt_msg(msg, aes_key);
-
-    loga("dumping the content of msg after encrypting it: ");
-    msg_dump(msg);
-
-    dyn_aes_decrypt_msg(msg, aes_key);
-
-    loga("dumping the content after decrypting it: ");
-    msg_dump(msg);
-
-    return DN_OK;
-}
-*/
-
 static void test_core_ctx_create(struct instance *nci) {
 
   srand((unsigned)time(NULL));
 
-  ctx = dn_alloc(sizeof(*ctx));
+  ctx = dn_zalloc(sizeof(*ctx));
   if (ctx == NULL) {
     loga("Failed to create context!!!");
   }
@@ -623,7 +528,10 @@ static void test_server_pool(struct instance *nci) {
   struct server_pool *sp = &ctx->pool;
   sp->mbuf_size = TEST_MBUF_SIZE;
   sp->alloc_msgs_max = TEST_ALLOC_MSGS_MAX;
-  char *filename = "conf/dynomite.pem";
+  char *filename = getenv("DYNOMITE_TEST_PEM");
+  if (filename == NULL) {
+    filename = "conf/dynomite.pem";
+  }
   string_copy(&sp->pem_key_file, filename, strlen(filename));
   sp->secure_server_option = SECURE_OPTION_DC;
 
@@ -651,7 +559,11 @@ static void init_test(int argc, char **argv) {
 
   test_server_pool(&nci);
 
-  crypto_init(&(nci.ctx->pool));
+  status = crypto_init(&(nci.ctx->pool));
+  if (status != DN_OK) {
+    loga("Failed to initialize crypto!!!");
+    exit(1);
+  }
 }
 
 int main(int argc, char **argv) {
@@ -675,25 +587,13 @@ int main(int argc, char **argv) {
 
   ret = test_tailq();
   if (ret != DN_OK) {
-    loga("Error in testing msg_recv_chain!!!");
-    goto err_out;
-  }
-
-  // ret = rsa_test();
-  if (ret != DN_OK) {
-    loga("Error in testing RSA !!!");
+    loga("Error in testing TAILQ counter!!!");
     goto err_out;
   }
 
   ret = aes_test();
   if (ret != DN_OK) {
     loga("Error in testing AES !!!");
-    goto err_out;
-  }
-
-  ret = aes_msg_test(peer);
-  if (ret != DN_OK) {
-    loga("Error in testing aes_msg_test !!!");
     goto err_out;
   }
 

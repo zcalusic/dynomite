@@ -38,6 +38,9 @@ jobs:
           dynomite -V
           dynomite -t -c conf/redis_single.yml
 
+      - name: Unit tests
+        run: make -j "$(nproc)" check VERBOSE=1
+
   test:
     name: Functional tests
     runs-on: ubuntu-latest

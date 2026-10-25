@@ -30,7 +30,12 @@ endif
 
 SUBDIRS = hashkit proto event seedsprovider tools entropy
 
-sbin_PROGRAMS = dynomite dynomite-test
+sbin_PROGRAMS = dynomite
+
+check_PROGRAMS = dynomite-test
+TESTS = dynomite-test
+AM_TESTS_ENVIRONMENT = DYNOMITE_TEST_PEM='$(abs_top_srcdir)/conf/dynomite.pem'; \
+	export DYNOMITE_TEST_PEM;
 
 dynomite_SOURCES =			                          \
         dyn_array.c dyn_array.h		                          \

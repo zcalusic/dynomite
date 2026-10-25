@@ -55,6 +55,10 @@ For example, to build in _debug mode_ for use with a debugger:
 
 ## Tests
 
+The unit tests (`src/dyn_test.c`) need no extra dependencies; run them after building:
+
+    $ make check
+
 The functional tests start a local cluster of Dynomite and Redis nodes and compare the results of the same commands against Dynomite and a standalone Redis. Install their dependencies (Debian package names):
 
     $ sudo apt-get install redis-server python3 python3-plumbum python3-redis python3-requests python3-yaml
