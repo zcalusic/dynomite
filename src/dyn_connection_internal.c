@@ -182,6 +182,7 @@ void _conn_put(struct conn *conn) {
   nfree_connq++;
   TAILQ_INSERT_HEAD(&free_connq, conn, conn_tqe);
   if (conn->conn_pool) conn_pool_notify_conn_close(conn->conn_pool, conn);
+  string_deinit(&conn->pname);
 }
 
 /**

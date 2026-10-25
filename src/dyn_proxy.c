@@ -172,7 +172,7 @@ static rstatus_t proxy_accept(struct context *ctx, struct conn *p) {
     return DN_ENOMEM;
   }
   c->sd = sd;
-  /* string_copy_c(&c->pname, (unsigned char *)dn_unresolve_peer_desc(c->sd)); */
+  string_copy_c(&c->pname, (unsigned char *)dn_unresolve_peer_desc(c->sd));
 
   stats_pool_incr(ctx, client_connections);
 
