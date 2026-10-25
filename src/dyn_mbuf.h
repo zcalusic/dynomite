@@ -65,7 +65,7 @@ static inline bool mbuf_full(struct mbuf *mbuf) {
   return mbuf->last == mbuf->end ? true : false;
 }
 
-size_t mbuf_chunk_sz();
+size_t mbuf_chunk_sz(void);
 
 void mbuf_init(size_t mbuf_chunk_size);
 void mbuf_deinit(void);

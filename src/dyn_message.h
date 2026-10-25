@@ -249,7 +249,6 @@ typedef rstatus_t (*func_msg_repair_t)(struct context *ctx, struct response_mgr 
     struct msg **new_msg_ptr);
 typedef rstatus_t (*func_clear_repair_md_t)(struct context *ctx, struct msg *req,
     struct msg **new_msg_ptr);
-typedef void (*func_init_datastore_t)();
 
 extern func_msg_coalesce_t g_pre_coalesce;  /* message pre-coalesce */
 extern func_msg_coalesce_t g_post_coalesce; /* message post-coalesce */

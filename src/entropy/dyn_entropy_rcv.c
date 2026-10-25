@@ -39,7 +39,7 @@
  *  returns: rstatus_t for the status of opening of the redis connection.
  */
 
-static int entropy_redis_connector() {
+static int entropy_redis_connector(void) {
   loga("trying to connect to Redis...");
 
   struct sockaddr_in serv_addr;

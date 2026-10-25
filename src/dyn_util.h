@@ -37,8 +37,13 @@
 
 #define NELEMS(a) ((sizeof(a)) / sizeof((a)[0]))
 
+/* <sys/param.h> defines the same macros */
+#ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+#ifndef MAX
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+#endif
 
 #define SQUARE(d) ((d) * (d))
 #define VAR(s, s2, n) (((n) < 2) ? 0.0 : ((s2)-SQUARE(s) / (n)) / ((n)-1))

@@ -109,7 +109,7 @@ static unsigned char *theIv = (unsigned char *)"0123456789012345";
  *
  * Initialize crypto libraries per connection
  */
-void entropy_crypto_init() {
+void entropy_crypto_init(void) {
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
   ERR_load_crypto_strings();
   OpenSSL_add_all_algorithms();
@@ -123,7 +123,7 @@ void entropy_crypto_init() {
  *
  * Clean crypto libraries per connection
  */
-void entropy_crypto_deinit() {
+void entropy_crypto_deinit(void) {
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
   EVP_cleanup();
   ERR_free_strings();

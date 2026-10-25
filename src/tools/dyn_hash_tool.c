@@ -19,7 +19,7 @@ static char short_options[] = "hki:o:";
 bool outputkey = false;
 char *key_filename = NULL;
 char *token_filename = NULL;
-static void print_usage() {
+static void print_usage(void) {
   printf("Usage: dyno-hash-tool [-hk] -i <filename> -o <output filename>\n");
   printf(
       "Read a key from input, hash key to create token, then output token to "

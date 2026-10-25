@@ -7,7 +7,7 @@
 
 char *ascii_logo =
     "                                                                      \n"
-    "     #                                \      m                        \n"
+    "     #                                \\      m                        \n"
     "  mmm#  m   m  mmmm    mmm   mmmmm  mmm    mm#mm   mmm                \n"
     " #   #  \\m m/  #   #  #   #  # # #    #      #    #   #               \n"
     " #   #   #m#   #   #  #   #  # # #    #      #    #''''               \n"

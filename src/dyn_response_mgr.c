@@ -180,7 +180,7 @@ static void rspmgr_incr_non_quorum_responses_stats(
  *
  * Returns 'true' if repairs were performed, 'false' otherwise.
  */
-bool perform_repairs_if_necessary(struct context *ctx, struct response_mgr *rspmgr) {
+static bool perform_repairs_if_necessary(struct context *ctx, struct response_mgr *rspmgr) {
 
   struct msg* repair_msg = NULL;
   rstatus_t repair_create_status = g_make_repair_query(ctx, rspmgr, &repair_msg);
