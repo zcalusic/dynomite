@@ -29,7 +29,6 @@ AC_PROG_INSTALL
 AC_PROG_LN_S
 AC_PROG_MAKE_SET
 LT_INIT
-AC_PROG_LIBTOOL
 
 # Checks for typedefs, structures, and compiler characteristics
 AC_C_INLINE
@@ -85,7 +84,7 @@ AC_CHECK_FUNCS([memchr memmove memset])
 AC_CHECK_FUNCS([strchr strndup strtoul])
 
 AC_CACHE_CHECK([if epoll works], [ac_cv_epoll_works],
-  AC_TRY_RUN([
+  AC_RUN_IFELSE([AC_LANG_SOURCE([[
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
@@ -101,12 +100,12 @@ main(int argc, char **argv)
     }
     exit(0);
 }
-  ], [ac_cv_epoll_works=yes], [ac_cv_epoll_works=no]))
+  ]])], [ac_cv_epoll_works=yes], [ac_cv_epoll_works=no]))
 AS_IF([test "x$ac_cv_epoll_works" = "xyes"],
   [AC_DEFINE([HAVE_EPOLL], [1], [Define to 1 if epoll is supported])], [])
 
 AC_CACHE_CHECK([if kqueue works], [ac_cv_kqueue_works],
-  AC_TRY_RUN([
+  AC_RUN_IFELSE([AC_LANG_SOURCE([[
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -124,12 +123,12 @@ main(int argc, char **argv)
     }
     exit(0);
 }
-  ], [ac_cv_kqueue_works=yes], [ac_cv_kqueue_works=no]))
+  ]])], [ac_cv_kqueue_works=yes], [ac_cv_kqueue_works=no]))
 AS_IF([test "x$ac_cv_kqueue_works" = "xyes"],
   [AC_DEFINE([HAVE_KQUEUE], [1], [Define to 1 if kqueue is supported])], [])
 
 AC_CACHE_CHECK([if event ports works], [ac_cv_evports_works],
-  AC_TRY_RUN([
+  AC_RUN_IFELSE([AC_LANG_SOURCE([[
 #include <stdio.h>
 #include <stdlib.h>
 #include <port.h>
@@ -145,7 +144,7 @@ main(int argc, char **argv)
     }
     exit(0);
 }
-  ], [ac_cv_evports_works=yes], [ac_cv_evports_works=no]))
+  ]])], [ac_cv_evports_works=yes], [ac_cv_evports_works=no]))
 AS_IF([test "x$ac_cv_evports_works" = "xyes"],
   [AC_DEFINE([HAVE_EVENT_PORTS], [1], [Define to 1 if event ports is supported])], [])
 

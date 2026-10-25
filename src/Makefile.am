@@ -132,11 +132,7 @@ dynomite_test_LDADD +=  $(top_builddir)/src/seedsprovider/libseedsprovider.a -lr
 dynomite_test_LDADD += $(top_builddir)/contrib/yaml-0.1.4/src/.libs/libyaml.a
 
 if OS_BSD
-dynomite_SOURCES +=                                               \
-	$(top_builddir)/contrib/fmemopen.c                        \
-	$(top_builddir)/contrib/fmemopen.h
-dynomite_test_SOURCES +=                                          \
-	$(top_builddir)/contrib/fmemopen.c                        \
-	$(top_builddir)/contrib/fmemopen.h
+dynomite_LDADD += $(top_builddir)/contrib/libfmemopen.a
+dynomite_test_LDADD += $(top_builddir)/contrib/libfmemopen.a
 endif
 
