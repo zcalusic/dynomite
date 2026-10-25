@@ -1,6 +1,6 @@
 MAINTAINERCLEANFILES = Makefile.in
 
-AM_CPPFLAGS = -I $(top_srcdir)/src -I $(top_srcdir)/contrib/murmur3
+AM_CPPFLAGS = -I $(top_srcdir)/src
 
 AM_CFLAGS = -Wall -Wshadow
 AM_CFLAGS += -Wpointer-arith
@@ -24,5 +24,4 @@ libhashkit_a_SOURCES =		\
 	dyn_md5.c		\
 	dyn_murmur.c		\
 	dyn_one_at_a_time.c	\
-	dyn_token.c			\
-	dyn_murmur3.c
+	dyn_token.c

@@ -49,8 +49,7 @@ uint32_t crc32_sz(const char *buf, size_t length, uint32_t in_crc32);
   ACTION(HASH_FNV1A_32, fnv1a_32)           \
   ACTION(HASH_HSIEH, hsieh)                 \
   ACTION(HASH_MURMUR, murmur)               \
-  ACTION(HASH_JENKINS, jenkins)             \
-  ACTION(HASH_MURMUR3, murmur3)
+  ACTION(HASH_JENKINS, jenkins)
 
 #define DEFINE_ACTION(_hash, _name) _hash,
 typedef enum hash_type { HASH_CODEC(DEFINE_ACTION) HASH_INVALID } hash_type_t;
