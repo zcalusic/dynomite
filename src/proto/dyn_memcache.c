@@ -1242,10 +1242,11 @@ error:
 
 bool memcache_failure(struct msg *r) { return false; }
 
-static rstatus_t memcache_append_key(struct msg *r, uint8_t *key,
-                                     uint32_t keylen) {
+static rstatus_t memcache_append_key(struct msg *r,
+                                     struct keypos *kpos_src) {
   struct mbuf *mbuf;
   struct keypos *kpos;
+  uint32_t keylen = kpos_src->end - kpos_src->start;
 
   mbuf = msg_ensure_mbuf(r, keylen + 2);
   if (mbuf == NULL) {
@@ -1259,7 +1260,9 @@ static rstatus_t memcache_append_key(struct msg *r, uint8_t *key,
 
   kpos->start = mbuf->last;
   kpos->end = mbuf->last + keylen;
-  mbuf_copy(mbuf, key, keylen);
+  kpos->tag_start = kpos->start + (kpos_src->tag_start - kpos_src->start);
+  kpos->tag_end = kpos->start + (kpos_src->tag_end - kpos_src->start);
+  mbuf_copy(mbuf, kpos_src->start, keylen);
   r->mlen += keylen;
 
   mbuf_copy(mbuf, (uint8_t *)" ", 1);
@@ -1314,8 +1317,9 @@ static rstatus_t memcache_fragment_retrieval(struct msg *r,
   for (i = 0; i < array_n(r->keys); i++) { /* for each  key */
     struct msg *sub_msg;
     struct keypos *kpos = array_get(r->keys, i);
-    uint32_t idx = dnode_peer_idx_for_key_on_rack(pool, rack, kpos->start,
-                                                  kpos->end - kpos->start);
+    // use hash-tagged start and end for forwarding.
+    uint32_t idx = dnode_peer_idx_for_key_on_rack(
+        pool, rack, kpos->tag_start, kpos->tag_end - kpos->tag_start);
 
     if (sub_msgs[idx] == NULL) {
       sub_msgs[idx] = msg_get(r->owner, r->is_request, __FUNCTION__);
@@ -1327,7 +1331,7 @@ static rstatus_t memcache_fragment_retrieval(struct msg *r,
     r->frag_seq[i] = sub_msg = sub_msgs[idx];
 
     sub_msg->ntokens++;
-    status = memcache_append_key(sub_msg, kpos->start, kpos->end - kpos->start);
+    status = memcache_append_key(sub_msg, kpos);
     if (status != DN_OK) {
       dn_free(sub_msgs);
       return status;
@@ -1536,7 +1540,7 @@ static rstatus_t memcache_copy_bulk(struct msg *dst, struct msg *src) {
  * the fragmented request is consider to be done
  */
 void memcache_post_coalesce(struct msg *request) {
-  struct msg *response = request->peer;
+  struct msg *response = request->selected_rsp;
   struct msg *sub_msg;
   uint32_t i;
   rstatus_t status;
@@ -1549,7 +1553,7 @@ void memcache_post_coalesce(struct msg *request) {
   }
 
   for (i = 0; i < array_n(request->keys); i++) { /* for each  key */
-    sub_msg = request->frag_seq[i]->peer;        /* get it's peer response */
+    sub_msg = request->frag_seq[i]->selected_rsp; /* get it's peer response */
     if (sub_msg == NULL) {
       response->owner->err = 1;
       return;
