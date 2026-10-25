@@ -1186,9 +1186,10 @@ static rstatus_t stats_send_rsp(struct stats *st) {
     dn_sprintf(rsp, "State: %s\n", get_state(st->ctx->dyn_state));
     return stats_http_rsp(sd, rsp, dn_strlen(rsp));
   } else if (cmd == CMD_SET_LOG_LEVEL) {
-    int8_t loglevel = 0;
-    log_warn("st_cmd.req_data '%.*s' ", st_cmd.req_data);
-    sscanf(st_cmd.req_data.data, "%d", &loglevel);
+    int loglevel = 0;
+    log_warn("st_cmd.req_data '%.*s' ", st_cmd.req_data.len,
+             st_cmd.req_data.data);
+    sscanf((char *)st_cmd.req_data.data, "%d", &loglevel);
     log_warn("setting log level = %d", loglevel);
     log_level_set(loglevel);
     return stats_http_rsp(sd, ok.data, ok.len);
@@ -1213,9 +1214,10 @@ static rstatus_t stats_send_rsp(struct stats *st) {
     dn_sprintf(rsp, "Timeout factor: %d\n", g_timeout_factor);
     return stats_http_rsp(sd, rsp, dn_strlen(rsp));
   } else if (cmd == CMD_SET_TIMEOUT_FACTOR) {
-    int8_t timeout_factor = 0;
-    log_warn("st_cmd.req_data '%.*s' ", st_cmd.req_data);
-    sscanf(st_cmd.req_data.data, "%d", &timeout_factor);
+    int timeout_factor = 0;
+    log_warn("st_cmd.req_data '%.*s' ", st_cmd.req_data.len,
+             st_cmd.req_data.data);
+    sscanf((char *)st_cmd.req_data.data, "%d", &timeout_factor);
     log_warn("timeout factor = %d", timeout_factor);
     // make sure timeout factor is within a range
     if (timeout_factor < 1) timeout_factor = 1;
