@@ -236,7 +236,7 @@ static size_t fill_buffer(struct mbuf *mbuf) {
   loga("mbuf size: %d", mbuf_remaining_space(mbuf));
   size_t data_size = dn_strlen(data) - position;
 
-  loga("data left-over size: %d", data_size);
+  loga("data left-over size: %zu", data_size);
   if (data_size <= 0) {
     return 0;
   }
@@ -433,7 +433,7 @@ static rstatus_t test_tailq(void) {
     struct test *test = dn_zalloc(sizeof(struct test));
     TAILQ_INSERT_TAIL(&test_q2, test, test_tqe);
     if ((i + 1) != TAILQ_COUNT(&test_q2)) {
-      log_error("Count mismatch expected %lu, got %lu", i + 1,
+      log_error("Count mismatch expected %u, got %" PRIu64, i + 1,
                 TAILQ_COUNT(&test_q2));
       return DN_ERROR;
     }
@@ -481,7 +481,7 @@ static rstatus_t test_tailq(void) {
   i = 8;
   TAILQ_FOREACH_SAFE(test, &test_q1, test_tqe, temp_test) {
     if (i != TAILQ_COUNT(&test_q1)) {
-      log_error("Count mismatch expected %lu, got %lu", i,
+      log_error("Count mismatch expected %u, got %" PRIu64, i,
                 TAILQ_COUNT(&test_q1));
       return DN_ERROR;
     }

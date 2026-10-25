@@ -361,8 +361,10 @@ ssize_t _dn_recvn(int sd, void *vptr, size_t n);
 void dn_assert(const char *cond, const char *file, int line, int panic);
 void dn_stacktrace(int skip_count);
 
-int _scnprintf(char *buf, size_t size, const char *fmt, ...);
-int _vscnprintf(char *buf, size_t size, const char *fmt, va_list args);
+int _scnprintf(char *buf, size_t size, const char *fmt, ...)
+    __attribute__((format(printf, 3, 4)));
+int _vscnprintf(char *buf, size_t size, const char *fmt, va_list args)
+    __attribute__((format(printf, 3, 0)));
 usec_t dn_usec_now(void);
 msec_t dn_msec_now(void);
 
