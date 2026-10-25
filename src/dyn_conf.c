@@ -53,7 +53,6 @@
 #define CONF_DEFAULT_DIST DIST_VNODE
 #define CONF_DEFAULT_TIMEOUT 5000
 #define CONF_DEFAULT_LISTEN_BACKLOG 512
-#define CONF_DEFAULT_CLIENT_CONNECTIONS 0
 #define CONF_DEFAULT_DATASTORE DATA_REDIS
 #define CONF_DEFAULT_PRECONNECT true
 #define CONF_DEFAULT_AUTO_EJECT_HOSTS true
@@ -195,7 +194,6 @@ static rstatus_t conf_pool_init(struct conf_pool *cp, struct string *name) {
   cp->timeout = CONF_UNSET_NUM;
   cp->backlog = CONF_UNSET_NUM;
 
-  cp->client_connections = CONF_UNSET_NUM;
 
   cp->data_store = CONF_UNSET_NUM;
   cp->preconnect = CONF_UNSET_NUM;
@@ -342,7 +340,6 @@ static void conf_dump(struct conf *cf) {
   log_debug(LOG_VVERB, "  hash: %d", cp->hash);
   log_debug(LOG_VVERB, "  hash_tag: \"%.*s\"", cp->hash_tag.len,
             cp->hash_tag.data);
-  log_debug(LOG_VVERB, "  client_connections: %d", cp->client_connections);
   const char *temp_log = "unknown";
   if (g_data_store == DATA_REDIS) {
     temp_log = "redis";
@@ -1085,8 +1082,8 @@ static struct command conf_commands[] = {
 
     {string("backlog"), conf_set_num, offsetof(struct conf_pool, backlog)},
 
-    {string("client_connections"), conf_set_num,
-     offsetof(struct conf_pool, client_connections)},
+    {string("client_connections"), conf_set_deprecated,
+     offsetof(struct conf_pool, deprecated)},
 
     {string("data_store"), conf_set_num,
      offsetof(struct conf_pool, data_store)},
@@ -1843,8 +1840,6 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
   if (cp->backlog == CONF_UNSET_NUM) {
     cp->backlog = CONF_DEFAULT_LISTEN_BACKLOG;
   }
-
-  cp->client_connections = CONF_DEFAULT_CLIENT_CONNECTIONS;
 
   if (cp->data_store == CONF_UNSET_NUM) {
     cp->data_store = CONF_DEFAULT_DATASTORE;

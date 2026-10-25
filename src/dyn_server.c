@@ -419,8 +419,6 @@ rstatus_t server_pool_init(struct server_pool *sp, struct conf_pool *cp,
   sp->timeout = cp->timeout;
   sp->backlog = cp->backlog;
 
-  sp->client_connections = (uint32_t)cp->client_connections;
-
   sp->server_retry_timeout_ms = cp->server_retry_timeout_ms;
   sp->server_failure_limit = (uint8_t)cp->server_failure_limit;
   sp->auto_eject_hosts = cp->auto_eject_hosts ? 1 : 0;

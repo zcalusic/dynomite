@@ -88,7 +88,6 @@ struct conf_pool {
   void *deprecated;          /* Deprecated, see conf_commands */
   msec_t timeout;            /* timeout: */
   int backlog;               /* backlog: */
-  int client_connections;    /* client_connections: */
   int data_store;            /* data_store: */
   int preconnect;            /* preconnect: */
   int auto_eject_hosts;      /* auto_eject_hosts: */

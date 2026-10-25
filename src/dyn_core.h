@@ -222,7 +222,6 @@ struct server_pool {
   struct string hash_tag;         /* key hash tag (ref in conf_pool) */
   msec_t timeout;                 /* timeout in msec */
   int backlog;                    /* listen backlog */
-  uint32_t client_connections;    /* maximum # client connection */
   msec_t server_retry_timeout_ms; /* server retry timeout in msec */
   uint8_t server_failure_limit;   /* server failure limit */
   unsigned auto_eject_hosts : 1;  /* auto_eject_hosts? */
