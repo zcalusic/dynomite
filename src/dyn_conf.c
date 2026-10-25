@@ -278,9 +278,12 @@ static void conf_pool_deinit(struct conf_pool *cp) {
   string_deinit(&cp->listen.pname);
   string_deinit(&cp->listen.name);
 
-  conf_server_deinit(cp->conf_datastore);
-  dn_free(cp->conf_datastore);
-  cp->conf_datastore = NULL;
+  // NULL if the configuration failed before 'servers:' was parsed.
+  if (cp->conf_datastore != NULL) {
+    conf_server_deinit(cp->conf_datastore);
+    dn_free(cp->conf_datastore);
+    cp->conf_datastore = NULL;
+  }
 
   // deinit dynomite
   string_deinit(&cp->dyn_seed_provider);
