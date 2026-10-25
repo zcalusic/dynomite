@@ -1,3 +1,11 @@
+> **Note:** This is an unofficial fork of [Netflix/dynomite](https://github.com/Netflix/dynomite),
+> maintained by [@zcalusic](https://github.com/zcalusic). It is not affiliated with or endorsed by
+> Netflix. Upstream is no longer actively maintained, so this fork collects fixes needed to keep
+> Dynomite building and running on current systems (newer GCC and Debian releases, memory leak and
+> crash fixes). Releases are tagged as `v0.6.22-N`. A Docker image,
+> [zcalusic/dynomite](https://hub.docker.com/r/zcalusic/dynomite/), is built from
+> [zcalusic/dockerfiles](https://github.com/zcalusic/dockerfiles/tree/master/dynomite). Please
+> report issues for this fork here, not upstream.
 
 ![dynomite logo](images/dynomite-logo.png)
 
@@ -5,7 +13,6 @@
 # Dynomite 
 
 [![Build Status](https://travis-ci.com/Netflix/dynomite.svg)](http://travis-ci.com/Netflix/dynomite)
-[![Dev chat at https://gitter.im/Netflix/dynomite](https://badges.gitter.im/Netflix/dynomite.svg)](https://gitter.im/Netflix/dynomite?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 [![Apache V2 License](http://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/Netflix/dynomite/blob/dev/LICENSE)
 
 **Dynomite**, inspired by [Dynamo whitepaper](http://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf), is a thin, distributed dynamo layer for different storage engines and protocols. Currently these include [Redis](http://redis.io) and [Memcached](http://www.memcached.org/).  Dynomite supports multi-datacenter replication and is designed for high availability.
