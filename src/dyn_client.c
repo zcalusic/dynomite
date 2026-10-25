@@ -1125,8 +1125,22 @@ void req_recv_done(struct context *ctx, struct conn *conn, struct msg *req,
   return;
 
 error:
+  // None of the fragments was forwarded: free them and reply to the request
+  // as an unfragmented one.
+  while (!TAILQ_EMPTY(&frag_msgq)) {
+    struct msg *frag = TAILQ_FIRST(&frag_msgq);
+    TAILQ_REMOVE(&frag_msgq, frag, m_tqe);
+    req_put(frag);
+  }
+  req->frag_id = 0;
+  req->nfrag = 0;
+  req->frag_owner = NULL;
+
   if (req->expect_datastore_reply) {
     conn_enqueue_outq(ctx, conn, req);
+    // req_forward() didn't register the request, so the error response
+    // wouldn't find it.
+    dictAdd(conn->outstanding_msgs_dict, &req->id, req);
   }
   req_forward_error(ctx, conn, req, DN_OK, status);  // TODO: CHeck error code
   return;

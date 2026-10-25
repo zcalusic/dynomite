@@ -3460,6 +3460,8 @@ static rstatus_t redis_fragment_argx(struct msg *r, struct server_pool *pool,
         dn_free(sub_msgs);
         return DN_ENOMEM;
       }
+      // Queue it right away, so the caller frees it if we fail later on.
+      TAILQ_INSERT_TAIL(frag_msgq, sub_msgs[idx], m_tqe);
 
       // Every 'sub_msg' is counted as one fragment.
       r->nfrag++;
@@ -3515,7 +3517,6 @@ static rstatus_t redis_fragment_argx(struct msg *r, struct server_pool *pool,
       sub_msg->is_read = r->is_read;
 
       log_info("Fragment %d) %s", i, print_obj(sub_msg));
-      TAILQ_INSERT_TAIL(frag_msgq, sub_msg, m_tqe);
     }
 
     status = redis_append_key(sub_msg, kpos);
