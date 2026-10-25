@@ -54,6 +54,7 @@ rstatus_t entropy_conn_start(struct entropy *cn);
 void entropy_conn_destroy(struct entropy *cn);
 rstatus_t entropy_listen(struct entropy *cn);
 
+void entropy_crypto_init();
 int entropy_encrypt(unsigned char *plaintext, int plaintext_len,
                     unsigned char *ciphertext);
 int entropy_decrypt(unsigned char *plaintext, int plaintext_len,

@@ -31,6 +31,7 @@
 #include <sys/types.h>
 
 #include "dyn_core.h"
+#include "event/dyn_event.h"
 
 /**
  * Anti - Entropy

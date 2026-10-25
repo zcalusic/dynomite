@@ -26,6 +26,7 @@
 #include <netinet/in.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <sys/uio.h>
 #include <sys/un.h>
 #include <unistd.h>
 

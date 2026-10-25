@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "../dyn_log.h"
+#include "../hashkit/dyn_hashkit.h"
 #include "../hashkit/dyn_token.h"
 
 static struct option long_options[] = {

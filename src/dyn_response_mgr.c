@@ -26,7 +26,7 @@ rstatus_t init_response_mgr_all_dcs(struct context *ctx, struct msg *req,
   int i;
   uint32_t dc_idx = 0;
   for (i = 1; i < num_dcs_in_quorum; ++i) {
-    req->additional_each_rspmgrs[i] = (struct rspmgr*) dn_alloc(sizeof(struct response_mgr));
+    req->additional_each_rspmgrs[i] = (struct response_mgr*) dn_alloc(sizeof(struct response_mgr));
     if (req->additional_each_rspmgrs[i] == NULL) {
       goto enomem;
     }

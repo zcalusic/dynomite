@@ -6,14 +6,6 @@
 struct string hash_strings[] = {HASH_CODEC(DEFINE_ACTION) null_string};
 #undef DEFINE_ACTION
 
-// Defines all the hashing functions
-#define DEFINE_ACTION(_hash, _name)                               \
-  rstatus_t hash_##_name(const unsigned char *key, size_t length, \
-                         struct dyn_token *token);
-HASH_CODEC(DEFINE_ACTION)
-
-#undef DEFINE_ACTION
-
 // Creates an array of hash functions
 #define DEFINE_ACTION(_hash, _name) hash_##_name,
 static hash_func_t hash_algos[] = {HASH_CODEC(DEFINE_ACTION) NULL};

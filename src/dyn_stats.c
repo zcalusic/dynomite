@@ -38,6 +38,7 @@
 #include "dyn_node_snitch.h"
 #include "dyn_ring_queue.h"
 #include "dyn_server.h"
+#include "event/dyn_event.h"
 
 struct stats_desc {
   char *name; /* stats name */

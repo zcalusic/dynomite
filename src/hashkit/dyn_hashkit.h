@@ -56,6 +56,14 @@ uint32_t crc32_sz(const char *buf, size_t length, uint32_t in_crc32);
 typedef enum hash_type { HASH_CODEC(DEFINE_ACTION) HASH_INVALID } hash_type_t;
 #undef DEFINE_ACTION
 
+// Defines all the hashing functions
+#define DEFINE_ACTION(_hash, _name)                               \
+  rstatus_t hash_##_name(const unsigned char *key, size_t length, \
+                         struct dyn_token *token);
+HASH_CODEC(DEFINE_ACTION)
+
+#undef DEFINE_ACTION
+
 hash_func_t get_hash_func(hash_type_t hash_type);
 hash_type_t get_hash_type(struct string *hash_name);
 

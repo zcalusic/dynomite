@@ -32,7 +32,7 @@
 #endif
 
 static char *floridaIp = NULL;
-static int floridaPort = NULL;
+static int floridaPort = 0;
 static char *request = NULL;
 static int isOsVarEval = 0;
 
