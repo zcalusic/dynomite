@@ -1461,13 +1461,23 @@ void memcache_pre_coalesce(struct msg *r) {
 }
 
 /*
- * Copy one response from src to dst and return bytes copied
+ * Copy the next value in src to dst, if it is the value of the key at kpos.
+ *
+ * get : VALUE key flags len\r\nval\r\n
+ * gets: VALUE key flags len cas\r\nval\r\n
+ *
+ * A response only has the values of the keys that exist, in the order of the
+ * request. If the next value belongs to another key, or there is none, the key
+ * is a miss and nothing is copied. The response parser keeps each header in
+ * one mbuf (see memcache_parse_rsp()), but the value can span mbufs.
  */
-static rstatus_t memcache_copy_bulk(struct msg *dst, struct msg *src) {
+static rstatus_t memcache_copy_bulk(struct msg *dst, struct msg *src,
+                                    struct keypos *kpos) {
   struct mbuf *mbuf, *nbuf;
-  uint8_t *p;
+  uint8_t *p, *k;
   uint32_t len = 0;
   uint32_t bytes = 0;
+  uint32_t keylen = (uint32_t)(kpos->end - kpos->start);
   uint32_t i = 0;
 
   for (mbuf = STAILQ_FIRST(&src->mhdr); mbuf && mbuf_empty(mbuf);
@@ -1478,38 +1488,43 @@ static rstatus_t memcache_copy_bulk(struct msg *dst, struct msg *src) {
 
   mbuf = STAILQ_FIRST(&src->mhdr);
   if (mbuf == NULL) {
-    return DN_OK; /* key not exists */
+    return DN_OK; /* no more values, key not exists */
   }
   p = mbuf->pos;
 
-  /*
-   * get : VALUE key 0 len\r\nval\r\n
-   * gets: VALUE key 0 len cas\r\nval\r\n
-   */
-  ASSERT(*p == 'V');
-  for (i = 0; i < 3; i++) { /*  eat 'VALUE key 0 '  */
-    for (; *p != ' ';) {
-      p++;
-    }
-    p++;
+  if (mbuf_length(mbuf) < 6 || memcmp(p, "VALUE ", 6) != 0) {
+    return DN_ERROR;
+  }
+  for (p += 6, k = p; p < mbuf->last && *p != ' '; p++) { /* key */
+    ;
+  }
+  if (p >= mbuf->last) {
+    return DN_ERROR;
+  }
+  if ((uint32_t)(p - k) != keylen || memcmp(k, kpos->start, keylen) != 0) {
+    return DN_OK; /* value of a later key, key not exists */
   }
 
-  len = 0;
-  for (; p < mbuf->last && isdigit(*p); p++) {
+  for (p++; p < mbuf->last && *p != ' '; p++) { /* eat flags */
+    ;
+  }
+  for (p++; p < mbuf->last && isdigit(*p); p++, i++) {
     len = len * 10 + (uint32_t)(*p - '0');
   }
-
-  for (; p < mbuf->last && ('\r' != *p); p++) { /* eat cas for gets */
+  for (; p < mbuf->last && *p != CR; p++) { /* eat cas for gets */
     ;
+  }
+  if (p >= mbuf->last || i == 0) {
+    return DN_ERROR;
   }
 
   len += CRLF_LEN * 2;
-  len += (p - mbuf->pos);
+  len += (uint32_t)(p - mbuf->pos);
 
   bytes = len;
 
   /* copy len bytes to dst */
-  for (; mbuf;) {
+  for (; mbuf && len > 0;) {
     if (mbuf_length(mbuf) <= len) { /* steal this mbuf from src to dst */
       nbuf = STAILQ_NEXT(mbuf, next);
       mbuf_remove(&src->mhdr, mbuf);
@@ -1524,8 +1539,11 @@ static rstatus_t memcache_copy_bulk(struct msg *dst, struct msg *src) {
       mbuf_copy(nbuf, mbuf->pos, len);
       mbuf_insert(&dst->mhdr, nbuf);
       mbuf->pos += len;
-      break;
+      len = 0;
     }
+  }
+  if (len > 0) {
+    return DN_ERROR;
   }
 
   dst->mlen += bytes;
@@ -1559,7 +1577,8 @@ void memcache_post_coalesce(struct msg *request) {
       response->owner->err = 1;
       return;
     }
-    status = memcache_copy_bulk(response, sub_msg);
+    status = memcache_copy_bulk(response, sub_msg,
+                                array_get(request->keys, i));
     if (status != DN_OK) {
       response->owner->err = 1;
       return;
