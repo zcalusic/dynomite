@@ -1327,6 +1327,8 @@ static rstatus_t memcache_fragment_retrieval(struct msg *r,
         dn_free(sub_msgs);
         return DN_ENOMEM;
       }
+      // Queue it right away, so the caller frees it if we fail later on.
+      TAILQ_INSERT_TAIL(frag_msgq, sub_msgs[idx], m_tqe);
     }
     r->frag_seq[i] = sub_msg = sub_msgs[idx];
 
@@ -1367,7 +1369,6 @@ static rstatus_t memcache_fragment_retrieval(struct msg *r,
     sub_msg->frag_id = r->frag_id;
     sub_msg->frag_owner = r->frag_owner;
 
-    TAILQ_INSERT_TAIL(frag_msgq, sub_msg, m_tqe);
     r->nfrag++;
   }
 
