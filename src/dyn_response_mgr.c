@@ -262,6 +262,13 @@ struct msg *rspmgr_get_response(struct context *ctx, struct response_mgr *rspmgr
     }
   }
 
+  // A quorum of one (a single rack) has nothing to compare against, like in
+  // rspmgr_is_quorum_achieved(). Without this, the checksum matching below
+  // would compare against an unused slot and treat the response as a mismatch.
+  if (rspmgr->quorum_responses == 1 && rspmgr->good_responses == 1) {
+    return rspmgr->responses[0];
+  }
+
   // If we did not perform any repairs. we fall back to checksum matching.
   uint32_t chk0, chk1, chk2;
   chk0 = rspmgr->checksums[0];
