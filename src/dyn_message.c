@@ -1515,7 +1515,7 @@ rstatus_t msg_prepend_format(struct msg *msg, const char *fmt, ...) {
   return DN_OK;
 }
 
-rstatus_t parse_int_arg_for_formatting(int arg, struct msg *msg, struct mbuf **mbuf_ptr,
+static rstatus_t parse_int_arg_for_formatting(int arg, struct msg *msg, struct mbuf **mbuf_ptr,
     char* current_fmt_string, uint32_t *required_space_ptr,
     uint32_t *remaining_space_ptr) {
   struct mbuf *mbuf = *mbuf_ptr;
@@ -1529,7 +1529,7 @@ rstatus_t parse_int_arg_for_formatting(int arg, struct msg *msg, struct mbuf **m
   return DN_OK;
 }
 
-rstatus_t parse_llu_arg_for_formatting(uint64_t arg, struct msg *msg,
+static rstatus_t parse_llu_arg_for_formatting(uint64_t arg, struct msg *msg,
     struct mbuf **mbuf_ptr, char* current_fmt_string, uint32_t *required_space_ptr,
     uint32_t *remaining_space_ptr) {
   struct mbuf *mbuf = *mbuf_ptr;
@@ -1543,7 +1543,7 @@ rstatus_t parse_llu_arg_for_formatting(uint64_t arg, struct msg *msg,
   return DN_OK;
 }
 
-rstatus_t parse_string_arg_for_formatting(char* arg, struct msg *msg,
+static rstatus_t parse_string_arg_for_formatting(char* arg, struct msg *msg,
     struct mbuf **mbuf_ptr, int given_fixed_len, char* current_fmt_string,
     int *cur_fmt_str_len_ptr, uint32_t *required_space_ptr,
     uint32_t *remaining_space_ptr) {
@@ -1559,7 +1559,7 @@ rstatus_t parse_string_arg_for_formatting(char* arg, struct msg *msg,
       if (given_fixed_len == 0) {
         // First fill in the remaining space in the existing mbuf by converting the
         // format string to a string that takes a string length.
-        strncpy(current_fmt_string + (*cur_fmt_str_len_ptr) - 1, ".*s", 3);
+        memcpy(current_fmt_string + (*cur_fmt_str_len_ptr) - 1, ".*s", 3);
         *cur_fmt_str_len_ptr += 2;
         current_fmt_string[*cur_fmt_str_len_ptr] = '\0';
       }
@@ -1594,17 +1594,9 @@ rstatus_t parse_string_arg_for_formatting(char* arg, struct msg *msg,
       *remaining_space_ptr = mbuf_remaining_space(mbuf);
 
       // Adjust the format string for the rest of the arg.
-      char remaining_fmt_specifier[10];
-      if (given_fixed_len > 0) {
-        strcpy(remaining_fmt_specifier, "%.*s");
-        remaining_fmt_specifier[4] = '\0';
-      } else {
-        strcpy(remaining_fmt_specifier, "%s");
-        remaining_fmt_specifier[2] = '\0';
-      }
-      strncpy(current_fmt_string, remaining_fmt_specifier, strlen(remaining_fmt_specifier));
+      const char *remaining_fmt_specifier = (given_fixed_len > 0) ? "%.*s" : "%s";
+      strcpy(current_fmt_string, remaining_fmt_specifier);
       *cur_fmt_str_len_ptr = strlen(remaining_fmt_specifier);
-      current_fmt_string[*cur_fmt_str_len_ptr] = '\0';
     }
   }
 
@@ -1635,7 +1627,6 @@ rstatus_t parse_string_arg_for_formatting(char* arg, struct msg *msg,
  */
 rstatus_t msg_append_format(struct msg *msg, const char *fmt, int num_args, ...) {
   struct mbuf *mbuf;
-  int n;
   uint32_t remaining_space;
   va_list args;
 
@@ -1660,11 +1651,12 @@ rstatus_t msg_append_format(struct msg *msg, const char *fmt, int num_args, ...)
   // Iterate through the arguments and map them onto the format specifiers in the
   // format string.
   for (i = 0; i < num_args; ++i) {
-    char *fmt_specifier = strstr(start_from, "%") + 1;
-    if (fmt_specifier == NULL) {
+    const char *percent = strchr(start_from, '%');
+    if (percent == NULL) {
       log_error("Number of arguments do not match format string.");
       return DN_ERROR;
     }
+    const char *fmt_specifier = percent + 1;
 
     // Calculate the space required for all the non replaceable chars in the format
     // string (i.e. chars not prepended with a '%').
