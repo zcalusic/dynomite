@@ -433,6 +433,7 @@ static rstatus_t parse_seeds(struct string *seeds, struct string *dc_name,
         (unsigned char *)hostname_to_private_ip4((char *)addr);
     if (local_ip4 != NULL) {
       status = string_copy_c(name, local_ip4);
+      dn_free(local_ip4);
     } else
       status = string_copy(name, addr, addrlen);
   } else {
@@ -952,6 +953,7 @@ rstatus_t gossip_pool_init(struct context *ctx) {
       if (local_ip4 != NULL) {
         string_deinit(&gnode->name);
         string_copy_c(&gnode->name, local_ip4);
+        dn_free(local_ip4);
       }
       gnode->state = DOWN;
       gnode->ts = 1010101;  // make this to be a very aged ts

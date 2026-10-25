@@ -22,28 +22,32 @@ static bool is_aws_env(struct server_pool *sp) {
   return dn_strncmp(&sp->env.data, CONF_DEFAULT_ENV, 3);
 }
 
+// Returns the first IPv4 address of hostname as a dotted string, which the
+// caller must free with dn_free().
 static unsigned char *hostname_to_ip(char *hostname) {
   struct hostent *he;
-  struct in_addr **addr_list;
-  int i;
+  unsigned char *ip;
 
   if ((he = gethostbyname(hostname)) == NULL) {
     return NULL;
   }
 
-  addr_list = (struct in_addr **)he->h_addr_list;
-  for (i = 0; addr_list[i] != NULL; i++)
-    ;
-
-  unsigned char *ip = dn_alloc(i);
-
-  for (i = 0; addr_list[i] != NULL; i++) {
-    // Return the first one;
-    strcpy(ip, inet_ntoa(*(0 + addr_list[i])));
-    return ip;
+  if (he->h_addrtype != AF_INET || he->h_addr_list[0] == NULL) {
+    return NULL;
   }
 
-  return NULL;
+  ip = dn_alloc(INET_ADDRSTRLEN);
+  if (ip == NULL) {
+    return NULL;
+  }
+
+  if (inet_ntop(AF_INET, he->h_addr_list[0], (char *)ip, INET_ADDRSTRLEN) ==
+      NULL) {
+    dn_free(ip);
+    return NULL;
+  }
+
+  return ip;
 }
 
 unsigned char *get_broadcast_address(struct server_pool *sp) {
