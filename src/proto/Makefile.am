@@ -7,7 +7,7 @@ AM_CFLAGS += -Wno-unused-parameter -Wno-unused-value
 
 noinst_LIBRARIES = libproto.a
 
-noinst_HEADERS = dyn_proto.h
+noinst_HEADERS = dyn_proto.h dyn_proto_repair.h
 
 libproto_a_SOURCES =			\
 	dyn_memcache.c			\
