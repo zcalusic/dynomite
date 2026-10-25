@@ -276,8 +276,8 @@ def comparison_test(redis, dynomite, debug):
 
 def main(args):
     # This test assumes for now that the nodes are running at the given ports.
-    # This is done by travis.sh. Please check that file and the corresponding
-    # yml files for each dynomite instance there to get an idea of the topology.
+    # test/run_tests.sh doesn't use this; it runs test/cluster_generator.py,
+    # which generates and launches the cluster itself.
     r = RedisNode(ip="127.0.1.1", port=1212)
     d1 = DynoNode(ip="127.0.1.2", data_store_port=22121)
     d2 = DynoNode(ip="127.0.1.3", data_store_port=22122)
