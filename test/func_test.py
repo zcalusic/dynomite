@@ -63,6 +63,29 @@ def run_multikey_test(c, max_keys=1000, max_payload=10):
             keys.append(key)
         c.run_verify("mget", keys)
 
+def run_large_multikey_test(c, max_keys=100, max_payload=40000):
+    # Values larger than an mbuf (16K) and many values per request make the
+    # bulks, and their "$<len>" headers, span mbufs when the request is
+    # fragmented.
+    test_name="LARGE_MULTIKEY"
+    print("Running %s tests" % test_name)
+    chars = string.ascii_letters + string.digits
+    for n in range(0, 20):
+        kv_pairs = {}
+        for x in range(0, random.randint(1, 30)):
+            key = create_key(test_name, random.randint(0, max_keys-1))
+            size = random.randint(1, max_payload)
+            kv_pairs[key] = ''.join(random.choices(chars, k=size))
+        c.run_verify("mset", kv_pairs)
+        c.run_verify("mget", list(kv_pairs.keys()))
+    for n in range(0, 20):
+        kv_pairs = {}
+        for x in range(0, random.randint(100, 1000)):
+            key = create_key(test_name, random.randint(0, max_keys*10-1))
+            kv_pairs[key] = string_generator(size=random.randint(1, 100))
+        c.run_verify("mset", kv_pairs)
+        c.run_verify("mget", list(kv_pairs.keys()))
+
 def run_script_tests(c):
     TEST_NAME="SCRIPTS"
     print("Running %s tests" % TEST_NAME)
@@ -266,6 +289,7 @@ def comparison_test(redis, dynomite, debug):
     run_key_value_tests(c, max_keys=10, max_payload=5*1024*1024)
 
     run_multikey_test(c)
+    run_large_multikey_test(c)
     run_hash_tests(c, max_keys=10, max_fields=100)
     run_script_tests(c)
 

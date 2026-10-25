@@ -3010,13 +3010,20 @@ error:
  *
  * if dst == NULL, we just eat the bulk
  *
+ * The bulk, including its "$<len>\r\n" header, can span several mbufs of
+ * src. It is copied into dst filling each mbuf before starting the next one,
+ * because of the way our encryption/decryption works: we encrypt each mbuf
+ * separately, but the receiving side fills its mbufs as full as it can, so
+ * multiple partially filled mbufs would fail to decrypt there.
+ * TODO: Change this when the whole broken crypto scheme is changed.
+ *
  * */
 static rstatus_t redis_copy_bulk(struct msg *dst, struct msg *src, bool log) {
   struct mbuf *mbuf, *nbuf;
   uint8_t *p;
   uint32_t len = 0;
   uint32_t bytes = 0;
-  rstatus_t status;
+  bool nil = false;
 
   for (mbuf = STAILQ_FIRST(&src->mhdr); mbuf && mbuf_empty(mbuf);
        mbuf = STAILQ_FIRST(&src->mhdr)) {
@@ -3030,62 +3037,67 @@ static rstatus_t redis_copy_bulk(struct msg *dst, struct msg *src, bool log) {
   }
 
   p = mbuf->pos;
-  ASSERT(*p == '$');
-  p++;
-
-  if (p[0] == '-' && p[1] == '1') {
-    len = 1 + 2 + CRLF_LEN; /* $-1\r\n */
-    p = mbuf->pos + len;
-    if (log) log_notice("here");
-  } else {
-    len = 0;
-    for (; p < mbuf->last && isdigit(*p); p++) {
-      len = len * 10 + (uint32_t)(*p - '0');
-    }
-    len += CRLF_LEN * 2;
-    len += (p - mbuf->pos);
+  if (*p != '$') {
+    return DN_ERROR;
   }
-  bytes = len;
 
-  /* copy len bytes to dst */
-  for (; mbuf;) {
+  /* parse $<len> or $-1 up to the CR, crossing mbufs if needed */
+  for (nbuf = mbuf, p++, bytes = 1;; p++, bytes++) {
+    while (p == nbuf->last) {
+      nbuf = STAILQ_NEXT(nbuf, next);
+      if (nbuf == NULL) {
+        return DN_ERROR;
+      }
+      p = nbuf->pos;
+    }
+    if (*p == CR) {
+      break;
+    } else if (bytes == 1 && *p == '-') {
+      nil = true;
+    } else if (isdigit(*p)) {
+      len = len * 10 + (uint32_t)(*p - '0');
+    } else {
+      return DN_ERROR;
+    }
+  }
+  bytes += CRLF_LEN;
+  if (!nil) {
+    bytes += len + CRLF_LEN;
+  }
+  if (log) log_notice("bulk of %d bytes", bytes);
+
+  /* copy bytes from src to dst */
+  for (len = bytes; len > 0;) {
+    mbuf = STAILQ_FIRST(&src->mhdr);
+    if (mbuf == NULL) {
+      return DN_ERROR;
+    }
     if (log) {
       log_notice("dumping mbuf");
       mbuf_dump(mbuf);
     }
 
-    size_t remaining_mbuf_len = mbuf_length(mbuf);
-    if (remaining_mbuf_len <= len &&
-        remaining_mbuf_len == mbuf_chunk_sz()) {
-      // Steal the entire buffer from src to dst if we need the whole buffer
-      //
-      // We only copy if it's the entire buffer because of the way our
-      // encryption/decryption works. Sending out multiple partially filled
-      // mbufs will fail to decrypt on the receiving side. This is because
-      // in the source side we encrypt each mbuf seperately but if all the
-      // partial mbufs can fit into one full mbuf on the receiving side,
-      // it will do so and hence fail to decrypt.
-      // TODO: Change this when the whole broken crypto scheme is changed.
-      nbuf = STAILQ_NEXT(mbuf, next);
-      mbuf_remove(&src->mhdr, mbuf);
-      if (dst != NULL) {
-        mbuf_insert(&dst->mhdr, mbuf);
-      } else {
-        mbuf_put(mbuf);
-      }
-      len -= mbuf_length(mbuf);
-      mbuf = nbuf;
-      if (log) log_notice("stealing mbuf");
-    } else { /* split it */
-      if (dst != NULL) {
-        if (log) log_notice("appending mbuf");
-        status = msg_append(dst, mbuf->pos, len);
-        if (status != DN_OK) {
-          return status;
+    uint32_t n = MIN(len, mbuf_length(mbuf));
+    for (p = mbuf->pos; dst != NULL && p < mbuf->pos + n;) {
+      nbuf = STAILQ_LAST(&dst->mhdr, mbuf, next);
+      if (nbuf == NULL || mbuf_full(nbuf)) {
+        nbuf = mbuf_get();
+        if (nbuf == NULL) {
+          return DN_ENOMEM;
         }
+        mbuf_insert(&dst->mhdr, nbuf);
       }
-      mbuf->pos += len;
-      break;
+      uint32_t chunk = MIN((uint32_t)(mbuf->pos + n - p),
+                           mbuf_remaining_space(nbuf));
+      mbuf_copy(nbuf, p, chunk);
+      p += chunk;
+    }
+    mbuf->pos += n;
+    len -= n;
+
+    if (mbuf_empty(mbuf)) {
+      mbuf_remove(&src->mhdr, mbuf);
+      mbuf_put(mbuf);
     }
   }
 
