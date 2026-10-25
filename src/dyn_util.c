@@ -593,7 +593,7 @@ char *dn_unresolve_desc(int sd) {
 }
 
 int count_digits(uint64_t arg) {
-  return snprintf(NULL, 0, "%llu", arg) - (arg < 0);
+  return snprintf(NULL, 0, "%" PRIu64, arg);
 }
 
 uint64_t current_timestamp_in_millis() {
