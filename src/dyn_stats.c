@@ -1000,28 +1000,18 @@ static void parse_request(int sd, struct stats_cmd *st_cmd) {
           st_cmd->cmd = CMD_SET_CONSISTENCY;
           log_notice("Setting consistency parameters: %s", reqline[1]);
           char *op = reqline[1] + 16;
-          if (strncmp(op, "/read", 5) == 0) {
-            char *type = op + 5;
-            log_notice("op: %s", op);
-            log_notice("type: %s", type);
-            if (!dn_strcasecmp(type, "/" CONF_STR_DC_ONE))
-              g_read_consistency = DC_ONE;
-            else if (!dn_strcasecmp(type, "/" CONF_STR_DC_QUORUM))
-              g_read_consistency = DC_QUORUM;
-            else if (!dn_strcasecmp(type, "/" CONF_STR_DC_SAFE_QUORUM))
-              g_read_consistency = DC_SAFE_QUORUM;
-            else
+          if (strncmp(op, "/read/", 6) == 0) {
+            consistency_t cons = get_consistency_enum_from_string(op + 6);
+            if (cons == (consistency_t)-1)
               st_cmd->cmd = CMD_UNKNOWN;
-          } else if (strncmp(op, "/write", 6) == 0) {
-            char *type = op + 6;
-            if (!dn_strcasecmp(type, "/" CONF_STR_DC_ONE))
-              g_write_consistency = DC_ONE;
-            else if (!dn_strcasecmp(type, "/" CONF_STR_DC_QUORUM))
-              g_write_consistency = DC_QUORUM;
-            else if (!dn_strcasecmp(type, "/" CONF_STR_DC_SAFE_QUORUM))
-              g_write_consistency = DC_SAFE_QUORUM;
             else
+              g_read_consistency = cons;
+          } else if (strncmp(op, "/write/", 7) == 0) {
+            consistency_t cons = get_consistency_enum_from_string(op + 7);
+            if (cons == (consistency_t)-1)
               st_cmd->cmd = CMD_UNKNOWN;
+            else
+              g_write_consistency = cons;
           } else
             st_cmd->cmd = CMD_UNKNOWN;
           return;
@@ -1168,7 +1158,7 @@ static rstatus_t stats_send_rsp(struct stats *st) {
                "/info\n/help\n/ping\n/cluster_describe\n"
                "/setloglevel/<0-11>\n/loglevelup\n/logleveldown\n/historeset\n"
                "/get_consistency\n/set_consistency/<read|write>/"
-               "<dc_one|dc_quorum|dc_safe_quorum>\n"
+               "<dc_one|dc_quorum|dc_safe_quorum|dc_each_safe_quorum>\n"
                "/get_timeout_factor\n/set_timeout_factor/<1-10>\n/peer/"
                "<up|down|reset>\n"
                "/state/<get_state|standby|writes_only|normal|%s>\n\n",
