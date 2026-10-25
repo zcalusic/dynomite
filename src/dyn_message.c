@@ -951,20 +951,18 @@ static rstatus_t msg_repair(struct context *ctx, struct conn *conn,
 }
 
 /*
- * Crafts a success response message for the respective datastore.
+ * Crafts a response message with the given content, as though the
+ * datastore sent it.
  *
  * TODO: This currently does only Redis. The Redis specific code should
  *       be moved out of this file.
  *
- * Returns a 'msg' with the expected success response.
+ * Returns a 'msg' with the response.
  */
-static struct msg *craft_ok_rsp(struct context *ctx, struct conn *conn,
-    struct msg *req) {
+static struct msg *craft_rsp(struct context *ctx, struct conn *conn,
+    struct msg *req, const char *rsp_str) {
 
   ASSERT(req->is_request);
-
-  rstatus_t ret_status = DN_OK;
-  const char *QUIT_FMT_STRING = "+OK\r\n";
 
   struct msg *rsp = msg_get(conn, false, __FUNCTION__);
   if (rsp == NULL) {
@@ -972,7 +970,7 @@ static struct msg *craft_ok_rsp(struct context *ctx, struct conn *conn,
     return NULL;
   }
 
-  rstatus_t append_status = msg_append(rsp, QUIT_FMT_STRING, strlen(QUIT_FMT_STRING));
+  rstatus_t append_status = msg_append(rsp, (uint8_t *)rsp_str, strlen(rsp_str));
   if (append_status != DN_OK) {
     rsp_put(rsp);
     return NULL;
@@ -986,10 +984,13 @@ static struct msg *craft_ok_rsp(struct context *ctx, struct conn *conn,
   return rsp;
 }
 
-rstatus_t simulate_ok_rsp(struct context *ctx, struct conn *conn,
-    struct msg *msg) {
-  // Create an OK response.
-  struct msg *ok_rsp = craft_ok_rsp(ctx, conn, msg);
+rstatus_t simulate_rsp(struct context *ctx, struct conn *conn,
+    struct msg *msg, const char *rsp_str) {
+  // Create the response.
+  struct msg *rsp = craft_rsp(ctx, conn, msg, rsp_str);
+  if (rsp == NULL) {
+    return DN_ENOMEM;
+  }
 
   // Add it to the outstanding messages dictionary, so that 'conn_handle_response'
   // can process it appropriately.
@@ -1000,9 +1001,14 @@ rstatus_t simulate_ok_rsp(struct context *ctx, struct conn *conn,
   conn_enqueue_outq(ctx, conn, msg);
 
   THROW_STATUS(conn_handle_response(ctx, conn,
-      msg->parent_id ? msg->parent_id : msg->id, ok_rsp));
+      msg->parent_id ? msg->parent_id : msg->id, rsp));
 
   return DN_OK;
+}
+
+rstatus_t simulate_ok_rsp(struct context *ctx, struct conn *conn,
+    struct msg *msg) {
+  return simulate_rsp(ctx, conn, msg, "+OK\r\n");
 }
 
 /*

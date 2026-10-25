@@ -188,6 +188,8 @@ static bool redis_arg2(struct msg *r) {
 
     case MSG_REQ_REDIS_RESTORE:
 
+    case MSG_REQ_REDIS_CLIENT_SETINFO:
+
       return true;
 
     default:
@@ -273,6 +275,8 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_JSONARRLEN:
     case MSG_REQ_REDIS_JSONOBJKEYS:
     case MSG_REQ_REDIS_JSONOBJLEN:
+
+    case MSG_REQ_REDIS_HELLO:
       return true;
 
     default:
@@ -688,6 +692,20 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         m = r->token;
         r->token = NULL;
 
+        // 'CLIENT' is parsed in 2 steps, like 'SCRIPT'. Of its subcommands,
+        // only 'CLIENT SETINFO' is supported; it's answered locally.
+        if (r->type == MSG_REQ_REDIS_CLIENT) {
+          if ((p - m) != 7 || !str7icmp(m, 's', 'e', 't', 'i', 'n', 'f', 'o')) {
+            log_error("parsed unsupported command 'CLIENT %.*s'", p - m, m);
+            goto error;
+          }
+          r->type = MSG_REQ_REDIS_CLIENT_SETINFO;
+          r->is_read = 1;
+          log_debug(LOG_VERB, "parsed command 'CLIENT %.*s'", p - m, m);
+          state = SW_REQ_TYPE_LF;
+          break;
+        }
+
         // 'SCRIPT' commands are parsed in 2 steps due to the whitespace in between cmds,
         // so don't set the type to MSG_UNKNOWN.
         if (r->type != MSG_REQ_REDIS_SCRIPT) r->type = MSG_UNKNOWN;
@@ -1024,6 +1042,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               r->is_read = 1;
               break;
             }
+            if (str5icmp(m, 'h', 'e', 'l', 'l', 'o')) {
+              // Answered locally with an error, see req_filter().
+              r->type = MSG_REQ_REDIS_HELLO;
+              r->is_read = 1;
+              break;
+            }
+
             if (str5icmp(m, 'p', 'f', 'a', 'd', 'd')) {
               r->type = MSG_REQ_REDIS_PFADD;
               r->is_read = 0;
@@ -1045,6 +1070,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             if (str6icmp(m, 'a', 'p', 'p', 'e', 'n', 'd')) {
               r->type = MSG_REQ_REDIS_APPEND;
               r->is_read = 0;
+              break;
+            }
+
+            if (str6icmp(m, 'c', 'l', 'i', 'e', 'n', 't')) {
+              // First half of 'CLIENT <subcommand>'.
+              r->type = MSG_REQ_REDIS_CLIENT;
+              r->is_read = 1;
               break;
             }
 
@@ -1590,13 +1622,16 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         break;
 
       case SW_REQ_TYPE_LF:
-        if (r->type == MSG_REQ_REDIS_SCRIPT) {
+        if (r->type == MSG_REQ_REDIS_SCRIPT || r->type == MSG_REQ_REDIS_CLIENT) {
           // Parsing "SCRIPT <LOAD/KILL/FLUSH/EXISTS>" is a special case since there is a
           // space between the keyword SCRIPT and the following keyword. To deal with
           // this, we reset the state machine to a previous state to allow parsing of the
           // second keyword as well.
           // Set 'state' back to 'SW_REQ_TYPE_LEN' to parse the second half of the command
           // the space in 'SCRIPT <LOAD/KILL/FLUSH/EXISTS>'.
+          if (r->type == MSG_REQ_REDIS_CLIENT && r->rntokens == 0) {
+            goto error;
+          }
           state = SW_REQ_TYPE_LEN;
           log_debug(LOG_VERB, "parsed partial command '%.*s'. Continuing to parse" \
               "remainaing part of command", p - m, m);
@@ -1621,6 +1656,18 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               // TODO: Find a way to do this without special casing for SCRIPT.
               state = SW_ARG1_LEN;
             } else if (redis_argeval(r)) {
+              state = SW_ARG1_LEN;
+            } else if (r->type == MSG_REQ_REDIS_CLIENT_SETINFO) {
+              // CLIENT SETINFO <attr> <value>, no key.
+              if (r->rntokens != 2) {
+                goto error;
+              }
+              state = SW_ARG1_LEN;
+            } else if (r->type == MSG_REQ_REDIS_HELLO) {
+              // HELLO [protover [AUTH user pass] [SETNAME name]], no key.
+              if (r->rntokens == 0) {
+                goto done;
+              }
               state = SW_ARG1_LEN;
             } else {
               state = SW_KEY_LEN;

@@ -377,6 +377,24 @@ static bool req_filter(struct context *ctx, struct conn *conn,
     return true;
   }
 
+  // Clients send these on connect. Dynomite can't forward them, since server
+  // connections are shared, so answer them here: CLIENT SETINFO with +OK,
+  // HELLO with the error older Redis versions send, so that clients fall
+  // back to RESP2 and keep the connection.
+  if (req->type == MSG_REQ_REDIS_CLIENT_SETINFO) {
+    log_debug(LOG_VERB, "%s filter client setinfo %s", print_obj(conn),
+              print_obj(req));
+    IGNORE_RET_VAL(simulate_ok_rsp(ctx, conn, req));
+    return true;
+  }
+
+  if (req->type == MSG_REQ_REDIS_HELLO) {
+    log_debug(LOG_VERB, "%s filter hello %s", print_obj(conn), print_obj(req));
+    IGNORE_RET_VAL(simulate_rsp(ctx, conn, req,
+        "-ERR unknown command 'HELLO'\r\n"));
+    return true;
+  }
+
   // If this is a Dynomite configuration message, don't forward it.
   if (is_msg_type_dyno_config(req->type)) {
     return true;

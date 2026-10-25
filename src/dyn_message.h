@@ -200,6 +200,9 @@
   ACTION(REQ_REDIS_SCRIPT_EXISTS)                                              \
   ACTION(REQ_REDIS_SCRIPT_FLUSH)                                               \
   ACTION(REQ_REDIS_SCRIPT_KILL)                                                \
+  ACTION(REQ_REDIS_CLIENT)                                                     \
+  ACTION(REQ_REDIS_CLIENT_SETINFO)                                             \
+  ACTION(REQ_REDIS_HELLO)                                                      \
   ACTION(RSP_REDIS_STATUS) /* redis response */                                \
   ACTION(RSP_REDIS_INTEGER)                                                    \
   ACTION(RSP_REDIS_BULK)                                                       \
@@ -653,6 +656,13 @@ void dnode_peer_gossip_forward(struct context *ctx, struct conn *conn,
  */
 rstatus_t simulate_ok_rsp(struct context *ctx, struct conn *conn,
     struct msg *msg);
+
+/*
+ * Like simulate_ok_rsp(), but the response is 'rsp_str', a complete reply
+ * in the datastore's protocol.
+ */
+rstatus_t simulate_rsp(struct context *ctx, struct conn *conn,
+    struct msg *msg, const char *rsp_str);
 
 // Returns 'true' if 'msg_type' is a Dynomite configuration command.
 bool is_msg_type_dyno_config(msg_type_t msg_type);
