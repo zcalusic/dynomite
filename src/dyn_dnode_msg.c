@@ -82,7 +82,7 @@ static bool dyn_parse_core(struct msg *r) {
             goto split;
           }
         } else {
-          loga("Facing a weird char %c", p);
+          loga("Facing a weird char %c", ch);
           // goto skip;
           token = NULL;  // reset
         }
@@ -98,7 +98,7 @@ static bool dyn_parse_core(struct msg *r) {
         } else {
           // loga("char is '%c %c %c %c'", *(p-2), *(p-1), ch, *(p+1));
           token = NULL;
-          loga("Facing a weird char %c", p);
+          loga("Facing a weird char %c", ch);
           // goto skip;
           dyn_state = DYN_START;
         }
@@ -363,7 +363,7 @@ done:
             dmsg->same_dc, dmsg->mlen, dmsg->plen);
 
   if (log_loggable(LOG_VVERB)) {
-    log_debug(LOG_VVERB, "at done with p at %d", p);
+    log_debug(LOG_VVERB, "at done with p at %p", p);
     log_hexdump(LOG_VVERB, r->pos, b->last - r->pos,
                 "done and inspecting req %" PRIu64
                 " "

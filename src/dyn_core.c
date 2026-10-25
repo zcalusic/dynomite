@@ -544,16 +544,21 @@ rstatus_t core_core(void *arg, uint32_t events) {
 void core_debug(struct context *ctx) {
   log_debug(LOG_VERB, "=====================Peers info=====================");
   struct server_pool *sp = &ctx->pool;
-  log_debug(LOG_VERB, "Server pool          : '%.*s'", sp->name);
+  log_debug(LOG_VERB, "Server pool          : '%.*s'", sp->name.len,
+            sp->name.data);
   uint32_t j, n;
   for (j = 0, n = array_n(&sp->peers); j < n; j++) {
     log_debug(LOG_VERB, "==============================================");
     struct node *peer = *(struct node **)array_get(&sp->peers, j);
-    log_debug(LOG_VERB, "\tPeer DC            : '%.*s'", peer->dc);
-    log_debug(LOG_VERB, "\tPeer Rack          : '%.*s'", peer->rack);
+    log_debug(LOG_VERB, "\tPeer DC            : '%.*s'", peer->dc.len,
+              peer->dc.data);
+    log_debug(LOG_VERB, "\tPeer Rack          : '%.*s'", peer->rack.len,
+              peer->rack.data);
 
-    log_debug(LOG_VERB, "\tPeer name          : '%.*s'", peer->name);
-    log_debug(LOG_VERB, "\tPeer pname         : '%.*s'", peer->endpoint.pname);
+    log_debug(LOG_VERB, "\tPeer name          : '%.*s'", peer->name.len,
+              peer->name.data);
+    log_debug(LOG_VERB, "\tPeer pname         : '%.*s'",
+              peer->endpoint.pname.len, peer->endpoint.pname.data);
 
     log_debug(LOG_VERB, "\tPeer state         : %s", get_state(peer->state));
     log_debug(LOG_VERB, "\tPeer port          : %" PRIu32 "",

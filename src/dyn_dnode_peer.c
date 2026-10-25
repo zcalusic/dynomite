@@ -839,7 +839,7 @@ struct node *dnode_peer_pool_server(struct context *ctx,
     if (peer == NULL) {
       log_debug(LOG_VERB,
                 "What? There is no such peer in rack '%.*s' for key '%.*s'",
-                rack->name, keylen, key);
+                rack->name->len, rack->name->data, keylen, key);
       return NULL;
     }
   }
@@ -852,7 +852,7 @@ struct conn *dnode_peer_get_conn(struct context *ctx, struct node *peer,
 
   if (peer->state == RESET) {
     log_debug(LOG_WARN, "Detecting peer '%.*s' is set with state Reset",
-              peer->name);
+              peer->name.len, peer->name.data);
     if (peer->conn_pool) {
       conn_pool_destroy(peer->conn_pool);
       peer->conn_pool = NULL;
@@ -990,7 +990,7 @@ static void dnode_rsp_forward_match(struct context *ctx, struct conn *peer_conn,
     loga("%s Dumping content:", print_obj(rsp));
     msg_dump(LOG_VVERB, rsp);
 
-    loga("%d Dumping content:", print_obj(req));
+    loga("%s Dumping content:", print_obj(req));
     msg_dump(LOG_VVERB, req);
   }
 
@@ -1074,7 +1074,9 @@ static void dnode_rsp_forward(struct context *ctx, struct conn *peer_conn,
         dnode_rsp_swallow(ctx, peer_conn, req, NULL);
         continue;
       }
-      log_warn("req %d:%d with DC_ONE consistency is not being swallowed");
+      log_warn("req %" PRIu64 ":%" PRIu64
+               " with DC_ONE consistency is not being swallowed",
+               req->id, req->parent_id);
     }
 
     if (((req->consistency == DC_QUORUM) ||

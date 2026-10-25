@@ -352,12 +352,12 @@ rstatus_t entropy_key_iv_load(struct context *ctx) {
   /* 4. loading the .pem files */
   FILE *key_file = fopen(key_file_name, "r");
   if (key_file == NULL) {
-    log_error("opening key.pem file failed %s", pool->recon_key_file);
+    log_error("opening key.pem file failed %s", key_file_name);
     return DN_ERROR;
   }
   FILE *iv_file = fopen(iv_file_name, "r");
   if (iv_file == NULL) {
-    log_error("opening iv.pem file failed %s", pool->recon_iv_file);
+    log_error("opening iv.pem file failed %s", iv_file_name);
     return DN_ERROR;
   }
 

@@ -1190,7 +1190,7 @@ rstatus_t msg_local_one_rsp_handler(struct context *ctx, struct msg *req, struct
   req->error_code = rsp->error_code;
   req->dyn_error_code = rsp->dyn_error_code;
   req->selected_rsp = rsp;
-  log_info("%d SELECTED %d", print_obj(req), print_obj(rsp));
+  log_info("%s SELECTED %s", print_obj(req), print_obj(rsp));
   return DN_OK;
 }
 

@@ -3519,9 +3519,10 @@ static rstatus_t redis_fragment_argx(struct msg *r, struct server_pool *pool,
     if (key_step != 1) sub_msgs[idx]->ntokens++;
     r->frag_seq[i] = sub_msgs[idx];
 
-    loga("frag_seq[%d]: %x   ||  idx: %d sub_msgs[idx]: %x", i,
-        r->frag_seq[i], idx, sub_msgs[idx]);
-
+    log_debug(LOG_VVERB,
+              "frag_seq[%" PRIu32 "]: %p   ||  idx: %" PRIu32
+              " sub_msgs[idx]: %p",
+              i, r->frag_seq[i], idx, sub_msgs[idx]);
   }
 
   for (i = 0; i < array_n(r->keys); i++) { /* for each key */

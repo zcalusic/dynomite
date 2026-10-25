@@ -489,8 +489,9 @@ static struct gossip_node *gossip_add_node_to_rack(
   log_debug(LOG_VERB,
             "gossip_add_node_to_rack : dc[%.*s] rack[%.*s] address[%.*s] "
             "ip[%.*s] port[%.*s]",
-            dc->len, dc->data, g_rack->name, address->len, address->data,
-            ip->len, ip->data, port->len, port->data);
+            dc->len, dc->data, g_rack->name.len, g_rack->name.data,
+            address->len, address->data, ip->len, ip->data, port->len,
+            port->data);
 
   int port_i = dn_atoi(port->data, port->len);
   if (port_i == 0) {
@@ -553,7 +554,8 @@ static rstatus_t gossip_replace_node(struct server_pool *sp,
   log_debug(LOG_WARN,
             "gossip_replace_node : dc[%.*s] rack[%.*s] oldaddr[%.*s] "
             "newaddr[%.*s] newip[%.*s]",
-            node->dc, node->rack, node->name, new_address->len,
+            node->dc.len, node->dc.data, node->rack.len, node->rack.data,
+            node->name.len, node->name.data, new_address->len,
             new_address->data, new_ip->len, new_ip->data);
 
   string_deinit(&node->name);
@@ -573,10 +575,12 @@ static rstatus_t gossip_update_state(struct server_pool *sp,
                                      struct gossip_node *node, uint8_t state,
                                      const uint64_t timestamp) {
   rstatus_t status = DN_OK;
-  log_debug(LOG_VVERB,
-            "gossip_update_state : dc[%.*s] rack[%.*s] name[%.*s] token[%d] "
-            "state[%d]",
-            node->dc, node->rack, node->name, node->token.mag[0], state);
+  log_debug(
+      LOG_VVERB,
+      "gossip_update_state : dc[%.*s] rack[%.*s] name[%.*s] token[%" PRIu32
+      "] state[%d]",
+      node->dc.len, node->dc.data, node->rack.len, node->rack.data,
+      node->name.len, node->name.data, node->token.mag[0], state);
 
   if (node->ts < timestamp) {
     node->state = state;
@@ -910,7 +914,7 @@ rstatus_t gossip_pool_init(struct context *ctx) {
       struct gossip_dc *g_dc = dictFetchValue(gn_pool.dict_dc, rack->dc);
       if (dictFind(g_dc->dict_rack, rack->name) == NULL) {
         log_debug(LOG_VERB, "What?? No rack in Dict for rack         : '%.*s'",
-                  *(rack->name));
+                  rack->name->len, rack->name->data);
         struct gossip_rack *g_rack = array_push(&g_dc->racks);
         gossip_rack_init(g_rack, rack->dc, rack->name);
         dictAdd(g_dc->dict_rack, &g_rack->name, g_rack);
@@ -1015,8 +1019,10 @@ void gossip_debug(void) {
         log_debug(LOG_VERB, "-----------------------------------------");
         struct gossip_node *node =
             (struct gossip_node *)array_get(&g_rack->nodes, jj);
-        log_debug(LOG_VERB, "\t\tNode name          : '%.*s'", node->name);
-        log_debug(LOG_VERB, "\t\tNode pname         : '%.*s'", node->pname);
+        log_debug(LOG_VERB, "\t\tNode name          : '%.*s'", node->name.len,
+                  node->name.data);
+        log_debug(LOG_VERB, "\t\tNode pname         : '%.*s'", node->pname.len,
+                  node->pname.data);
         log_debug(LOG_VERB, "\t\tNode state         : %" PRIu32 "",
                   node->state);
         log_debug(LOG_VERB, "\t\tNode port          : %" PRIu32 "", node->port);

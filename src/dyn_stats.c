@@ -1227,25 +1227,26 @@ static rstatus_t stats_send_rsp(struct stats *st) {
     return stats_http_rsp(sd, ok.data, ok.len);
   } else if (cmd == CMD_PEER_DOWN || cmd == CMD_PEER_UP ||
              cmd == CMD_PEER_RESET) {
-    log_debug(LOG_VERB, "st_cmd.req_data '%.*s' ", st_cmd.req_data);
+    log_debug(LOG_VERB, "st_cmd.req_data '%.*s' ", st_cmd.req_data.len,
+              st_cmd.req_data.data);
     struct server_pool *sp = &st->ctx->pool;
     uint32_t i, len;
 
     // I think it is ok to keep this simple without a synchronization
     for (i = 0, len = array_n(&sp->peers); i < len; i++) {
       struct node *peer = *(struct node **)array_get(&sp->peers, i);
-      log_debug(LOG_VERB, "peer '%.*s' ", peer->name);
+      log_debug(LOG_VERB, "peer '%.*s' ", peer->name.len, peer->name.data);
 
       if (string_compare(&st_cmd.req_data, &all) == 0) {
         log_debug(
             LOG_VERB,
             "\t\tSetting peer '%.*s' to state %d due to RESET/ALL command",
-            st_cmd.req_data, cmd);
+            st_cmd.req_data.len, st_cmd.req_data.data, cmd);
         peer->state = RESET;
       } else if (string_compare(&peer->name, &st_cmd.req_data) == 0) {
         log_debug(LOG_VERB,
                   "\t\tSetting peer '%.*s' to a new state due to command %d",
-                  st_cmd.req_data, cmd);
+                  st_cmd.req_data.len, st_cmd.req_data.data, cmd);
         switch (cmd) {
           case CMD_PEER_UP:
             peer->state = NORMAL;

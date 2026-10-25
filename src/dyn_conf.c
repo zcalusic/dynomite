@@ -1963,7 +1963,7 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
   if (!cp->stats_listen.valid) {
     log_error(
         "conf: directive \"stats_listen:\" is missing - using defaults %s",
-        CONF_DEFAULT_STATS_PNAME, CONF_DEFAULT_STATS_PORT);
+        CONF_DEFAULT_STATS_PNAME);
     cp->stats_listen.port = CONF_DEFAULT_STATS_PORT;
     string_copy_c(&cp->stats_listen.pname,
                   (const uint8_t *)CONF_DEFAULT_STATS_PNAME);

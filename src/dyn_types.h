@@ -66,13 +66,13 @@
 #define DN_ENOMEM -3
 #define DN_ENO_IMPL -4
 
-#define THROW_STATUS(s)                  \
-  {                                      \
-    rstatus_t __ret = (s);               \
-    if (__ret != DN_OK) {                \
-      log_debug(LOG_WARN, "failed " #s); \
-      return __ret;                      \
-    }                                    \
+#define THROW_STATUS(s)                     \
+  {                                         \
+    rstatus_t __ret = (s);                  \
+    if (__ret != DN_OK) {                   \
+      log_debug(LOG_WARN, "failed %s", #s); \
+      return __ret;                         \
+    }                                       \
   }
 
 #define IGNORE_RET_VAL(x) (void)x;
