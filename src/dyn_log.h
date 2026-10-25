@@ -76,8 +76,25 @@ struct logger {
 
 #else
 
-#define log_debug(_level, ...)
-#define log_hexdump(_level, _data, _datalen, ...)
+/*
+ * Compiled out, but the arguments are still parsed, so variables used only
+ * for debug logging don't trigger unused variable warnings.
+ */
+#define log_debug(_level, ...)                      \
+  do {                                              \
+    if (0) {                                        \
+      _log(__FUNCTION__, __LINE__, 0, __VA_ARGS__); \
+    }                                               \
+  } while (0)
+
+#define log_hexdump(_level, _data, _datalen, ...)                            \
+  do {                                                                       \
+    if (0) {                                                                 \
+      _log(__FUNCTION__, __LINE__, 0, __VA_ARGS__);                          \
+      _log_hexdump(__FUNCTION__, __LINE__, (char *)(_data), (int)(_datalen), \
+                   __VA_ARGS__);                                             \
+    }                                                                        \
+  } while (0)
 
 #endif
 
