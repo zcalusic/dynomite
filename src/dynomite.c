@@ -219,26 +219,30 @@ static void dn_print_done(void) { loga("done, rabbit done"); }
 static void dn_show_usage(void) {
   log_stderr(
       "Usage: dynomite [-?hVdDt] [-v verbosity level] [-o output file]" CRLF
-      "                  [-c conf file] [-p pid file] [-m mbuf size "
-      "(deprecated)]" CRLF
-      "                  [-M max alloc messages (deprecated)]" CRLF "");
-  log_stderr("Options:" CRLF "  -h, --help             : this help" CRLF
-             "  -V, --version          : show version and exit" CRLF
-             "  -t, --test-conf        : test configuration for syntax errors "
-             "and exit" CRLF "  -d, --daemonize        : run as a daemon" CRLF
-             "  -D, --describe-stats   : print stats description and exit");
+      "                [-c conf file] [-p pid file] [-x admin operation]" CRLF
+      "                [-m mbuf size (deprecated)]" CRLF
+      "                [-M max alloc messages (deprecated)]" CRLF "");
+  log_stderr("Options:" CRLF "  -h, --help              : this help" CRLF
+             "  -V, --version           : show version and exit" CRLF
+             "  -t, --test-conf         : test configuration for syntax errors "
+             "and exit" CRLF "  -d, --daemonize         : run as a daemon" CRLF
+             "  -D, --describe-stats    : print stats description and exit");
   log_stderr(
-      "  -v, --verbosity=N            : set logging level (default: %d, min: "
+      "  -v, --verbosity=N       : set logging level (default: %d, min: "
       "%d, max: %d)" CRLF
-      "  -o, --output=S               : set logging file (default: %s)" CRLF
-      "  -c, --conf-file=S            : set configuration file (default: "
+      "  -o, --output=S          : set logging file (default: %s)" CRLF
+      "  -c, --conf-file=S       : set configuration file (default: "
       "%s)" CRLF
-      "  -p, --pid-file=S             : set pid file (default: %s)" CRLF
-      "  -m, --mbuf-size=N            : set size of mbuf chunk in bytes "
-      "(default: %d bytes)" CRLF "",
+      "  -p, --pid-file=S        : set pid file (default: %s)" CRLF
+      "  -x, --admin-operation=N : set admin mode, 1 sends deletes to the "
+      "local datastore only (default: 0, off)" CRLF
+      "  -m, --mbuf-size=N       : set size of mbuf chunk in bytes "
+      "(default: %d bytes, deprecated)" CRLF
+      "  -M, --max-msgs=N        : set max number of messages to allocate "
+      "(default: %d, deprecated)" CRLF "",
       DN_LOG_DEFAULT, DN_LOG_MIN, DN_LOG_MAX,
       DN_LOG_PATH != NULL ? DN_LOG_PATH : "stderr", DN_CONF_PATH,
-      DN_PID_FILE != NULL ? DN_PID_FILE : "off", 0);
+      DN_PID_FILE != NULL ? DN_PID_FILE : "off", DN_MBUF_SIZE, DN_ALLOC_MSGS);
 }
 
 static rstatus_t dn_create_pidfile(struct instance *nci) {
@@ -439,6 +443,7 @@ static rstatus_t dn_get_options(int argc, char **argv, struct instance *nci) {
           case 'm':
           case 'M':
           case 'v':
+          case 'x':
           case 's':
           case 'i':
             log_stderr("dynomite: option -%c requires a number", optopt);

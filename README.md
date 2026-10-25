@@ -66,21 +66,23 @@ Then run them from the repository; this builds Dynomite with debug logs first (`
 ## Help
 
     Usage: dynomite [-?hVdDt] [-v verbosity level] [-o output file]
-                      [-c conf file] [-p pid file] [-m mbuf size (deprecated)]
-                      [-M max alloc messages (deprecated)]
+                    [-c conf file] [-p pid file] [-x admin operation]
+                    [-m mbuf size (deprecated)]
+                    [-M max alloc messages (deprecated)]
 
     Options:
-      -h, --help             : this help
-      -V, --version          : show version and exit
-      -t, --test-conf        : test configuration for syntax errors and exit
-      -d, --daemonize        : run as a daemon
-      -D, --describe-stats   : print stats description and exit
-      -v, --verbosity=N            : set logging level (default: 5, min: 0, max: 11)
-      -o, --output=S               : set logging file (default: stderr)
-      -c, --conf-file=S            : set configuration file (default: /usr/local/etc/dynomite.yml)
-      -p, --pid-file=S             : set pid file (default: off)
-      -x, --admin-operation=N      : set admin mode, 1 sends deletes to the local datastore only (default: 0, off)
-      -m, --mbuf-size=N            : set size of mbuf chunk in bytes (default: 0 bytes)
+      -h, --help              : this help
+      -V, --version           : show version and exit
+      -t, --test-conf         : test configuration for syntax errors and exit
+      -d, --daemonize         : run as a daemon
+      -D, --describe-stats    : print stats description and exit
+      -v, --verbosity=N       : set logging level (default: 5, min: 0, max: 11)
+      -o, --output=S          : set logging file (default: stderr)
+      -c, --conf-file=S       : set configuration file (default: /usr/local/etc/dynomite.yml)
+      -p, --pid-file=S        : set pid file (default: off)
+      -x, --admin-operation=N : set admin mode, 1 sends deletes to the local datastore only (default: 0, off)
+      -m, --mbuf-size=N       : set size of mbuf chunk in bytes (default: 16384 bytes, deprecated)
+      -M, --max-msgs=N        : set max number of messages to allocate (default: 200000, deprecated)
 
 ## Configuration
 
