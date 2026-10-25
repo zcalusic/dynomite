@@ -72,6 +72,10 @@ AC_CHECK_LIB([m], [pow])
 AC_CHECK_LIB([pthread], [pthread_create])
 AC_CHECK_LIB([ssl], [SSL_read])
 AC_CHECK_LIB([crypto], [OPENSSL_init])
+AC_CHECK_HEADER([yaml.h], [],
+  [AC_MSG_ERROR([libyaml headers not found (Debian: libyaml-dev)])])
+AC_CHECK_LIB([yaml], [yaml_parser_initialize], [],
+  [AC_MSG_ERROR([libyaml not found (Debian: libyaml-dev)])])
 
 
 # Checks for library functions
@@ -192,14 +196,6 @@ AS_IF([test "x$disable_stats" = xyes],
   [],
   [AC_DEFINE([HAVE_STATS], [1], [Define to 1 if stats is not disabled])])
 AC_MSG_RESULT($disable_stats)
-
-# Untar the yaml-0.1.4 in contrib/ before config.status is rerun, unless it
-# is already there (as in a release tarball)
-AC_CONFIG_COMMANDS_PRE([test -f "$srcdir/contrib/yaml-0.1.4/configure" ||
-  tar xvfz "$srcdir/contrib/yaml-0.1.4.tar.gz" -C "$srcdir/contrib"])
-
-# Call yaml-0.1.4 ./configure recursively
-AC_CONFIG_SUBDIRS([contrib/yaml-0.1.4])
 
 # Define Makefiles
 AC_CONFIG_FILES([Makefile

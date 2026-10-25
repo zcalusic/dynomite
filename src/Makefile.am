@@ -10,7 +10,6 @@ AM_CPPFLAGS += -I $(top_srcdir)/src/proto
 AM_CPPFLAGS += -I $(top_srcdir)/src/event
 AM_CPPFLAGS += -I $(top_srcdir)/src/entropy
 AM_CPPFLAGS += -I $(top_srcdir)/src/seedsprovider
-AM_CPPFLAGS += -I $(top_srcdir)/contrib/yaml-0.1.4/include
 
 AM_CFLAGS = -Wall -Wshadow
 AM_CFLAGS += -Wpointer-arith
@@ -84,7 +83,6 @@ dynomite_LDADD += $(top_builddir)/src/proto/libproto.a
 dynomite_LDADD += $(top_builddir)/src/event/libevent.a
 dynomite_LDADD += $(top_builddir)/src/entropy/libentropy.a
 dynomite_LDADD +=  $(top_builddir)/src/seedsprovider/libseedsprovider.a -lresolv
-dynomite_LDADD += $(top_builddir)/contrib/yaml-0.1.4/src/.libs/libyaml.a
 
 
 
@@ -136,7 +134,6 @@ dynomite_test_LDADD += $(top_builddir)/src/proto/libproto.a
 dynomite_test_LDADD += $(top_builddir)/src/event/libevent.a
 dynomite_test_LDADD += $(top_builddir)/src/entropy/libentropy.a
 dynomite_test_LDADD +=  $(top_builddir)/src/seedsprovider/libseedsprovider.a -lresolv
-dynomite_test_LDADD += $(top_builddir)/contrib/yaml-0.1.4/src/.libs/libyaml.a
 
 if OS_BSD
 dynomite_LDADD += $(top_builddir)/contrib/libfmemopen.a

@@ -1,7 +1,7 @@
 - strace
   strace -o strace.txt -ttT -s 1024 -p `pgrep dynomite`
 
-- libyaml (yaml-0.1.4)
+- libyaml
 
   - yaml tokens:
 
