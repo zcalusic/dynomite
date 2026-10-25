@@ -71,7 +71,7 @@ class DynoCluster(object):
     def __init__(self, request_file, ips):
         # Load the YAML file describing the cluster.
         with open(request_file, 'r') as fh:
-            self.request = yaml.load(fh)
+            self.request = yaml.safe_load(fh)
 
         self.ips = ips
         self.nodes = []

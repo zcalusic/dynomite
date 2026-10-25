@@ -1,10 +1,5 @@
 #!/bin/bash
 
-if [ -n "$TRAVIS" ]; then
-    sudo pip3 install redis plumbum pyyaml
-fi
-
-
 # parse options
 rebuild=true
 debug=false
