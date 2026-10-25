@@ -195,22 +195,17 @@ class DynoCluster(object):
                 if node_conn.exists(key):
                     return node
 
-    # Checks if 'node' is part of a DC that has multiple racks.
-    def _is_node_in_multi_rack_dc(self, node):
-        source_dc = node.spec.dc
-        for dc, racks in self.counts_by_rack.items():
-            if source_dc == dc and len(racks) > 1:
-                return True
-        return False
-
     def get_connection(self):
         node = random.choice(self.nodes)
         return node.get_connection()
 
+    # Returns a connection to a node in the DC returned by get_multi_rack_dc(), so
+    # that quorum reads are coordinated in the same DC that tests inspect.
+    # Returns None if no DC has multiple racks.
     def get_connection_to_multi_rack_dc(self):
-        # Attempt this an arbitrary number of times, else just return None.
-        for i in range(0, 10):
-            node = random.choice(self.nodes)
-            if self._is_node_in_multi_rack_dc(node) == True:
-                return node.get_connection()
-        return None
+        multi_rack_dc = self.get_multi_rack_dc()
+        if multi_rack_dc is None:
+            return None
+        dc, racks = multi_rack_dc
+        node = random.choice([n for n in self.nodes if n.spec.dc == dc])
+        return node.get_connection()
