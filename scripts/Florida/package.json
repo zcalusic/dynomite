@@ -17,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Netflix/dynomite.git"
+    "url": "git+https://github.com/zcalusic/dynomite.git"
   },
   "contributors": [
     {
@@ -33,7 +33,7 @@
   ],
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/Netflix/dynomite/issues"
+    "url": "https://github.com/zcalusic/dynomite/issues"
   },
-  "homepage": "https://github.com/Netflix/dynomite#readme"
+  "homepage": "https://github.com/zcalusic/dynomite#readme"
 }

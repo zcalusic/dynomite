@@ -3,7 +3,7 @@ m4_ifndef([m4_esyscmd_s], [m4_define([m4_chomp_all], [m4_format([[%.*s]], m4_bre
 m4_ifndef([m4_esyscmd_s], [m4_define([m4_esyscmd_s], [m4_chomp_all(m4_esyscmd([$1]))])])
 
 # Define the bug reporting address and package version
-m4_define([DN_BUGS], [dynomite@netflix.com])
+m4_define([DN_BUGS], [https://github.com/zcalusic/dynomite/issues])
 m4_define([DN_VERSION_STRING], m4_esyscmd_s([git describe --dirty --always --tags]))
 
 # Initialize autoconf

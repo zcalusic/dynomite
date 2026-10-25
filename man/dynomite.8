@@ -1,4 +1,4 @@
-.TH DYNOMITE 8 "November 23, 2016" "v0.5.9"
+.TH DYNOMITE 8 "October 25, 2026" "v0.6.22"
 .SH NAME
 dynomite - a generic dynamo implementation for different key/value storage engines.
 .SH SYNOPSIS
@@ -19,14 +19,10 @@ dynomite - a generic dynamo implementation for different key/value storage engin
 .IR output-file \|]
 .RB [\| -c
 .IR conf-file \|]
-.RB [\-s
-.IR stats-port \|]
-.RB [\-a
-.IR stats-addr \|]
-.RB [\-i
-.IR stats-interval \|]
 .RB [\-p
 .IR pid-file \|]
+.RB [\-x
+.IR admin-operation \|]
 .RB [\-m
 .IR mbuf-size \|]
 .RB [\-M
@@ -65,9 +61,6 @@ Show dynomite version and exit.
 .BR \-t ", " \-\-test-conf
 Test configuration file for syntax errors and exit.
 .TP
-.BR \-g ", " \-\-gossip
-Enable gossip. (default: disable)
-.TP
 .BR \-d ", " \-\-daemonize
 Run dynomite as a daemon in the background.
 .TP
@@ -86,28 +79,40 @@ Set logging file to
 .BI \-c\  file \fR,\ \fB\-\-conf-file= file
 Set the configuration file to
 .IR file .
+(default:
+.I dynomite.yml
+in sysconfdir, which is /usr/local/etc with the default prefix)
 .TP
 .BI \-p\  file \fR,\ \fB\-\-pid-file= file
 Set the pid file to
 .IR file .
 .TP
+.BI \-x\  N \fR,\ \fB\-\-admin-operation= N
+Set the admin mode to
+.IR N .
+In admin mode, dynomite doesn't connect to its peers; with 1, deletes are
+sent to the local datastore only, for example to purge keys that the node
+doesn't own. (default: 0, off)
+.TP
 .BI \-m\  N \fR,\ \fB\-\-mbuf-size= N
 Set mbuf chunk size to
 .IR N
-bytes. (default: 16384)
+bytes. Deprecated, use
+.B mbuf_size
+in the configuration file. (default: 16384)
 .TP
-.BI \-M\  N \fR,\ \fB\-\-max-msgx= N
+.BI \-M\  N \fR,\ \fB\-\-max-msgs= N
 Set the maximum number of messages to allocate to
 .IR N .
-(default: 200000)
-.TP
-.BI \-x\  N \fR,\ \fB\-\-admin-operation= N
-Set the size of admin operation to
-.IR N .
-(default: 0)
+Deprecated, use
+.B max_msgs
+in the configuration file. (default: 200000)
 .SH SEE ALSO
 .BR memcached (8),
 .BR redis-server (1)
 .br
 .SH AUTHOR
-Dynomite is developed by Netflix, Inc. Dynomite is currently developed by Netflix, Inc. and the open source community. 
+Dynomite was originally developed by Netflix, Inc.
+This is an unofficial fork, maintained at
+.UR https://github.com/zcalusic/dynomite
+.UE .
