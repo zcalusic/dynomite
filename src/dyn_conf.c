@@ -1971,8 +1971,10 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
       dn_strcmp(cp->secure_server_option.data, CONF_SECURE_OPTION_DC) &&
       dn_strcmp(cp->secure_server_option.data, CONF_SECURE_OPTION_ALL)) {
     log_error(
-        "conf: directive \"secure_server_option:\"must be one of 'none' 'rack' "
-        "'datacenter' 'all'");
+        "conf: directive \"secure_server_option:\" is \"%.*s\", must be one "
+        "of 'none' 'rack' 'datacenter' 'all'",
+        cp->secure_server_option.len, cp->secure_server_option.data);
+    return DN_ERROR;
   }
 
   if (!dn_strcasecmp(cp->read_consistency.data, CONF_STR_DC_ONE))
