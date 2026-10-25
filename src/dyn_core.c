@@ -221,6 +221,7 @@ static rstatus_t core_ctx_create(struct instance *nci) {
   if (ctx->cf == NULL) {
     loga("Failed to create conf!!!");
     dn_free(ctx);
+    nci->ctx = NULL;
     return DN_ERROR;
   }
 
@@ -247,6 +248,8 @@ static void core_ctx_destroy(struct context *ctx) {
  * @return rstatus_t Return status code.
  */
 rstatus_t core_start(struct instance *nci) {
+  struct context *ctx = NULL;
+
   conn_init();
   task_mgr_init();
 
@@ -255,7 +258,7 @@ rstatus_t core_start(struct instance *nci) {
     goto error;
   }
 
-  struct context *ctx = nci->ctx;
+  ctx = nci->ctx;
   ASSERT(ctx != NULL);
 
   status = core_server_pool_init(ctx);
@@ -356,6 +359,7 @@ error:
     server_pool_deinit(&ctx->pool);
     if (ctx->cf) conf_destroy(ctx->cf);
     dn_free(ctx);
+    nci->ctx = NULL;
   }
   conn_deinit();
   return status;
