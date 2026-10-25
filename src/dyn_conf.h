@@ -85,7 +85,7 @@ struct conf_pool {
   struct conf_listen listen; /* listen: */
   hash_type_t hash;          /* hash: */
   struct string hash_tag;    /* hash_tag: */
-  void *deprecated;          /* Deprecated: distribution, server_connections */
+  void *deprecated;          /* Deprecated, see conf_commands */
   msec_t timeout;            /* timeout: */
   int backlog;               /* backlog: */
   int client_connections;    /* client_connections: */
@@ -97,12 +97,8 @@ struct conf_pool {
   struct conf_server *conf_datastore; /* This is the underlying datastore */
   unsigned valid : 1;                 /* valid? */
   struct conf_listen dyn_listen;      /* dyn_listen  */
-  int dyn_read_timeout;               /* inter dyn nodes' read timeout in ms */
-  int dyn_write_timeout;              /* inter dyn nodes' write timeout in ms */
   struct string dyn_seed_provider;    /* seed provider */
   struct array dyn_seeds;             /* seed nodes: conf_server array */
-  int dyn_port;
-  int dyn_connections; /* dyn connections */
   struct string rack;  /* this node's logical rack */
   struct array tokens; /* this node's token: dyn_token array */
   msec_t gos_interval; /* wake up interval in ms */

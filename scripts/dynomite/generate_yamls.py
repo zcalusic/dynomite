@@ -45,7 +45,6 @@ for k,v in token_map.items():
         'servers': ['127.0.0.1:' + MEMCACHE_PORT + ':1'],
         'dyn_seed_provider': 'simple_provider',
 
-        'dyn_port': DYN_PEER_PORT,
         'dyn_listen': '0.0.0.0:' + str(DYN_PEER_PORT),
         'datacenter': DEFAULT_DC,
         'rack': ip_dc[1],

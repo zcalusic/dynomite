@@ -62,9 +62,6 @@
 #define CONF_DEFAULT_KETAMA_PORT 11211
 
 #define CONF_DEFAULT_SEEDS 5
-#define CONF_DEFAULT_DYN_READ_TIMEOUT 10000
-#define CONF_DEFAULT_DYN_WRITE_TIMEOUT 10000
-#define CONF_DEFAULT_DYN_CONNECTIONS 100
 #define CONF_DEFAULT_VNODE_TOKENS 1
 #define CONF_DEFAULT_GOS_INTERVAL 30000  // in millisec
 
@@ -232,10 +229,6 @@ static rstatus_t conf_pool_init(struct conf_pool *cp, struct string *name) {
   memset(&cp->stats_listen.info, 0, sizeof(cp->stats_listen.info));
   cp->stats_listen.valid = 0;
 
-  cp->dyn_read_timeout = CONF_UNSET_NUM;
-  cp->dyn_write_timeout = CONF_UNSET_NUM;
-  cp->dyn_port = CONF_UNSET_NUM;
-  cp->dyn_connections = CONF_UNSET_NUM;
 
   cp->gos_interval = CONF_UNSET_NUM;
 
@@ -383,9 +376,6 @@ static void conf_dump(struct conf *cf) {
 
   log_debug(LOG_VVERB, "  dyn_listen: %.*s", cp->dyn_listen.pname.len,
             cp->dyn_listen.pname.data);
-  log_debug(LOG_VVERB, "  dyn_read_timeout: %d", cp->dyn_read_timeout);
-  log_debug(LOG_VVERB, "  dyn_write_timeout: %d", cp->dyn_write_timeout);
-  log_debug(LOG_VVERB, "  dyn_connections: %d", cp->dyn_connections);
 
   log_debug(LOG_VVERB, "  gos_interval: %lu", cp->gos_interval);
   log_debug(LOG_VVERB, "  conn_msg_rate: %d", cp->conn_msg_rate);
@@ -1119,11 +1109,11 @@ static struct command conf_commands[] = {
     {string("servers"), conf_add_server,
      offsetof(struct conf_pool, conf_datastore)},
 
-    {string("dyn_read_timeout"), conf_set_num,
-     offsetof(struct conf_pool, dyn_read_timeout)},
+    {string("dyn_read_timeout"), conf_set_deprecated,
+     offsetof(struct conf_pool, deprecated)},
 
-    {string("dyn_write_timeout"), conf_set_num,
-     offsetof(struct conf_pool, dyn_write_timeout)},
+    {string("dyn_write_timeout"), conf_set_deprecated,
+     offsetof(struct conf_pool, deprecated)},
 
     {string("dyn_listen"), conf_set_listen,
      offsetof(struct conf_pool, dyn_listen)},
@@ -1134,10 +1124,11 @@ static struct command conf_commands[] = {
     {string("dyn_seeds"), conf_add_dyn_server,
      offsetof(struct conf_pool, dyn_seeds)},
 
-    {string("dyn_port"), conf_set_num, offsetof(struct conf_pool, dyn_port)},
+    {string("dyn_port"), conf_set_deprecated,
+     offsetof(struct conf_pool, deprecated)},
 
-    {string("dyn_connections"), conf_set_num,
-     offsetof(struct conf_pool, dyn_connections)},
+    {string("dyn_connections"), conf_set_deprecated,
+     offsetof(struct conf_pool, deprecated)},
 
     {string("rack"), conf_set_string, offsetof(struct conf_pool, rack)},
 
@@ -1873,21 +1864,6 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
 
   if (cp->server_failure_limit == CONF_UNSET_NUM) {
     cp->server_failure_limit = CONF_DEFAULT_SERVER_FAILURE_LIMIT;
-  }
-
-  if (cp->dyn_read_timeout == CONF_UNSET_NUM) {
-    cp->dyn_read_timeout = CONF_DEFAULT_DYN_READ_TIMEOUT;
-  }
-
-  if (cp->dyn_write_timeout == CONF_UNSET_NUM) {
-    cp->dyn_write_timeout = CONF_DEFAULT_DYN_WRITE_TIMEOUT;
-  }
-
-  if (cp->dyn_connections == CONF_UNSET_NUM) {
-    cp->dyn_connections = CONF_DEFAULT_DYN_CONNECTIONS;
-  } else if (cp->dyn_connections == 0) {
-    log_error("conf: directive \"dyn_connections:\" cannot be 0");
-    return DN_ERROR;
   }
 
   if (cp->gos_interval == CONF_UNSET_NUM) {

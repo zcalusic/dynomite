@@ -124,11 +124,9 @@ Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible)
 + **datastore_connections**: Maximum number of connections to the local datastore. Defaults to 1.
 + **local_peer_connections**: Maximum number of connections to a local DC peer. Defaults to 1.
 + **remote_peer_connections**: Maximum number of connections to a remote DC peer. Defaults to 1.
-+ **dyn_port**: Accepted, but currently has no effect; the inter-node port comes from dyn_listen.
-+ **dyn_connections**, **dyn_read_timeout**, **dyn_write_timeout**: Accepted, but currently have no effect.
 + **conn_msg_rate**: The maximum number of messages per second sent on each connection to a node in a remote datacenter. Defaults to 50000.
 
-The keys **client_connections**, **distribution** and **server_connections** are still accepted for compatibility, but are ignored.
+The keys **client_connections**, **distribution**, **server_connections**, **dyn_port**, **dyn_connections**, **dyn_read_timeout** and **dyn_write_timeout** are still accepted for compatibility, but are ignored. The inter-node port comes from **dyn_listen**.
 
 See [conf/dynomite.yml](conf/dynomite.yml) for an example; [conf/](conf/) has more, such as [conf/redis_single.yml](conf/redis_single.yml).
 
