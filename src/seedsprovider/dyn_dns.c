@@ -119,7 +119,7 @@ uint8_t dns_get_seeds(struct context *ctx, struct mbuf *seeds_buf) {
       return DN_NOOPS;
     }
     mbuf_rewind(seeds_buf);
-    unsigned char *s = ns_rr_rdata(rr);
+    const unsigned char *s = ns_rr_rdata(rr);
     if (s[0] >= ns_rr_rdlen(rr)) {
       log_debug(LOG_DEBUG, "invalid length for %s: %d < %d", dnsName, s[0],
                 ns_rr_rdlen(rr));

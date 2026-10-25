@@ -107,7 +107,7 @@ static bool dnode_peer_active(struct conn *conn) {
   return false;
 }
 
-static char *_print_node(const struct object *obj) {
+static char *_print_node(struct object *obj) {
   ASSERT(obj->type == OBJ_NODE);
   struct node *node = (struct node *)obj;
   snprintf(obj->print_buff, PRINT_BUF_SIZE,

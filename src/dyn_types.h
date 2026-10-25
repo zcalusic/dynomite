@@ -131,7 +131,7 @@ typedef enum {
 #define PRINT_BUF_SIZE 255
 
 struct object;
-typedef char *(*func_print_t)(const struct object *obj);
+typedef char *(*func_print_t)(struct object *obj);
 typedef struct object {
   uint16_t magic;
   object_type_t type;

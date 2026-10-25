@@ -225,7 +225,7 @@ void mbuf_remove(struct mhdr *mhdr, struct mbuf *mbuf) {
  * The memory areas should not overlap and the mbuf should have
  * enough space for n bytes.
  */
-void mbuf_copy(struct mbuf *mbuf, uint8_t *pos, size_t n) {
+void mbuf_copy(struct mbuf *mbuf, const uint8_t *pos, size_t n) {
   if (n == 0) {
     return;
   }

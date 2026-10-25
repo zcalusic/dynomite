@@ -483,7 +483,7 @@ static rstatus_t gossip_rack_init(struct gossip_rack *g_rack, struct string *dc,
 
 static struct gossip_node *gossip_add_node_to_rack(
     struct server_pool *sp, struct string *dc, struct gossip_rack *g_rack,
-    struct string *address, struct string *ip, struct string *port,
+    struct string *address, struct string *ip, const struct string *port,
     struct dyn_token *token) {
   rstatus_t status;
   log_debug(LOG_VERB,
@@ -522,7 +522,8 @@ static struct gossip_node *gossip_add_node_to_rack(
 static rstatus_t gossip_add_node(struct server_pool *sp, struct string *dc,
                                  struct gossip_rack *g_rack,
                                  struct string *address, struct string *ip,
-                                 struct string *port, struct dyn_token *token,
+                                 const struct string *port,
+                                 struct dyn_token *token,
                                  uint8_t state) {
   rstatus_t status;
   log_debug(
@@ -589,7 +590,7 @@ static rstatus_t gossip_update_state(struct server_pool *sp,
 
 static rstatus_t gossip_add_node_if_absent(
     struct server_pool *sp, struct string *dc, struct string *rack,
-    struct string *address, struct string *ip, struct string *port,
+    struct string *address, struct string *ip, const struct string *port,
     struct dyn_token *token, uint8_t state, const uint64_t timestamp) {
   log_debug(LOG_VERB, "gossip_add_node_if_absent          : '%.*s'",
             address->len, address->data);

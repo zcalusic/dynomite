@@ -25,7 +25,7 @@ struct conn_pool {
   struct task *scheduled_reconnect_task;
 };
 
-static char *_print_conn_pool(const struct object *obj) {
+static char *_print_conn_pool(struct object *obj) {
   ASSERT(obj->type == OBJ_CONN_POOL);
   conn_pool_t *cp = (conn_pool_t *)obj;
   snprintf(obj->print_buff, PRINT_BUF_SIZE,

@@ -26,7 +26,8 @@ char *print_obj(const void *ptr) {
     return buffer;
   }
   if ((obj->type >= 0) && (obj->type < OBJ_LAST)) {
-    return obj->func_print(obj);
+    // The print functions write into the object's print_buff.
+    return obj->func_print((object_t *)obj);
   } else {
     snprintf(buffer, PRINT_BUF_SIZE, "addr:%p <CORRUPTION> INVALID TYPE %d",
              obj, obj->type);

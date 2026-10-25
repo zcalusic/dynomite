@@ -30,12 +30,12 @@
 #include "dyn_token.h"
 #include "dyn_util.h"
 
-static char *_print_datastore(const struct object *obj) {
+static char *_print_datastore(struct object *obj) {
   ASSERT(obj->type == OBJ_DATASTORE);
   struct datastore *ds = (struct datastore *)obj;
-  snprintf((char*)obj->print_buff, PRINT_BUF_SIZE, "<DATASTORE %p %.*s>", ds,
+  snprintf(obj->print_buff, PRINT_BUF_SIZE, "<DATASTORE %p %.*s>", ds,
            ds->endpoint.pname.len, ds->endpoint.pname.data);
-  return (char*)obj->print_buff;
+  return obj->print_buff;
 }
 
 static void server_ref(struct conn *conn, void *owner) {

@@ -27,7 +27,7 @@ rstatus_t histo_init(volatile struct histogram *histo) {
     return DN_ERROR;
   }
 
-  uint64_t *buckets = histo->buckets;
+  volatile uint64_t *buckets = histo->buckets;
   uint64_t last = 1;
   bucket_offsets[0] = last;
   int i;
@@ -57,7 +57,7 @@ rstatus_t histo_reset(volatile struct histogram *histo) {
     return DN_ERROR;
   }
 
-  uint64_t *buckets = histo->buckets;
+  volatile uint64_t *buckets = histo->buckets;
   int i;
   for (i = 0; i < BUCKET_SIZE; i++) {
     buckets[i] = 0;
@@ -72,12 +72,12 @@ rstatus_t histo_reset(volatile struct histogram *histo) {
   return DN_OK;
 }
 
-static uint64_t count(struct histogram *histo) {
+static uint64_t count(volatile struct histogram *histo) {
   if (histo == NULL) {
     return 0;
   }
 
-  uint64_t *buckets = histo->buckets;
+  volatile uint64_t *buckets = histo->buckets;
   uint64_t sum = 0L;
   int i;
   for (i = 0; i < BUCKET_SIZE; i++) sum += buckets[i];
@@ -89,7 +89,7 @@ void histo_add(volatile struct histogram *histo, uint64_t val) {
     return;
   }
 
-  uint64_t *buckets = histo->buckets;
+  volatile uint64_t *buckets = histo->buckets;
   int left_index, right_index, middle_index, index = 0;
 
   left_index = 0;
@@ -227,7 +227,7 @@ void histo_compute(volatile struct histogram *histo) {
     return;
   }
 
-  uint64_t *buckets = histo->buckets;
+  volatile uint64_t *buckets = histo->buckets;
 
   int last_bucket = BUCKET_SIZE - 1;
   if (buckets[last_bucket] > 0) {

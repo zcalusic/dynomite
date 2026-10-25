@@ -49,7 +49,7 @@ inline char *_conn_get_type_string(struct conn *conn) {
   return "INVALID";
 }
 
-static char *_print_conn(const struct object *obj) {
+static char *_print_conn(struct object *obj) {
   ASSERT(obj->type == OBJ_CONN);
   struct conn *conn = (struct conn *)obj;
   if ((conn->type == CONN_DNODE_PEER_PROXY) || (conn->type == CONN_PROXY)) {

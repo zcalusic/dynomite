@@ -346,7 +346,7 @@ error:
   return status;
 }
 
-char *print_server_pool(const struct object *obj) {
+char *print_server_pool(struct object *obj) {
   ASSERT(obj->type == OBJ_POOL);
   struct server_pool *sp = (struct server_pool *)obj;
   snprintf(obj->print_buff, PRINT_BUF_SIZE, "<POOL %p '%.*s'>", sp,

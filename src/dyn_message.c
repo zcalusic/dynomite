@@ -171,7 +171,7 @@ static struct string msg_type_strings[] = {MSG_TYPE_CODEC(DEFINE_ACTION)
 // Determines if read repairs is enabled or not.
 bool g_read_repairs_enabled = false;
 
-static char *print_req(const struct object *obj) {
+static char *print_req(struct object *obj) {
   ASSERT(obj->type == OBJ_REQ);
   struct msg *req = (struct msg *)obj;
   struct string *req_type = msg_type_string(req->type);
@@ -181,7 +181,7 @@ static char *print_req(const struct object *obj) {
   return obj->print_buff;
 }
 
-static char *print_rsp(const struct object *obj) {
+static char *print_rsp(struct object *obj) {
   ASSERT(obj->type == OBJ_RSP);
   struct msg *rsp = (struct msg *)obj;
   struct string *rsp_type = msg_type_string(rsp->type);
