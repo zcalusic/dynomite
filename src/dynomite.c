@@ -80,10 +80,9 @@ static struct option long_options[] = {
     {"mbuf-size", required_argument, NULL, 'm'},
     {"max-msgs", required_argument, NULL, 'M'},
     {"admin-operation", required_argument, NULL, 'x'},
-    {"admin-param", required_argument, NULL, 'y'},
     {NULL, 0, NULL, 0}};
 
-static char short_options[] = "hVtdDv:o:c:s:i:a:p:m:M:x:y";
+static char short_options[] = "hVtdDv:o:c:p:m:M:x:";
 
 /**
  * Daemonize dynomite and redirect stdin, stdout and stderr to /dev/null.
@@ -444,13 +443,12 @@ static rstatus_t dn_get_options(int argc, char **argv, struct instance *nci) {
           case 'M':
           case 'v':
           case 'x':
-          case 's':
-          case 'i':
             log_stderr("dynomite: option -%c requires a number", optopt);
             break;
 
-          case 'a':
-            log_stderr("dynomite: option -%c requires a string", optopt);
+          case 0:
+            // Unknown long option.
+            log_stderr("dynomite: unrecognized option '%s'", argv[optind - 1]);
             break;
 
           default:
