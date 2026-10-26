@@ -234,6 +234,7 @@ struct parse_req {
   char keys[1024];  /* space-separated */
   const char *args; /* space-separated, NULL if not checked */
   bool too_long;    /* a key was skipped as too long (keys has the others) */
+  bool missing_args; /* a command that needs arguments came with none */
 };
 
 #define PARSE_DATA_MAX 81920
@@ -299,6 +300,7 @@ static void parse_add_req(struct parse_case *tc, msg_type_t type,
   dn_snprintf(tc->reqs[tc->nreqs].keys, sizeof(tc->reqs[0].keys), "%s", keys);
   tc->reqs[tc->nreqs].args = NULL;
   tc->reqs[tc->nreqs].too_long = false;
+  tc->reqs[tc->nreqs].missing_args = false;
   tc->nreqs++;
 }
 
@@ -323,6 +325,13 @@ static void parse_add_too_long(struct parse_case *tc, msg_type_t type,
                                const char *keys, const char *words) {
   parse_add(tc, type, keys, words);
   tc->reqs[tc->nreqs - 1].too_long = true;
+}
+
+/* Append a redis command without the arguments it needs, which it flags. */
+static void parse_add_missing_args(struct parse_case *tc, msg_type_t type,
+                                   const char *words) {
+  parse_add(tc, type, "", words);
+  tc->reqs[tc->nreqs - 1].missing_args = true;
 }
 
 /* Append a response the parser should accept, with its type and args. */
@@ -467,6 +476,12 @@ static rstatus_t parse_check(const struct parse_case *tc, size_t chunk,
     log_error("%s (mbuf %zu, chunk %zu%s): %s %zu %s a key too long", tc->name,
               mbuf_data_size(), chunk, parse_mode(), what, i + 1,
               msg->key_too_long ? "has" : "doesn't have");
+    return DN_ERROR;
+  }
+  if (msg->missing_args != tc->reqs[i].missing_args) {
+    log_error("%s (mbuf %zu, chunk %zu%s): %s %zu is %sflagged missing args",
+              tc->name, mbuf_data_size(), chunk, parse_mode(), what, i + 1,
+              msg->missing_args ? "" : "not ");
     return DN_ERROR;
   }
   if (msg->type != tc->reqs[i].type ||
@@ -711,6 +726,27 @@ static void parse_cases_init(void) {
   dn_snprintf(long_words, sizeof(long_words), "MSET k1 v1 %s v2", huge);
   parse_add_too_long(tc, MSG_REQ_REDIS_MSET, "k1", long_words);
   parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
+
+  /*
+   * A command that needs arguments but has none: from a client, the parser
+   * flags it, and the requests after it parse as usual; from a peer, it
+   * rejects it. The ones that may have none parse as usual.
+   */
+  tc = parse_case_new("redis missing args", DATA_REDIS, false);
+  parse_add(tc, MSG_REQ_REDIS_GET, "foo", "GET foo");
+  parse_add_missing_args(tc, MSG_REQ_REDIS_SMEMBERS, "SMEMBERS");
+  parse_add_missing_args(tc, MSG_REQ_REDIS_GET, "get");
+  parse_add_missing_args(tc, MSG_REQ_REDIS_MGET, "MGET");
+  parse_add_missing_args(tc, MSG_REQ_REDIS_EVAL, "EVAL");
+  parse_add_missing_args(tc, MSG_REQ_REDIS_SCRIPT_LOAD, "SCRIPT LOAD");
+  parse_add(tc, MSG_REQ_REDIS_PING, "", "PING");
+  parse_add(tc, MSG_REQ_REDIS_INFO, "", "INFO");
+  parse_add(tc, MSG_REQ_REDIS_SCRIPT_FLUSH, "", "SCRIPT FLUSH");
+  parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
+
+  tc = parse_case_new("dnode missing args", DATA_REDIS, true);
+  parse_add(tc, MSG_REQ_REDIS_SET, "foo1", "set foo1 bar1");
+  parse_reject(tc, "SMEMBERS");
 
   tc = parse_case_new("dnode long key", DATA_REDIS, true);
   parse_add(tc, MSG_REQ_REDIS_SET, "foo1", "set foo1 bar1");

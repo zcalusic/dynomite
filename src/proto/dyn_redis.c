@@ -157,6 +157,21 @@ static bool redis_arg_upto1(struct msg *r) {
   return false;
 }
 /*
+ * Return true if the command needs arguments, so that it can't come without
+ * any. CLIENT SETINFO and dyno_config:conn_consistency check their own count.
+ */
+static bool redis_needs_args(struct msg *r) {
+  switch (r->type) {
+    case MSG_REQ_REDIS_HELLO:
+    case MSG_REQ_REDIS_CLIENT_SETINFO:
+    case MSG_HACK_SETTING_CONN_CONSISTENCY:
+      return false;
+    default:
+      return !redis_argz(r) && !redis_arg_upto1(r);
+  }
+}
+
+/*
  * Return true, if the redis command accepts exactly 2 arguments, otherwise
  * return false
  */
@@ -1639,6 +1654,18 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
 
         switch (ch) {
           case LF:
+            if (r->rntokens == 0 && redis_needs_args(r)) {
+              /*
+               * The command needs arguments and has none, so there's no
+               * token left to parse. From a client, answer it as Redis would
+               * (req_filter()); a peer can't be answered that way.
+               */
+              if (r->owner == NULL || r->owner->dyn_mode) {
+                goto error;
+              }
+              r->missing_args = 1;
+              goto done;
+            }
             if (redis_argz(r) && (r->rntokens == 0)) {
               goto done;
             } else if (redis_arg_upto1(r) && r->rntokens == 0) {

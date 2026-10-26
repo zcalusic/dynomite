@@ -43,6 +43,9 @@
  */
 
 #include "dyn_client.h"
+
+#include <ctype.h>
+
 #include "dyn_core.h"
 #include "dyn_dict_msg_id.h"
 #include "dyn_dnode_peer.h"
@@ -350,6 +353,32 @@ struct msg *req_recv_next(struct context *ctx, struct conn *conn, bool alloc) {
   return req;
 }
 
+/*
+ * The name Redis gives a command in its errors, from its type: lower case,
+ * "script|load" for a subcommand, "json.set" for a RedisJSON one.
+ */
+static void redis_command_name(msg_type_t type, char *buf, size_t size) {
+  struct string *str = msg_type_string(type);
+  const char *prefix = "REQ_REDIS_";
+  uint32_t i = 0;
+  size_t n = 0;
+
+  if (str->len > strlen(prefix) &&
+      strncmp((const char *)str->data, prefix, strlen(prefix)) == 0) {
+    i = (uint32_t)strlen(prefix);
+  }
+  if (str->len - i > 4 &&
+      strncmp((const char *)str->data + i, "JSON", 4) == 0) {
+    n = (size_t)dn_snprintf(buf, size, "json.");
+    i += 4;
+  }
+  for (; i < str->len && n + 1 < size; i++) {
+    char ch = (char)str->data[i];
+    buf[n++] = ch == '_' ? '|' : (char)tolower(ch);
+  }
+  buf[n] = '\0';
+}
+
 static bool req_filter(struct context *ctx, struct conn *conn,
                        struct msg *req) {
   ASSERT(conn->type == CONN_CLIENT);
@@ -397,6 +426,18 @@ static bool req_filter(struct context *ctx, struct conn *conn,
                   "CLIENT_ERROR Dynomite: Key is too long, the limit is %d "
                   "bytes" CRLF, MEMCACHE_MAX_KEY_LENGTH);
     }
+    IGNORE_RET_VAL(simulate_rsp(ctx, conn, req, rsp));
+    return true;
+  }
+
+  // A command that needs arguments came with none: answer as Redis does.
+  if (req->missing_args) {
+    log_debug(LOG_VERB, "%s filter missing args %s", print_obj(conn),
+              print_obj(req));
+    char name[64], rsp[128];
+    redis_command_name(req->type, name, sizeof(name));
+    dn_snprintf(rsp, sizeof(rsp),
+                "-ERR wrong number of arguments for '%s' command" CRLF, name);
     IGNORE_RET_VAL(simulate_rsp(ctx, conn, req, rsp));
     return true;
   }
