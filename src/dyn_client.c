@@ -396,8 +396,18 @@ static bool req_filter(struct context *ctx, struct conn *conn,
     return true;
   }
 
-  // If this is a Dynomite configuration message, don't forward it.
-  if (is_msg_type_dyno_config(req->type)) {
+  // Dynomite configuration messages are applied here, not forwarded. The
+  // parser has checked the level.
+  if (req->type == MSG_HACK_SETTING_CONN_CONSISTENCY) {
+    consistency_t cons = msg_conn_consistency(req);
+    log_debug(LOG_VERB, "%s filter conn consistency %s", print_obj(conn),
+              print_obj(req));
+    ASSERT(cons != (consistency_t)-1);
+    conn_set_read_consistency(conn, cons);
+    conn_set_write_consistency(conn, cons);
+    // Just a configuration setting: answer it as DC_ONE.
+    req->consistency = DC_ONE;
+    IGNORE_RET_VAL(simulate_ok_rsp(ctx, conn, req));
     return true;
   }
 

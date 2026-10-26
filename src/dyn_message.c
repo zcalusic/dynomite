@@ -973,38 +973,6 @@ rstatus_t simulate_ok_rsp(struct context *ctx, struct conn *conn,
   return simulate_rsp(ctx, conn, msg, "+OK\r\n");
 }
 
-/*
- * If the command sent to Dynomite was a special Dynomite configuration
- * command, we process and apply the configuration here.
- *
- * Returns: DN_OK on successful application, DN_ERROR otherwise.
- */
-static rstatus_t msg_apply_config(struct context *ctx, struct conn *conn,
-    struct msg *msg) {
-
-  // We only support one type of configuration now.
-  // TODO: If we support more, convert this to a switch case.
-  ASSERT(msg->type == MSG_HACK_SETTING_CONN_CONSISTENCY);
-
-  struct argpos *consistency_string = (struct argpos*) array_get(msg->args, 0);
-
-  // We must have a consistency string, else we wouldn't have reached here.
-  ASSERT(consistency_string != NULL);
-
-  consistency_t cons = get_consistency_enum_from_string(consistency_string->start);
-  if (cons == -1) return DN_ERROR;
-
-  conn_set_read_consistency(conn, cons);
-  conn_set_write_consistency(conn, cons);
-
-  // Set the consistency to DC_ONE, since this is just a configuration setting.
-  msg->consistency = DC_ONE;
-
-  THROW_STATUS(simulate_ok_rsp(ctx, conn, msg));
-
-  return DN_OK;
-}
-
 static rstatus_t msg_parse(struct context *ctx, struct conn *conn,
                            struct msg *msg) {
   rstatus_t status;
@@ -1027,13 +995,6 @@ static rstatus_t msg_parse(struct context *ctx, struct conn *conn,
     case MSG_PARSE_AGAIN:
       status = DN_OK;
       break;
-    case MSG_PARSE_DYNO_CONFIG:
-      status = msg_apply_config(ctx, conn, msg);
-
-      // No more data to parse.
-      conn_recv_done(ctx, conn, msg, NULL);
-      break;
-
     case MSG_PARSE_NOOP:
       status = DN_NOOPS;
       break;
@@ -1505,6 +1466,34 @@ uint32_t argpos_copy(const struct argpos *arg, uint8_t *dst, uint32_t size) {
     }
   }
   return copied;
+}
+
+/*
+ * The consistency level given in a dyno_config:conn_consistency request, its
+ * only arg: one of the level names, whole and in any case. Returns -1 for
+ * anything else.
+ */
+consistency_t msg_conn_consistency(struct msg *msg) {
+  uint8_t level[sizeof("DC_EACH_SAFE_QUORUM")];
+  struct argpos *arg;
+
+  if (array_n(msg->args) != 1) {
+    return (consistency_t)-1;
+  }
+  arg = array_get(msg->args, 0);
+  if (arg->len >= sizeof(level) ||
+      argpos_copy(arg, level, (uint32_t)sizeof(level)) != arg->len) {
+    return (consistency_t)-1;
+  }
+
+  for (consistency_t cons = DC_ONE; cons <= DC_EACH_SAFE_QUORUM; cons++) {
+    const char *name = get_consistency_string(cons);
+    if (arg->len == strlen(name) &&
+        strncasecmp((char *)level, name, arg->len) == 0) {
+      return cons;
+    }
+  }
+  return (consistency_t)-1;
 }
 
 /*

@@ -279,7 +279,6 @@ typedef enum msg_parse_result {
   // Parsing done, but do nothing after
   MSG_PARSE_NOOP,
   // Parsing done, command was a dynomite configuration
-  MSG_PARSE_DYNO_CONFIG,
   // OOM error during parsing (TODO: consider removing)
   MSG_OOM_ERROR
 } msg_parse_result_t;
@@ -599,6 +598,7 @@ rstatus_t msg_append_format(struct msg *msg, const char *fmt, int num_args, ...)
 rstatus_t msg_append_bulk(struct msg *msg, const uint8_t *pos, uint32_t n);
 rstatus_t msg_append_arg(struct msg *msg, const struct argpos *arg);
 uint32_t argpos_copy(const struct argpos *arg, uint8_t *dst, uint32_t size);
+consistency_t msg_conn_consistency(struct msg *msg);
 rstatus_t msg_prepend(struct msg *msg, uint8_t *pos, size_t n);
 rstatus_t msg_prepend_format(struct msg *msg, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));

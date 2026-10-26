@@ -613,6 +613,11 @@ static void parse_cases_init(void) {
   parse_add(tc, MSG_REQ_REDIS_CLIENT_SETINFO, "",
             "CLIENT SETINFO lib-name test");
   parse_add(tc, MSG_REQ_REDIS_HELLO, "", "HELLO 3");
+  parse_add_args(tc, MSG_HACK_SETTING_CONN_CONSISTENCY, "", "dc_Quorum",
+                 "dyno_config:conn_consistency dc_Quorum");
+  parse_add_args(tc, MSG_HACK_SETTING_CONN_CONSISTENCY, "",
+                 "DC_EACH_SAFE_QUORUM",
+                 "DYNO_CONFIG:CONN_CONSISTENCY DC_EACH_SAFE_QUORUM");
   parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
 
   /* requests sent by a dnode peer, each with a dnode header */
@@ -633,10 +638,16 @@ static void parse_cases_init(void) {
   parse_add(tc, MSG_REQ_MC_DELETE, "k1", "delete k1\r\n");
 
   /* each in a stream of its own, after a valid request; the SCRIPT ones were
-   * accepted before fd14eb7 */
+   * accepted before fd14eb7, the dyno_config ones with a level that isn't
+   * one whole, or extra args, before the commit that added them */
   static const char *const rejects[] = {
       "SCRIPT GET foo", "SCRIPT DEBUG yes", "SCRIPT",      "KILL",
       "LOAD return(1)", "FLUSH",            "CLIENT LIST", "NOSUCHCOMMAND x",
+      "dyno_config:conn_consistency DC_ONEX",
+      "dyno_config:conn_consistency DC_ON",
+      "dyno_config:conn_consistency bogus",
+      "dyno_config:conn_consistency DC_ONE DC_ONE",
+      "dyno_config:conn_consistency",
   };
   for (size_t i = 0; i < NELEMS(rejects); i++) {
     tc = parse_case_new(rejects[i], DATA_REDIS, false);

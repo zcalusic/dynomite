@@ -1661,11 +1661,6 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           break;
         }
 
-        if (is_msg_type_dyno_config(r->type)) {
-          // If this is a Dynomite config message, we parse it a bit differently.
-          state = SW_ARG1_LEN;
-          break;
-        }
         switch (ch) {
           case LF:
             if (redis_argz(r) && (r->rntokens == 0)) {
@@ -1690,6 +1685,12 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               // HELLO [protover [AUTH user pass] [SETNAME name]], no key.
               if (r->rntokens == 0) {
                 goto done;
+              }
+              state = SW_ARG1_LEN;
+            } else if (r->type == MSG_HACK_SETTING_CONN_CONSISTENCY) {
+              // dyno_config:conn_consistency <level>, no key.
+              if (r->rntokens != 1) {
+                goto error;
               }
               state = SW_ARG1_LEN;
             } else {
@@ -1903,20 +1904,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
 
         m = p + r->rlen;
 
-        if (is_msg_type_dyno_config(r->type)) {
-          start_arg(r, b, p);
-          rstatus_t argstatus = record_arg(r, b, m);
-          if (argstatus == DN_ERROR) {
-            goto error;
-          } else if (argstatus == DN_ENOMEM) {
-            goto enomem;
-          }
-
-          r->result = MSG_PARSE_DYNO_CONFIG;
-          return;
-        }
-
-        if (read_repairs_enabled) {
+        // The level of a Dynomite config message is recorded as an arg too.
+        if (read_repairs_enabled || is_msg_type_dyno_config(r->type)) {
           start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
@@ -1942,13 +1931,19 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           goto error;
         }
 
-        if (read_repairs_enabled) {
+        if (read_repairs_enabled || is_msg_type_dyno_config(r->type)) {
           rstatus_t argstatus = record_arg(r, b, m);
           if (argstatus == DN_ERROR) {
             goto error;
           } else if (argstatus == DN_ENOMEM) {
             goto enomem;
           }
+        }
+
+        if (is_msg_type_dyno_config(r->type) &&
+            msg_conn_consistency(r) == (consistency_t)-1) {
+          log_error("parsed bad consistency level in req %" PRIu64, r->id);
+          goto error;
         }
 
         p = m; /* move forward by rlen bytes */
@@ -1961,7 +1956,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
       case SW_ARG1_LF:
         switch (ch) {
           case LF:
-            if (redis_arg_upto1(r) || redis_arg1(r)) {
+            if (redis_arg_upto1(r) || redis_arg1(r) ||
+                is_msg_type_dyno_config(r->type)) {
               if (r->rntokens != 0) {
                 goto error;
               }
