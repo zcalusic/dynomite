@@ -45,12 +45,12 @@ static int floridaPort = 0;
 static char *request = NULL;
 static int isOsVarEval = 0;
 
-static void evalOSVar();
+static void evalOSVar(void);
 
-static int64_t last = 0;  // storing last time for seeds check
+static msec_t last = 0;  // storing last time for seeds check
 static uint32_t last_seeds_hash = 0;
 
-static void evalOSVar() {
+static void evalOSVar(void) {
   if (isOsVarEval == 0) {
     request = (getenv("DYNOMITE_FLORIDA_REQUEST") != NULL)
                   ? getenv("DYNOMITE_FLORIDA_REQUEST")
@@ -65,11 +65,11 @@ static void evalOSVar() {
   }
 }
 
-static bool seeds_check() {
+static bool seeds_check(void) {
   msec_t now = dn_msec_now();
 
   int64_t delta = (int64_t)(now - last);
-  log_debug(LOG_VERB, "Delta or elapsed time : %lu", delta);
+  log_debug(LOG_VERB, "Delta or elapsed time : %" PRId64, delta);
   log_debug(LOG_VERB, "Seeds check internal %d", SEEDS_CHECK_INTERVAL);
 
   if (delta > SEEDS_CHECK_INTERVAL) {
@@ -201,7 +201,7 @@ static const uint8_t *florida_body(const uint8_t *rsp, size_t len) {
   return NULL;
 }
 
-uint8_t florida_get_seeds(struct context *ctx, struct mbuf *seeds_buf) {
+rstatus_t florida_get_seeds(struct context *ctx, struct mbuf *seeds_buf) {
   evalOSVar();
 
   log_debug(LOG_VVERB, "Running florida_get_seeds!");

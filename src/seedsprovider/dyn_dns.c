@@ -31,14 +31,14 @@
 static char *dnsName = NULL;
 static char *dnsType = NULL;
 static int queryType = T_TXT;
-static int64_t last = 0;  // storing last time for seeds check
+static msec_t last = 0;  // storing last time for seeds check
 static uint32_t last_seeds_hash = 0;
 
-static bool seeds_check() {
-  int64_t now = dn_msec_now();
+static bool seeds_check(void) {
+  msec_t now = dn_msec_now();
 
   int64_t delta = (int64_t)(now - last);
-  log_debug(LOG_VERB, "Delta or elapsed time : %lu", delta);
+  log_debug(LOG_VERB, "Delta or elapsed time : %" PRId64, delta);
   log_debug(LOG_VERB, "Seeds check internal %d", SEEDS_CHECK_INTERVAL);
 
   if (delta > SEEDS_CHECK_INTERVAL) {
@@ -66,7 +66,7 @@ static uint32_t hash_seeds(uint8_t *seeds, size_t length) {
   return value;
 }
 
-uint8_t dns_get_seeds(struct context *ctx, struct mbuf *seeds_buf) {
+rstatus_t dns_get_seeds(struct context *ctx, struct mbuf *seeds_buf) {
   static int _env_checked = 0;
 
   if (!_env_checked) {
@@ -93,7 +93,7 @@ uint8_t dns_get_seeds(struct context *ctx, struct mbuf *seeds_buf) {
               hstrerror(h_errno));
     return DN_NOOPS;
   }
-  if (r >= sizeof(buf)) {
+  if ((size_t)r >= sizeof(buf)) {
     log_debug(LOG_DEBUG, "DNS reply is too large for %s: %d, bufsize: %zu",
               dnsName, r, sizeof(buf));
     return DN_NOOPS;
