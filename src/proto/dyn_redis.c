@@ -1642,7 +1642,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           // Set 'state' back to 'SW_REQ_TYPE_LEN' to parse the second half of the command
           // the space in 'SCRIPT <LOAD/KILL/FLUSH/EXISTS>'.
           if (r->rntokens == 0) {
-            goto error;
+            goto wrong_arity;
           }
           state = SW_REQ_TYPE_LEN;
           log_debug(LOG_VERB,
@@ -1655,16 +1655,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         switch (ch) {
           case LF:
             if (r->rntokens == 0 && redis_needs_args(r)) {
-              /*
-               * The command needs arguments and has none, so there's no
-               * token left to parse. From a client, answer it as Redis would
-               * (req_filter()); a peer can't be answered that way.
-               */
-              if (r->owner == NULL || r->owner->dyn_mode) {
-                goto error;
-              }
-              r->missing_args = 1;
-              goto done;
+              goto wrong_arity;
             }
             if (redis_argz(r) && (r->rntokens == 0)) {
               goto done;
@@ -1672,8 +1663,10 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               goto done;
             } else if (redis_arg_upto1(r) && r->rntokens == 1) {
               state = SW_ARG1_LEN;
+            } else if (redis_arg_upto1(r)) {
+              goto wrong_arity;
             } else if (r->type == MSG_REQ_REDIS_SCRIPT_LOAD ||
-                  r->type == MSG_REQ_REDIS_SCRIPT_EXISTS) {
+                       r->type == MSG_REQ_REDIS_SCRIPT_EXISTS) {
               // TODO: Find a way to do this without special casing for SCRIPT.
               state = SW_ARG1_LEN;
             } else if (redis_argeval(r)) {
@@ -1681,7 +1674,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             } else if (r->type == MSG_REQ_REDIS_CLIENT_SETINFO) {
               // CLIENT SETINFO <attr> <value>, no key.
               if (r->rntokens != 2) {
-                goto error;
+                goto wrong_arity;
               }
               state = SW_ARG1_LEN;
             } else if (r->type == MSG_REQ_REDIS_HELLO) {
@@ -1834,22 +1827,22 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           case LF:
             if (redis_arg0(r)) {
               if (r->rntokens != 0) {
-                goto error;
+                goto wrong_arity;
               }
               goto done;
             } else if (redis_arg1(r)) {
               if (r->rntokens != 1) {
-                goto error;
+                goto wrong_arity;
               }
               state = SW_ARG1_LEN;
             } else if (redis_arg2(r)) {
               if (r->rntokens != 2) {
-                goto error;
+                goto wrong_arity;
               }
               state = SW_ARG1_LEN;
             } else if (redis_arg3(r)) {
               if (r->rntokens != 3) {
-                goto error;
+                goto wrong_arity;
               }
               state = SW_ARG1_LEN;
             } else if (redis_argn(r)) {
@@ -1864,7 +1857,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               state = SW_KEY_LEN;
             } else if (redis_argkvx(r)) {
               if (r->ntokens % 2 == 0) {
-                goto error;
+                goto wrong_arity;
               }
               state = SW_ARG1_LEN;
             } else if (redis_argeval(r)) {
@@ -2375,7 +2368,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
       case SW_ARGN_LF:
         switch (ch) {
           case LF:
-            if (redis_argn(r) || redis_argeval(r)) {
+            if (redis_argn(r) || redis_argeval(r) || r->wrong_arity) {
               if (r->rntokens == 0) {
                 goto done;
               }
@@ -2397,6 +2390,22 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         NOT_REACHED();
         break;
     }
+    continue;
+
+  wrong_arity:
+    /*
+     * The command has the wrong number of arguments. From a client, read
+     * past the ones left as plain args and answer it as Redis would
+     * (req_filter()); a peer can't be answered that way.
+     */
+    if (r->owner == NULL || r->owner->dyn_mode) {
+      goto error;
+    }
+    r->wrong_arity = 1;
+    if (r->rntokens == 0) {
+      goto done;
+    }
+    state = SW_ARGN_LEN;
   }
 
   // ASSERT(p == b->last);

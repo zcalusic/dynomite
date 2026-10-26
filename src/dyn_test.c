@@ -234,7 +234,7 @@ struct parse_req {
   char keys[1024];  /* space-separated */
   const char *args; /* space-separated, NULL if not checked */
   bool too_long;    /* a key was skipped as too long (keys has the others) */
-  bool missing_args; /* a command that needs arguments came with none */
+  bool wrong_arity; /* a command came with the wrong number of args */
 };
 
 #define PARSE_DATA_MAX 81920
@@ -300,7 +300,7 @@ static void parse_add_req(struct parse_case *tc, msg_type_t type,
   dn_snprintf(tc->reqs[tc->nreqs].keys, sizeof(tc->reqs[0].keys), "%s", keys);
   tc->reqs[tc->nreqs].args = NULL;
   tc->reqs[tc->nreqs].too_long = false;
-  tc->reqs[tc->nreqs].missing_args = false;
+  tc->reqs[tc->nreqs].wrong_arity = false;
   tc->nreqs++;
 }
 
@@ -327,11 +327,14 @@ static void parse_add_too_long(struct parse_case *tc, msg_type_t type,
   tc->reqs[tc->nreqs - 1].too_long = true;
 }
 
-/* Append a redis command without the arguments it needs, which it flags. */
-static void parse_add_missing_args(struct parse_case *tc, msg_type_t type,
-                                   const char *words) {
-  parse_add(tc, type, "", words);
-  tc->reqs[tc->nreqs - 1].missing_args = true;
+/*
+ * Append a redis command with the wrong number of args, which the parser
+ * should read past and flag; keys are the ones it has.
+ */
+static void parse_add_wrong_arity(struct parse_case *tc, msg_type_t type,
+                                  const char *keys, const char *words) {
+  parse_add(tc, type, keys, words);
+  tc->reqs[tc->nreqs - 1].wrong_arity = true;
 }
 
 /* Append a response the parser should accept, with its type and args. */
@@ -478,10 +481,10 @@ static rstatus_t parse_check(const struct parse_case *tc, size_t chunk,
               msg->key_too_long ? "has" : "doesn't have");
     return DN_ERROR;
   }
-  if (msg->missing_args != tc->reqs[i].missing_args) {
-    log_error("%s (mbuf %zu, chunk %zu%s): %s %zu is %sflagged missing args",
+  if (msg->wrong_arity != tc->reqs[i].wrong_arity) {
+    log_error("%s (mbuf %zu, chunk %zu%s): %s %zu is %sflagged wrong arity",
               tc->name, mbuf_data_size(), chunk, parse_mode(), what, i + 1,
-              msg->missing_args ? "" : "not ");
+              msg->wrong_arity ? "" : "not ");
     return DN_ERROR;
   }
   if (msg->type != tc->reqs[i].type ||
@@ -680,10 +683,16 @@ static void parse_cases_init(void) {
 
   /* each in a stream of its own, after a valid request; the SCRIPT ones were
    * accepted before fd14eb7, the dyno_config ones with a level that isn't
-   * one whole, or extra args, before the commit that added them */
+   * one whole, or extra args, before the commit that added them (a bare
+   * SCRIPT is answered for its arity, see below) */
   static const char *const rejects[] = {
-      "SCRIPT GET foo", "SCRIPT DEBUG yes", "SCRIPT",      "KILL",
-      "LOAD return(1)", "FLUSH",            "CLIENT LIST", "NOSUCHCOMMAND x",
+      "SCRIPT GET foo",
+      "SCRIPT DEBUG yes",
+      "KILL",
+      "LOAD return(1)",
+      "FLUSH",
+      "CLIENT LIST",
+      "NOSUCHCOMMAND x",
       "dyno_config:conn_consistency DC_ONEX",
       "dyno_config:conn_consistency DC_ON",
       "dyno_config:conn_consistency bogus",
@@ -728,25 +737,42 @@ static void parse_cases_init(void) {
   parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
 
   /*
-   * A command that needs arguments but has none: from a client, the parser
-   * flags it, and the requests after it parse as usual; from a peer, it
-   * rejects it. The ones that may have none parse as usual.
+   * Commands with the wrong number of args: from a client, the parser reads
+   * past the args left (one larger than the smallest mbuf), flags the
+   * command, and the requests after it parse as usual; from a peer, it
+   * rejects it. The ones that may have no args parse as usual.
    */
-  tc = parse_case_new("redis missing args", DATA_REDIS, false);
+  tc = parse_case_new("redis wrong arity", DATA_REDIS, false);
   parse_add(tc, MSG_REQ_REDIS_GET, "foo", "GET foo");
-  parse_add_missing_args(tc, MSG_REQ_REDIS_SMEMBERS, "SMEMBERS");
-  parse_add_missing_args(tc, MSG_REQ_REDIS_GET, "get");
-  parse_add_missing_args(tc, MSG_REQ_REDIS_MGET, "MGET");
-  parse_add_missing_args(tc, MSG_REQ_REDIS_EVAL, "EVAL");
-  parse_add_missing_args(tc, MSG_REQ_REDIS_SCRIPT_LOAD, "SCRIPT LOAD");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SMEMBERS, "", "SMEMBERS");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_GET, "", "get");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_MGET, "", "MGET");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_EVAL, "", "EVAL");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SCRIPT_LOAD, "", "SCRIPT LOAD");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SCRIPT, "", "SCRIPT");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_HGET, "h", "HGET h");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_GET, "k", "GET k x");
+  dn_snprintf(words, sizeof(words), "GET k %s y", big);
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_GET, "k", words);
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_EXPIRE, "k", "EXPIRE k");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SETEX, "k", "SETEX k 10");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_LINSERT, "l", "LINSERT l a b c d");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_MSET, "k1", "MSET k1 v1 k2");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_PING, "", "PING a b");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_CLIENT_SETINFO, "",
+                        "CLIENT SETINFO lib-name");
   parse_add(tc, MSG_REQ_REDIS_PING, "", "PING");
+  parse_add(tc, MSG_REQ_REDIS_PING, "", "PING hi");
   parse_add(tc, MSG_REQ_REDIS_INFO, "", "INFO");
   parse_add(tc, MSG_REQ_REDIS_SCRIPT_FLUSH, "", "SCRIPT FLUSH");
   parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
 
-  tc = parse_case_new("dnode missing args", DATA_REDIS, true);
-  parse_add(tc, MSG_REQ_REDIS_SET, "foo1", "set foo1 bar1");
-  parse_reject(tc, "SMEMBERS");
+  static const char *dnode_arity[] = {"SMEMBERS", "GET k x", "HGET h"};
+  for (size_t i = 0; i < NELEMS(dnode_arity); i++) {
+    tc = parse_case_new("dnode wrong arity", DATA_REDIS, true);
+    parse_add(tc, MSG_REQ_REDIS_SET, "foo1", "set foo1 bar1");
+    parse_reject(tc, dnode_arity[i]);
+  }
 
   tc = parse_case_new("dnode long key", DATA_REDIS, true);
   parse_add(tc, MSG_REQ_REDIS_SET, "foo1", "set foo1 bar1");

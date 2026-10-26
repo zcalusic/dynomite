@@ -539,8 +539,8 @@ struct msg {
   unsigned rsp_sent : 1; /* is a response sent for this request?*/
   /* A key was too long to keep: req_filter() answers with an error. */
   unsigned key_too_long : 1;
-  /* A command that needs arguments came with none: req_filter() answers. */
-  unsigned missing_args : 1;
+  /* A command came with the wrong number of args: req_filter() answers. */
+  unsigned wrong_arity : 1;
   uint64_t timestamp;   // Timestamp of request. Used only if 'read_repiars' is enabled.
 
   bool needs_repair;    // If 'true', a repair msg will be sent to 'owner'.

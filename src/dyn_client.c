@@ -430,9 +430,9 @@ static bool req_filter(struct context *ctx, struct conn *conn,
     return true;
   }
 
-  // A command that needs arguments came with none: answer as Redis does.
-  if (req->missing_args) {
-    log_debug(LOG_VERB, "%s filter missing args %s", print_obj(conn),
+  // A command came with the wrong number of arguments: answer as Redis does.
+  if (req->wrong_arity) {
+    log_debug(LOG_VERB, "%s filter wrong arity %s", print_obj(conn),
               print_obj(req));
     char name[64], rsp[128];
     redis_command_name(req->type, name, sizeof(name));
