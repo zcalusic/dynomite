@@ -2811,25 +2811,39 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
         break;
 
       case SW_MULTIBULK:
+        /*
+         * The reply itself, or an element of it: rntokens counts the elements
+         * still to come, all levels together, and is 0 only before the reply
+         * starts. A nested multi-bulk reply of n elements, nil (*-1) or empty
+         * (*0) counts as n elements in place of itself. The count goes to
+         * rlen until the CR.
+         */
         if (r->token == NULL) {
           if (ch != '*') {
             goto error;
           }
-          r->token = p;
           /* rsp_start <- p */
-          r->ntoken_start = p;
-          r->rntokens = 0;
-        } else if (ch == '-') {
-          state = SW_RUNTO_CRLF;
+          r->token = p;
+          r->rlen = 0;
+        } else if (ch == '-' && p - r->token == 1) {
+          ;
         } else if (isdigit(ch)) {
-          r->rntokens = r->rntokens * 10 + (uint32_t)(ch - '0');
+          r->rlen = r->rlen * 10 + (uint32_t)(ch - '0');
         } else if (ch == CR) {
           if ((p - r->token) <= 1) {
             goto error;
           }
+          uint32_t nelem = r->token[1] == '-' ? 0 : r->rlen;
 
-          r->ntokens = r->rntokens;
-          r->ntoken_end = p;
+          if (r->rntokens == 0) {
+            r->ntoken_start = r->token;
+            r->ntoken_end = p;
+            r->ntokens = nelem;
+            r->rntokens = nelem;
+          } else {
+            r->rntokens = r->rntokens - 1 + nelem;
+          }
+          r->rlen = 0;
           r->token = NULL;
           state = SW_MULTIBULK_NARG_LF;
         } else {
@@ -2842,7 +2856,7 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
         switch (ch) {
           case LF:
             if (r->rntokens == 0) {
-              /* response is '*0\r\n' */
+              /* response is '*0\r\n' or '*-1\r\n', or ends in one */
               goto done;
             }
             state = SW_MULTIBULK_ARGN_LEN;
@@ -2860,28 +2874,9 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
            * From: http://redis.io/topics/protocol, a multi bulk reply
            * is used to return an array of other replies. Every element
            * of a multi bulk reply can be of any kind, including a
-           * nested multi bulk reply.
-           *
-           * Here, we only handle a multi bulk reply element that
-           * are either integer reply or bulk reply.
-           *
-           * there is a special case for sscan/hscan/zscan, these command
-           * replay a nested multi-bulk with a number and a multi bulk like
-           * this:
-           *
-           * - mulit-bulk
-           *    - cursor
-           *    - mulit-bulk
-           *       - val1
-           *       - val2
-           *       - val3
-           *
-           * in this case, there is only one sub-multi-bulk,
-           * and it's the last element of parent,
-           * we can handle it like tail-recursive.
-           *
+           * nested multi bulk reply (scan, geopos, ...).
            */
-          if (ch == '*') { /* for sscan/hscan/zscan only */
+          if (ch == '*') {
             p = p - 1;     /* go back by 1 byte */
             state = SW_MULTIBULK;
             break;
