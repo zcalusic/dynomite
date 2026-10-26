@@ -149,6 +149,7 @@ static bool redis_arg1(struct msg *r) {
 static bool redis_arg_upto1(struct msg *r) {
   switch (r->type) {
     case MSG_REQ_REDIS_INFO:
+    case MSG_REQ_REDIS_PING:
       return true;
     default:
       break;
@@ -581,6 +582,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
       case SW_NARG:
         if (r->token == NULL) {
           if (ch == 'p' || ch == 'P') { /* inline ping */
+            r->token = p;
             state = SW_INLINE_PING;
             log_hexdump(LOG_VERB, b->pos, mbuf_length(b), "INLINE PING");
             break;
@@ -609,20 +611,25 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         break;
 
       case SW_INLINE_PING:
-        if (str3icmp(p, 'i', 'n', 'g') && p + 4 < b->last) {
-          p = p + 4;
-          log_hexdump(LOG_VERB, b->pos, mbuf_length(b), "PING");
-          r->type = MSG_REQ_REDIS_PING;
-          r->is_read = 1;
-          state = SW_REQ_TYPE_LF;
-          goto done;
-        } else {
-          log_hexdump(LOG_VERB, b->pos, mbuf_length(b), "PING ERROR %td, %s",
-                      p - m, p);
+        // "PING\r\n" from r->token on; wait until all of it is here.
+        if (r->token == NULL) {
+          r->token = p;
+        }
+        if (b->last - r->token < 6) {
+          p = b->last - 1;
+          break;
+        }
+        if (!str4icmp(r->token, 'p', 'i', 'n', 'g') || r->token[4] != CR ||
+            r->token[5] != LF) {
+          log_hexdump(LOG_VERB, b->pos, mbuf_length(b), "PING ERROR");
           goto error;
         }
-
-        break;
+        p = r->token + 5;
+        log_hexdump(LOG_VERB, b->pos, mbuf_length(b), "PING");
+        r->type = MSG_REQ_REDIS_PING;
+        r->msg_routing = ROUTING_LOCAL_NODE_ONLY;
+        r->is_read = 1;
+        goto done;
 
       case SW_NARG_LF:
         switch (ch) {
@@ -870,9 +877,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             if (str4icmp(m, 'p', 'i', 'n', 'g')) {
               r->type = MSG_REQ_REDIS_PING;
               r->msg_routing = ROUTING_LOCAL_NODE_ONLY;
-              p = p + 1;
               r->is_read = 1;
-              goto done;
+              break;
             }
 
             if (str4icmp(m, 'r', 'p', 'o', 'p')) {
