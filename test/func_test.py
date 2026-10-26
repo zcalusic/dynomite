@@ -176,6 +176,22 @@ def run_hash_tests(c, max_keys=10, max_fields=1000):
         #if next_index == 0:
             #break
 
+def run_zadd_tests(c, key):
+    # ZADD is rewritten as a script with read repairs: its options, several
+    # members, and its reply must come out as Redis' own.
+    print("\t-Running ZADD with options on key '%s'" % key)
+    c.run_verify("execute_command", "ZADD", key, 1, "a", 2, "b")
+    c.run_verify("execute_command", "ZADD", key, 5, "a", 3, "c")
+    c.run_verify("execute_command", "ZADD", key, "NX", 9, "a", 4, "d")
+    c.run_verify("execute_command", "ZADD", key, "xx", "ch", 6, "a", 7, "e")
+    c.run_verify("execute_command", "ZADD", key, "CH", 0, "b", 7, "c", 8, "f")
+    c.run_verify("execute_command", "ZADD", key, "INCR", 2, "a")
+    c.run_verify("execute_command", "ZADD", key, "NX", "INCR", 2, "a")
+    c.run_verify("execute_command", "ZADD", key, "XX", "GT", "CH", "INCR", 1, "c")
+    c.run_verify("execute_command", "ZADD", key, "GT", "CH", 1, "a", 9, "b")
+    c.run_verify("execute_command", "ZADD", key, "LT", 1, "f", 1, "g")
+    c.run_verify("zrange", key, 0, -1, False, True)
+
 def run_read_repair_test(c, num_keys=10, min_size=1, max_size=1024):
     # Enable read repairs (TODO)
 
@@ -208,6 +224,8 @@ def run_read_repair_test(c, num_keys=10, min_size=1, max_size=1024):
 
     # 'get' and verify that the value is the same.
     assert value == str(c.run_verify("get", key), 'utf-8')
+
+    run_zadd_tests(c, create_key(test_name, "_zadd_%d" % max_size))
 
     print("\t-Simulating partial update to key '%s'" % key)
     # Below, we simulate a partial write by updating the value of 'key' on only

@@ -294,7 +294,7 @@
   "end\n"\
   "return {status_field, ts, value}\n\r\n"
 
-#define ZADD_SCRIPT "$4\r\nEVAL\r\n$1798\r\n"\
+#define ZADD_SCRIPT "$4\r\nEVAL\r\n$2003\r\n"\
   "local key = KEYS[1]\n"\
   "local top_level_add_set = KEYS[2]\n"\
   "local top_level_rem_set = KEYS[3]\n"\
@@ -307,9 +307,13 @@
   "local start_loop = 5 + num_opts\n"\
   "local end_loop = (num_fields * 2) + 4 + num_opts\n"\
   "local args = {key}\n"\
+  "local incr = false\n"\
   "for j=5,4 + num_opts\n"\
   "do\n"\
   "  args[#args + 1] = ARGV[j]\n"\
+  "  if (string.upper(ARGV[j]) == 'INCR') then\n"\
+  "    incr = true\n"\
+  "  end\n"\
   "end\n"\
   "local num_args = #args\n"\
   "local top_level_rem_set_ts = redis.call('ZSCORE', top_level_rem_set, key)\n"\
@@ -329,6 +333,7 @@
   "end\n"\
   "local skiploop\n"\
   "local ret\n"\
+  "local added = 0\n"\
   "for i=start_loop,end_loop,2\n"\
   "do\n"\
   "  skiploop = false\n"\
@@ -350,12 +355,18 @@
   "    args[num_args + 1] = value\n"\
   "    args[num_args + 2] = field\n"\
   "    ret = redis.call(orig_cmd, unpack(args))\n"\
+  "    if (type(ret) == 'number') then\n"\
+  "      added = added + ret\n"\
+  "    end\n"\
   "    if (type(ret) ~= 'boolean') then\n"\
   "      redis.call('ZADD', add_set, cur_ts, field)\n"\
   "    end\n"\
   "  end\n"\
   "end\n"\
-  "return ret\n\r\n"
+  "if (incr) then\n"\
+  "  return ret\n"\
+  "end\n"\
+  "return added\n\r\n"
 
 #define SADD_SCRIPT "$4\r\nEVAL\r\n$1526\r\n"\
   "local key = KEYS[1]\n"\
