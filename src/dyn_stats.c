@@ -1120,6 +1120,7 @@ static rstatus_t stats_http_rsp(int sd, uint8_t *content, size_t len) {
                   header_str.len, header_str.data, len);
 
   if (n < 0 || n >= MAX_HTTP_HEADER_SIZE) {
+    close(sd);
     return DN_ERROR;
   }
 
@@ -1293,10 +1294,7 @@ static rstatus_t stats_send_rsp(struct stats *st) {
     log_debug(LOG_VERB, "Unsupported cmd");
   }
 
-  stats_http_rsp(sd, ok.data, ok.len);
-  close(sd);
-
-  return DN_OK;
+  return stats_http_rsp(sd, ok.data, ok.len);
 }
 
 static void stats_loop_callback(void *arg1, void *arg2) {
