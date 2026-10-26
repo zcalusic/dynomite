@@ -97,33 +97,33 @@ Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible)
 + **rack**: The name of the rack.  Please refer to [architecture document](https://github.com/Netflix/dynomite/wiki/Architecture).
 + **dyn_listen**: The port that dynomite nodes use to inter-communicate and gossip.
 + **enable_gossip**: enable gossip instead of static tokens (default: false). Gossip is experimental.
-+ **gos_interval**: The sleeping time in milliseconds at the end of a gossip round.
++ **gos_interval**: The sleeping time in milliseconds at the end of a gossip round. Defaults to 30000; must be at least 1.
 + **tokens**: The token(s) owned by a node.  Currently, we don't support vnode yet so this only works with one token for the time being.
 + **dyn_seed_provider**: A seed provider implementation to provide a list of seed nodes. One of simple_provider (uses dyn_seeds), florida_provider or dns_provider. Defaults to simple_provider.
 + **dyn_seeds**: A list of seed nodes in the format: address:port:rack:dc:tokens (note that vnode is not supported yet)
 + **listen**: The listening address and port (name:port or ip:port) for this server pool.
-+ **backlog**: The TCP listen backlog for the listening sockets. Defaults to 512.
++ **backlog**: The TCP listen backlog for the listening sockets. Defaults to 512; must be at least 1.
 + **hash**: The hash function used to map keys to tokens. One of one_at_a_time, md5, crc16, crc32, crc32a, fnv1_64, fnv1a_64, fnv1_32, fnv1a_32, hsieh, murmur or jenkins. Defaults to murmur.
 + **hash_tag**: A two-character string, such as `{}`, that selects the part of a key to hash: when a key contains both characters, only the part between them is hashed, so related keys can be kept on the same node. Not set by default.
-+ **timeout**: The timeout value in msec that we wait for to establish a connection to the server or receive a response from a server. Defaults to 5000 msec.
++ **timeout**: The timeout value in msec that we wait for to establish a connection to the server or receive a response from a server. Defaults to 5000 msec; must be at least 1.
 + **preconnect**: A boolean value that controls if dynomite should preconnect to all the servers in this pool on process start. Defaults to true.
-+ **data_store**: An integer value that controls if a server pool speaks redis (0) or memcached (1) or other protocol. Defaults to redis (0).
++ **data_store**: An integer value that controls if a server pool speaks redis (0) or memcached (1). Defaults to redis (0).
 + **auto_eject_hosts**: A boolean value that controls if server should be ejected temporarily when it fails consecutively server_failure_limit times. See [liveness recommendations](notes/recommendation.md#liveness) for information. Defaults to true.
-+ **server_retry_timeout**: The timeout value in msec to wait for before retrying on a temporarily ejected server, when auto_eject_hosts is set to true. Defaults to 10000 msec.
-+ **server_failure_limit**: The number of consecutive failures on a server that would lead to it being temporarily ejected when auto_eject_hosts is set to true. Defaults to 3.
++ **server_retry_timeout**: The longest wait in msec between attempts to reconnect to the server: the wait starts at 1 second and doubles after each failure, up to this limit in whole seconds (rounded down), so values below 2000, including 0, reconnect every second. Defaults to 10000 msec.
++ **server_failure_limit**: The number of consecutive failures on a server that would lead to it being temporarily ejected when auto_eject_hosts is set to true. Defaults to 3; at most 255.
 + **servers**: A list of local server address, port and weight (name:port:weight or ip:port:weight) for this server pool. Currently, there is just one.
 + **secure_server_option**: Encrypted communication. Must be one of 'none', 'rack', 'datacenter', or 'all'. ```datacenter``` means all communication between datacenters is encrypted but within a datacenter it is not. ```rack``` means all communication between racks and regions is encrypted however communication between nodes within the same rack is not encrypted. ```all``` means all communication between all nodes is encrypted. And ```none``` means none of the communication is encrypted. 
 + **pem_key_file**: The RSA private key file used for encrypted communication between nodes. Defaults to conf/dynomite.pem, relative to the working directory.
 + **read_consistency**, **write_consistency**: The consistency level for reads and writes: DC_ONE, DC_QUORUM, DC_SAFE_QUORUM or DC_EACH_SAFE_QUORUM (case-insensitive). Default to DC_ONE. Please refer to [consistency document](https://github.com/Netflix/dynomite/wiki/Consistency). Both can also be changed at runtime through the stats_listen REST endpoint (`/set_consistency/read/<level>` and `/set_consistency/write/<level>`); the new level applies to client connections opened after the change.
 + **read_repairs_enabled**: A boolean value that enables read repairs, which update replicas found with stale data during a read; they don't run with DC_ONE. Defaults to false. Please refer to [read repair document](https://github.com/Netflix/dynomite/wiki/Read-Repair). Can also be changed at runtime through the stats_listen REST endpoint (`/read_repairs/enable` and `/read_repairs/disable`).
 + **stats_listen**: The address and port number for the REST endpoint and for accessing statistics.
-+ **stats_interval**: set stats aggregation interval in msec (default: 30000 msec).
-+ **mbuf_size**: size of mbuf chunk in bytes (default: 16384 bytes).
-+ **max_msgs**: max number of messages to allocate (default: 200000).
-+ **datastore_connections**: Maximum number of connections to the local datastore. Defaults to 1.
-+ **local_peer_connections**: Maximum number of connections to a local DC peer. Defaults to 1.
-+ **remote_peer_connections**: Maximum number of connections to a remote DC peer. Defaults to 1.
-+ **conn_msg_rate**: The maximum number of messages per second sent on each connection to a node in a remote datacenter. Defaults to 50000.
++ **stats_interval**: set stats aggregation interval in msec (default: 30000 msec; at least 1).
++ **mbuf_size**: size of mbuf chunk in bytes (default: 16384 bytes; 512 to 512000, a multiple of 16).
++ **max_msgs**: max number of messages to allocate (default: 200000; 100000 to 1000000).
++ **datastore_connections**: Maximum number of connections to the local datastore. Defaults to 1; 1 to 255.
++ **local_peer_connections**: Maximum number of connections to a local DC peer. Defaults to 1; 1 to 255.
++ **remote_peer_connections**: Maximum number of connections to a remote DC peer. Defaults to 1; 1 to 255.
++ **conn_msg_rate**: The maximum number of messages per second sent on each connection to a node in a remote datacenter. Defaults to 50000; must be at least 1.
 
 The keys **client_connections**, **distribution**, **server_connections**, **dyn_port**, **dyn_connections**, **dyn_read_timeout**, **dyn_write_timeout**, **recon_key_file** and **recon_iv_file** are still accepted for compatibility, but are ignored. The inter-node port comes from **dyn_listen**.
 

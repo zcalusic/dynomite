@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1246,6 +1247,145 @@ static rstatus_t test_read_repair(struct conn *conn) {
   return DN_OK;
 }
 
+/*
+ * A configuration test case: conf/redis_single.yml plus extra pool lines.
+ * A valid case also checks one int field of the parsed conf_pool.
+ */
+struct conf_case {
+  const char *lines;
+  bool valid;
+  const char *field;
+  size_t offset;
+  int want;
+};
+
+#define CONF_VALID(lines, field, want) \
+  { lines, true, #field, offsetof(struct conf_pool, field), want }
+#define CONF_INVALID(lines) \
+  { lines, false, NULL, 0, 0 }
+
+static const struct conf_case conf_cases[] = {
+    /* unset directives get their defaults */
+    CONF_VALID("", timeout, 5000),
+    CONF_VALID("", backlog, 512),
+    CONF_VALID("", preconnect, true),
+    CONF_VALID("", auto_eject_hosts, true),
+    CONF_VALID("", enable_gossip, false),
+    CONF_VALID("", read_repairs_enabled, false),
+    CONF_VALID("", server_retry_timeout_ms, 10000),
+    CONF_VALID("", server_failure_limit, 3),
+    CONF_VALID("", gos_interval, 30000),
+    CONF_VALID("", stats_interval, 30000),
+    CONF_VALID("", conn_msg_rate, 50000),
+    CONF_VALID("", datastore_connections, 1),
+    CONF_VALID("", mbuf_size, CONF_UNSET_NUM),
+    CONF_VALID("", alloc_msgs_max, CONF_UNSET_NUM),
+    /* explicit false and 0 are kept, not taken for unset */
+    CONF_VALID("  preconnect: false\n", preconnect, false),
+    CONF_VALID("  auto_eject_hosts: false\n", auto_eject_hosts, false),
+    CONF_VALID("  read_repairs_enabled: true\n", read_repairs_enabled, true),
+    CONF_VALID("  server_retry_timeout: 0\n", server_retry_timeout_ms, 0),
+    CONF_VALID("  server_failure_limit: 0\n", server_failure_limit, 0),
+    CONF_VALID("  data_store: 1\n", data_store, DATA_MEMCACHE),
+    /* limits */
+    CONF_VALID("  timeout: 1\n", timeout, 1),
+    CONF_VALID("  timeout: 2147483647\n", timeout, INT_MAX),
+    CONF_VALID("  server_failure_limit: 255\n", server_failure_limit, 255),
+    CONF_VALID("  datastore_connections: 255\n", datastore_connections, 255),
+    CONF_VALID("  local_peer_connections: 255\n", local_peer_connections, 255),
+    CONF_VALID("  remote_peer_connections: 1\n", remote_peer_connections, 1),
+    CONF_VALID("  mbuf_size: 512\n", mbuf_size, 512),
+    CONF_VALID("  max_msgs: 1000000\n", alloc_msgs_max, 1000000),
+    CONF_INVALID("  timeout: 0\n"),
+    CONF_INVALID("  timeout: 2147483648\n"),
+    CONF_INVALID("  timeout: -1\n"),
+    CONF_INVALID("  backlog: 0\n"),
+    CONF_INVALID("  gos_interval: 0\n"),
+    CONF_INVALID("  stats_interval: 0\n"),
+    CONF_INVALID("  conn_msg_rate: 0\n"),
+    CONF_INVALID("  data_store: 2\n"),
+    CONF_INVALID("  server_failure_limit: 256\n"),
+    CONF_INVALID("  datastore_connections: 0\n"),
+    CONF_INVALID("  datastore_connections: 256\n"),
+    CONF_INVALID("  local_peer_connections: 0\n"),
+    CONF_INVALID("  remote_peer_connections: 256\n"),
+    CONF_INVALID("  mbuf_size: 0\n"),
+    CONF_INVALID("  mbuf_size: 520\n"),
+    CONF_INVALID("  max_msgs: 0\n"),
+    CONF_INVALID("  preconnect: maybe\n"),
+    /* duplicates are caught for false and 0 too */
+    CONF_INVALID("  preconnect: false\n  preconnect: true\n"),
+    CONF_INVALID("  server_retry_timeout: 0\n  server_retry_timeout: 5\n"),
+};
+
+static const char conf_base[] =
+    "dyn_o_mite:\n"
+    "  dyn_listen: 0.0.0.0:8101\n"
+    "  listen: 0.0.0.0:8102\n"
+    "  servers:\n"
+    "  - 127.0.0.1:22122:1\n"
+    "  tokens: 437425602\n"
+    "  stats_listen: 0.0.0.0:22222\n";
+
+static rstatus_t conf_run(const struct conf_case *tc) {
+  char path[] = "/tmp/dynomite-test-XXXXXX";
+  int fd = mkstemp(path);
+  if (fd < 0) {
+    log_error("conf: mkstemp failed: %s", strerror(errno));
+    return DN_ERROR;
+  }
+  FILE *fh = fdopen(fd, "w");
+  if (fh == NULL || fputs(conf_base, fh) == EOF || fputs(tc->lines, fh) == EOF ||
+      fclose(fh) != 0) {
+    log_error("conf: writing %s failed", path);
+    unlink(path);
+    return DN_ERROR;
+  }
+
+  struct conf *cf = conf_create(path);
+  unlink(path);
+
+  if (!tc->valid) {
+    if (cf != NULL) {
+      log_error("conf '%s': accepted, should be rejected", tc->lines);
+      conf_destroy(cf);
+      return DN_ERROR;
+    }
+    return DN_OK;
+  }
+
+  if (cf == NULL) {
+    log_error("conf '%s': rejected, should be accepted", tc->lines);
+    return DN_ERROR;
+  }
+  int got = *(int *)((uint8_t *)&cf->pool + tc->offset);
+  conf_destroy(cf);
+  if (got != tc->want) {
+    log_error("conf '%s': %s is %d, want %d", tc->lines, tc->field, got,
+              tc->want);
+    return DN_ERROR;
+  }
+  return DN_OK;
+}
+
+static rstatus_t test_config(void) {
+  size_t nfailed = 0;
+
+  print_banner("CONF");
+  for (size_t i = 0; i < NELEMS(conf_cases); i++) {
+    if (conf_run(&conf_cases[i]) != DN_OK) {
+      nfailed++;
+    }
+  }
+
+  if (nfailed != 0) {
+    log_error("%zu of %zu conf cases failed", nfailed, NELEMS(conf_cases));
+    return DN_ERROR;
+  }
+  loga("%zu conf cases passed", NELEMS(conf_cases));
+  return DN_OK;
+}
+
 static void gen_random(unsigned char *s, const int len) {
   static const unsigned char possible_data[] =
       "0123456789"
@@ -1499,6 +1639,12 @@ int main(int argc, char **argv) {
   ret = test_read_repair(conn);
   if (ret != DN_OK) {
     loga("Error in testing read repairs!!!");
+    goto err_out;
+  }
+
+  ret = test_config();
+  if (ret != DN_OK) {
+    loga("Error in testing the configuration!!!");
     goto err_out;
   }
 

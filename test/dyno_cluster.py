@@ -52,7 +52,8 @@ class DynoSpec(namedtuple('DynoSpec', 'ip dnode_port client_port rack dc token '
         conf['servers'] = ['{}:{}:0'.format(self.ip, self.data_store_port)]
         conf['stats_listen'] = '{}:{}'.format(self.ip, self.stats_port)
         conf['tokens'] = self.token
-        conf['local_peer_connections'] = self.local_connections
+        # dynomite needs at least 1; it used to take 0 for unset and use 1
+        conf['local_peer_connections'] = max(1, self.local_connections)
         conf['remote_peer_connections'] = self.remote_connections
 
         # Add configurations based on the request.

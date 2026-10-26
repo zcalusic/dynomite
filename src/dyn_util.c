@@ -21,6 +21,7 @@
  */
 
 #include <fcntl.h>
+#include <limits.h>
 #include <netdb.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -181,11 +182,12 @@ int _dn_atoi(uint8_t *line, size_t n) {
       return -1;
     }
 
-    value = value * 10 + (*line - '0');
-  }
+    /* too large for an int */
+    if (value > (INT_MAX - (*line - '0')) / 10) {
+      return -1;
+    }
 
-  if (value < 0) {
-    return -1;
+    value = value * 10 + (*line - '0');
   }
 
   return value;

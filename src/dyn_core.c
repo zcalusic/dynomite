@@ -207,7 +207,7 @@ static rstatus_t core_ctx_create(struct instance *nci) {
   }
 
   struct conf_pool *cp = &ctx->cf->pool;
-  ctx->max_timeout = cp->stats_interval;
+  ctx->max_timeout = (msec_t)cp->stats_interval;
   ctx->timeout = ctx->max_timeout;
 
   return DN_OK;
@@ -295,7 +295,7 @@ rstatus_t core_start(struct instance *nci) {
   IGNORE_RET_VAL(core_gossip_pool_init(ctx));
 
   // Set the repairs flag.
-  g_read_repairs_enabled = ctx->cf->pool.read_repairs_enabled;
+  g_read_repairs_enabled = ctx->cf->pool.read_repairs_enabled != 0;
 
   /**
    * Providing mbuf_size and alloc_msgs through the command line
@@ -305,7 +305,7 @@ rstatus_t core_start(struct instance *nci) {
    */
   struct server_pool *sp = &ctx->pool;
 
-  if (sp->mbuf_size == UNSET_NUM) {
+  if (sp->mbuf_size == 0) {
     loga("mbuf_size not in YAML: using deprecated way  %zu",
          nci->mbuf_chunk_size);
     mbuf_init(nci->mbuf_chunk_size);
@@ -313,7 +313,7 @@ rstatus_t core_start(struct instance *nci) {
     loga("YAML provided mbuf_size: %zu", sp->mbuf_size);
     mbuf_init(sp->mbuf_size);
   }
-  if (sp->alloc_msgs_max == UNSET_NUM) {
+  if (sp->alloc_msgs_max == 0) {
     loga("max_msgs not in YAML: using deprecated way %zu", nci->alloc_msgs_max);
     msg_init(nci->alloc_msgs_max);
   } else {

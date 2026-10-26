@@ -42,8 +42,6 @@
 #define CONF_ROOT_DEPTH 1
 #define CONF_MAX_DEPTH CONF_ROOT_DEPTH + 1
 #define CONF_DEFAULT_ARGS 3
-#define CONF_UNSET_BOOL false
-#define CONF_UNSET_NUM UNSET_NUM
 #define CONF_DEFAULT_CONNECTIONS 1
 #define CONF_UNSET_PTR NULL
 #define CONF_DEFAULT_SERVERS 8
@@ -155,7 +153,7 @@ rstatus_t conf_datastore_transform(struct datastore *s, struct conf_pool *cp,
   s->endpoint.addrlen = cs->info.addrlen;
   s->endpoint.addr = (struct sockaddr *)&cs->info.addr;
   s->conn_pool = NULL;
-  s->max_connections = cp->datastore_connections;
+  s->max_connections = (uint8_t)cp->datastore_connections;
   s->next_retry_ms = 0ULL;
   s->failure_count = 0;
 
@@ -231,7 +229,7 @@ static rstatus_t conf_pool_init(struct conf_pool *cp, struct string *name) {
   array_null(&cp->dyn_seeds);
 
   cp->valid = 0;
-  cp->enable_gossip = CONF_UNSET_BOOL;
+  cp->enable_gossip = CONF_UNSET_NUM;
   cp->mbuf_size = CONF_UNSET_NUM;
   cp->alloc_msgs_max = CONF_UNSET_NUM;
 
@@ -257,7 +255,7 @@ static rstatus_t conf_pool_init(struct conf_pool *cp, struct string *name) {
     return status;
   }
 
-  cp->read_repairs_enabled = false;
+  cp->read_repairs_enabled = CONF_UNSET_NUM;
 
   log_debug(LOG_VVERB, "init conf pool %p, '%.*s'", cp, name->len, name->data);
 
@@ -336,21 +334,21 @@ static void conf_dump(struct conf *cf) {
   log_debug(LOG_VVERB, "%.*s", cp->name.len, cp->name.data);
   log_debug(LOG_VVERB, "  listen: %.*s", cp->listen.pname.len,
             cp->listen.pname.data);
-  log_debug(LOG_VVERB, "  timeout: %" PRIu64, cp->timeout);
+  log_debug(LOG_VVERB, "  timeout: %d", cp->timeout);
   log_debug(LOG_VVERB, "  backlog: %d", cp->backlog);
   log_debug(LOG_VVERB, "  hash: %d", cp->hash);
   log_debug(LOG_VVERB, "  hash_tag: \"%.*s\"", cp->hash_tag.len,
             cp->hash_tag.data);
   const char *temp_log = "unknown";
-  if (g_data_store == DATA_REDIS) {
+  if (cp->data_store == DATA_REDIS) {
     temp_log = "redis";
-  } else if (g_data_store == DATA_MEMCACHE) {
+  } else if (cp->data_store == DATA_MEMCACHE) {
     temp_log = "memcache";
   }
-  log_debug(LOG_VVERB, "  data_store: %d (%s)", g_data_store, temp_log);
+  log_debug(LOG_VVERB, "  data_store: %d (%s)", cp->data_store, temp_log);
   log_debug(LOG_VVERB, "  preconnect: %d", cp->preconnect);
   log_debug(LOG_VVERB, "  auto_eject_hosts: %d", cp->auto_eject_hosts);
-  log_debug(LOG_VVERB, "  server_retry_timeout: %" PRIu64 " (msec)",
+  log_debug(LOG_VVERB, "  server_retry_timeout: %d (msec)",
             cp->server_retry_timeout_ms);
   log_debug(LOG_VVERB, "  server_failure_limit: %d", cp->server_failure_limit);
 
@@ -375,7 +373,7 @@ static void conf_dump(struct conf *cf) {
   log_debug(LOG_VVERB, "  dyn_listen: %.*s", cp->dyn_listen.pname.len,
             cp->dyn_listen.pname.data);
 
-  log_debug(LOG_VVERB, "  gos_interval: %lu", cp->gos_interval);
+  log_debug(LOG_VVERB, "  gos_interval: %d", cp->gos_interval);
   log_debug(LOG_VVERB, "  conn_msg_rate: %d", cp->conn_msg_rate);
 
   log_debug(LOG_VVERB, "  secure_server_option: \"%.*s\"",
@@ -387,15 +385,17 @@ static void conf_dump(struct conf *cf) {
   log_debug(LOG_VVERB, "  write_consistency: \"%.*s\"",
             cp->write_consistency.len, cp->write_consistency.data);
 
-  log_debug(LOG_VVERB, "  stats_interval: %lu", cp->stats_interval);
+  log_debug(LOG_VVERB, "  stats_interval: %d", cp->stats_interval);
   log_debug(LOG_VVERB, "  stats_listen: %.*s", cp->stats_listen.pname.len,
             cp->stats_listen.pname.data);
 
   log_debug(LOG_VVERB, "  enable_gossip: %s",
             cp->enable_gossip ? "true" : "false");
+  log_debug(LOG_VVERB, "  read_repairs_enabled: %s",
+            cp->read_repairs_enabled ? "true" : "false");
 
-  log_debug(LOG_VVERB, "  mbuf_size: %zu", cp->mbuf_size);
-  log_debug(LOG_VVERB, "  max_msgs: %zu", cp->alloc_msgs_max);
+  log_debug(LOG_VVERB, "  mbuf_size: %d", cp->mbuf_size);
+  log_debug(LOG_VVERB, "  max_msgs: %d", cp->alloc_msgs_max);
 
   log_debug(LOG_VVERB, "  dc: \"%.*s\"", cp->dc.len, cp->dc.data);
   log_debug(LOG_VVERB, "  datastore_connections: %d",
@@ -964,38 +964,13 @@ static char *conf_set_num(struct conf *cf, struct command *cmd, void *conf) {
   return CONF_OK;
 }
 
-static char *conf_set_short(struct conf *cf, struct command *cmd, void *conf) {
-  uint8_t *p;
-  int num;
-  uint8_t *np;
-  struct string *value;
-
-  p = conf;
-  np = (uint8_t *)(p + cmd->offset);
-
-  if (*np != CONF_UNSET_NUM) {
-    return "is a duplicate";
-  }
-
-  value = array_top(&cf->arg);
-
-  num = dn_atoi(value->data, value->len);
-  if (num < 0) {
-    return "is not a number";
-  }
-
-  *np = num;
-
-  return CONF_OK;
-}
-
 static char *conf_set_bool(struct conf *cf, struct command *cmd, void *conf) {
   uint8_t *p;
-  bool *bp;
+  int *bp;
   struct string *value, true_str, false_str;
 
   p = conf;
-  bp = (bool *)(p + cmd->offset);
+  bp = (int *)(p + cmd->offset);
 
   if (*bp != CONF_UNSET_NUM) {
     return "is a duplicate";
@@ -1174,13 +1149,13 @@ static struct command conf_commands[] = {
     {string("max_msgs"), conf_set_num,
      offsetof(struct conf_pool, alloc_msgs_max)},
 
-    {string("datastore_connections"), conf_set_short,
+    {string("datastore_connections"), conf_set_num,
      offsetof(struct conf_pool, datastore_connections)},
 
-    {string("local_peer_connections"), conf_set_short,
+    {string("local_peer_connections"), conf_set_num,
      offsetof(struct conf_pool, local_peer_connections)},
 
-    {string("remote_peer_connections"), conf_set_short,
+    {string("remote_peer_connections"), conf_set_num,
      offsetof(struct conf_pool, remote_peer_connections)},
 
     {string("read_repairs_enabled"), conf_set_bool,
@@ -1812,6 +1787,22 @@ static rstatus_t conf_validate_server(struct conf *cf, struct conf_pool *cp) {
 }
 
 /* Validate pool config and set defaults. */
+/* Check that a numeric directive's value is between min and max */
+static rstatus_t conf_check_num(const char *name, int value, int min,
+                                int max) {
+  if (value >= min && value <= max) {
+    return DN_OK;
+  }
+
+  if (max == INT_MAX) {
+    log_error("conf: directive \"%s:\" must be at least %d", name, min);
+  } else {
+    log_error("conf: directive \"%s:\" must be between %d and %d", name, min,
+              max);
+  }
+  return DN_ERROR;
+}
+
 static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
   rstatus_t status;
 
@@ -1837,14 +1828,18 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
   if (cp->timeout == CONF_UNSET_NUM) {
     cp->timeout = CONF_DEFAULT_TIMEOUT;
   }
+  THROW_STATUS(conf_check_num("timeout", cp->timeout, 1, INT_MAX));
 
   if (cp->backlog == CONF_UNSET_NUM) {
     cp->backlog = CONF_DEFAULT_LISTEN_BACKLOG;
   }
+  THROW_STATUS(conf_check_num("backlog", cp->backlog, 1, INT_MAX));
 
   if (cp->data_store == CONF_UNSET_NUM) {
     cp->data_store = CONF_DEFAULT_DATASTORE;
   }
+  THROW_STATUS(
+      conf_check_num("data_store", cp->data_store, DATA_REDIS, DATA_MEMCACHE));
 
   if (cp->preconnect == CONF_UNSET_NUM) {
     cp->preconnect = CONF_DEFAULT_PRECONNECT;
@@ -1854,71 +1849,55 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
     cp->auto_eject_hosts = CONF_DEFAULT_AUTO_EJECT_HOSTS;
   }
 
+  if (cp->enable_gossip == CONF_UNSET_NUM) {
+    cp->enable_gossip = false;
+  }
+
+  if (cp->read_repairs_enabled == CONF_UNSET_NUM) {
+    cp->read_repairs_enabled = false;
+  }
+
   if (cp->server_retry_timeout_ms == CONF_UNSET_NUM) {
     cp->server_retry_timeout_ms = CONF_DEFAULT_SERVER_RETRY_TIMEOUT;
   }
+  THROW_STATUS(conf_check_num("server_retry_timeout",
+                              cp->server_retry_timeout_ms, 0, INT_MAX));
 
   if (cp->server_failure_limit == CONF_UNSET_NUM) {
     cp->server_failure_limit = CONF_DEFAULT_SERVER_FAILURE_LIMIT;
   }
+  THROW_STATUS(conf_check_num("server_failure_limit", cp->server_failure_limit,
+                              0, UINT8_MAX));
 
   if (cp->gos_interval == CONF_UNSET_NUM) {
     cp->gos_interval = CONF_DEFAULT_GOS_INTERVAL;
   }
+  THROW_STATUS(conf_check_num("gos_interval", cp->gos_interval, 1, INT_MAX));
 
   if (cp->conn_msg_rate == CONF_UNSET_NUM) {
     cp->conn_msg_rate = CONF_DEFAULT_CONN_MSG_RATE;
   }
+  THROW_STATUS(conf_check_num("conn_msg_rate", cp->conn_msg_rate, 1, INT_MAX));
 
-  if (cp->mbuf_size == CONF_UNSET_NUM) {
-    log_debug(LOG_INFO, "setting mbuf_size to default value:%d",
-              CONF_DEFAULT_MBUF_SIZE);
-    /*
-     * After backward compatibility is supported, enable this
-     *     	cp->mbuf_size = CONF_DEFAULT_MBUF_SIZE;
-     */
-  } else {
-    /* Validating mbuf_size correctness */
-    if (cp->mbuf_size <= 0) {
-      log_stderr("mbuf_size: requires a positive number");
-      return DN_ERROR;
-    }
+  /*
+   * mbuf_size and max_msgs stay unset when they're not in the YAML: the
+   * deprecated -m and -M command line options apply then (see core_start()).
+   */
+  if (cp->mbuf_size != CONF_UNSET_NUM) {
+    THROW_STATUS(conf_check_num("mbuf_size", cp->mbuf_size,
+                                CONF_DEFAULT_MBUF_MIN_SIZE,
+                                CONF_DEFAULT_MBUF_MAX_SIZE));
 
-    if (cp->mbuf_size < CONF_DEFAULT_MBUF_MIN_SIZE ||
-        cp->mbuf_size > CONF_DEFAULT_MBUF_MAX_SIZE) {
-      log_stderr("mbuf_size: mbuf chunk size must be between %d and %d bytes",
-                 CONF_DEFAULT_MBUF_MIN_SIZE, CONF_DEFAULT_MBUF_MAX_SIZE);
-      return DN_ERROR;
-    }
-
-    if ((cp->mbuf_size / 16) * 16 != cp->mbuf_size) {
-      log_stderr("mbuf_size: mbuf size must be a multiple of 16");
+    if (cp->mbuf_size % 16 != 0) {
+      log_error("conf: directive \"mbuf_size:\" must be a multiple of 16");
       return DN_ERROR;
     }
   }
 
-  if (cp->alloc_msgs_max == CONF_UNSET_NUM) {
-    log_debug(LOG_INFO, "setting max_msgs to default value:%d",
-              CONF_DEFAULT_MAX_ALLOC_MSGS);
-    /*
-     * After backward compatibility is supported, enable this
-     * cp->alloc_msgs_max = CONF_DEFAULT_MAX_ALLOC_MSGS;
-     */
-
-  } else {
-    if (cp->alloc_msgs_max <= 0) {
-      log_stderr("dynomite: option -M requires a non-zero number");
-      return DN_ERROR;
-    }
-
-    if (cp->alloc_msgs_max < CONF_DEFAULT_MIN_ALLOC_MSGS ||
-        cp->alloc_msgs_max > CONF_DEFAULT_MAX_ALLOC_MSGS) {
-      log_stderr(
-          "max_msgs: max allocated messages buffer must be between %d and %d "
-          "messages",
-          CONF_DEFAULT_MIN_ALLOC_MSGS, CONF_DEFAULT_MAX_ALLOC_MSGS);
-      return DN_ERROR;
-    }
+  if (cp->alloc_msgs_max != CONF_UNSET_NUM) {
+    THROW_STATUS(conf_check_num("max_msgs", cp->alloc_msgs_max,
+                                CONF_DEFAULT_MIN_ALLOC_MSGS,
+                                CONF_DEFAULT_MAX_ALLOC_MSGS));
   }
 
   if (string_empty(&cp->rack)) {
@@ -1955,6 +1934,8 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
               CONF_DEFAULT_STATS_INTERVAL_MS);
     cp->stats_interval = CONF_DEFAULT_STATS_INTERVAL_MS;
   }
+  THROW_STATUS(
+      conf_check_num("stats_interval", cp->stats_interval, 1, INT_MAX));
 
   if (!cp->stats_listen.valid) {
     log_error(
@@ -2021,14 +2002,20 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
   if (cp->datastore_connections == CONF_UNSET_NUM) {
     cp->datastore_connections = CONF_DEFAULT_CONNECTIONS;
   }
+  THROW_STATUS(conf_check_num("datastore_connections",
+                              cp->datastore_connections, 1, UINT8_MAX));
 
   if (cp->local_peer_connections == CONF_UNSET_NUM) {
     cp->local_peer_connections = CONF_DEFAULT_CONNECTIONS;
   }
+  THROW_STATUS(conf_check_num("local_peer_connections",
+                              cp->local_peer_connections, 1, UINT8_MAX));
 
   if (cp->remote_peer_connections == CONF_UNSET_NUM) {
     cp->remote_peer_connections = CONF_DEFAULT_CONNECTIONS;
   }
+  THROW_STATUS(conf_check_num("remote_peer_connections",
+                              cp->remote_peer_connections, 1, UINT8_MAX));
 
   status = conf_validate_server(cf, cp);
   if (status != DN_OK) {

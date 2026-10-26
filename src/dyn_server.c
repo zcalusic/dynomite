@@ -416,10 +416,10 @@ rstatus_t server_pool_init(struct server_pool *sp, struct conf_pool *cp,
     return DN_ERROR;
   }
   set_datastore_ops();
-  sp->timeout = cp->timeout;
+  sp->timeout = (msec_t)cp->timeout;
   sp->backlog = cp->backlog;
 
-  sp->server_retry_timeout_ms = cp->server_retry_timeout_ms;
+  sp->server_retry_timeout_ms = (msec_t)cp->server_retry_timeout_ms;
   sp->server_failure_limit = (uint8_t)cp->server_failure_limit;
   sp->auto_eject_hosts = cp->auto_eject_hosts ? 1 : 0;
   sp->preconnect = cp->preconnect ? 1 : 0;
@@ -438,13 +438,13 @@ rstatus_t server_pool_init(struct server_pool *sp, struct conf_pool *cp,
   sp->dnode_proxy_endpoint.family = cp->dyn_listen.info.family;
   sp->dnode_proxy_endpoint.addrlen = cp->dyn_listen.info.addrlen;
   sp->dnode_proxy_endpoint.addr = (struct sockaddr *)&cp->dyn_listen.info.addr;
-  sp->max_local_peer_connections = cp->local_peer_connections;
-  sp->max_remote_peer_connections = cp->remote_peer_connections;
+  sp->max_local_peer_connections = (uint8_t)cp->local_peer_connections;
+  sp->max_remote_peer_connections = (uint8_t)cp->remote_peer_connections;
   sp->rack = cp->rack;
   sp->dc = cp->dc;
   sp->tokens = cp->tokens;
   sp->env = cp->env;
-  sp->enable_gossip = cp->enable_gossip;
+  sp->enable_gossip = cp->enable_gossip ? true : false;
 
   /* dynomite stats init */
   sp->stats_endpoint.pname = cp->stats_listen.pname;
@@ -452,9 +452,12 @@ rstatus_t server_pool_init(struct server_pool *sp, struct conf_pool *cp,
   sp->stats_endpoint.family = cp->stats_listen.info.family;
   sp->stats_endpoint.addrlen = cp->stats_listen.info.addrlen;
   sp->stats_endpoint.addr = (struct sockaddr *)&cp->stats_listen.info.addr;
-  sp->stats_interval = cp->stats_interval;
-  sp->mbuf_size = cp->mbuf_size;
-  sp->alloc_msgs_max = cp->alloc_msgs_max;
+  sp->stats_interval = (msec_t)cp->stats_interval;
+  /* 0 when not in the YAML (unset), see core_start() */
+  sp->mbuf_size =
+      cp->mbuf_size == CONF_UNSET_NUM ? 0 : (size_t)cp->mbuf_size;
+  sp->alloc_msgs_max =
+      cp->alloc_msgs_max == CONF_UNSET_NUM ? 0 : (size_t)cp->alloc_msgs_max;
 
   sp->secure_server_option =
       get_secure_server_option(&cp->secure_server_option);
@@ -465,9 +468,9 @@ rstatus_t server_pool_init(struct server_pool *sp, struct conf_pool *cp,
   sp->conf_pool = cp;
 
   /* gossip */
-  sp->g_interval = cp->gos_interval;
+  sp->g_interval = (msec_t)cp->gos_interval;
 
-  set_msgs_per_sec(cp->conn_msg_rate);
+  set_msgs_per_sec((uint32_t)cp->conn_msg_rate);
 
   log_debug(LOG_VERB, "transform to pool '%.*s'", sp->name.len, sp->name.data);
 

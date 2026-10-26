@@ -49,7 +49,8 @@
 #define CONF_STR_DC_SAFE_QUORUM "dc_safe_quorum"
 #define CONF_STR_DC_EACH_SAFE_QUORUM "dc_each_safe_quorum"
 
-#define UNSET_NUM 0
+/* Unset numeric and boolean conf_pool fields; config values are never negative */
+#define CONF_UNSET_NUM -1
 
 // Forward declarations
 struct datastore;
@@ -86,12 +87,12 @@ struct conf_pool {
   hash_type_t hash;          /* hash: */
   struct string hash_tag;    /* hash_tag: */
   void *deprecated;          /* Deprecated, see conf_commands */
-  msec_t timeout;            /* timeout: */
+  int timeout;               /* timeout: in msec */
   int backlog;               /* backlog: */
   int data_store;            /* data_store: */
   int preconnect;            /* preconnect: */
   int auto_eject_hosts;      /* auto_eject_hosts: */
-  msec_t server_retry_timeout_ms;     /* server_retry_timeout: in msec */
+  int server_retry_timeout_ms;        /* server_retry_timeout: in msec */
   int server_failure_limit;           /* server_failure_limit: */
   struct conf_server *conf_datastore; /* This is the underlying datastore */
   unsigned valid : 1;                 /* valid? */
@@ -100,7 +101,7 @@ struct conf_pool {
   struct array dyn_seeds;             /* seed nodes: conf_server array */
   struct string rack;  /* this node's logical rack */
   struct array tokens; /* this node's token: dyn_token array */
-  msec_t gos_interval; /* wake up interval in ms */
+  int gos_interval;    /* wake up interval in ms */
 
   /* none | datacenter | rack | all in order of increasing number of
    * connections. (default is datacenter) */
@@ -110,22 +111,22 @@ struct conf_pool {
   struct string pem_key_file;
   struct string dc;       /* this node's dc */
   struct string env;      /* AWS, Google, network, ... */
-  uint32_t conn_msg_rate; /* conn msg per sec */
-  bool enable_gossip;     /* enable/disable gossip */
-  size_t mbuf_size;       /* mbuf chunk size */
-  size_t alloc_msgs_max;  /* allocated messages buffer size */
+  int conn_msg_rate;      /* conn msg per sec */
+  int enable_gossip;      /* enable/disable gossip */
+  int mbuf_size;          /* mbuf chunk size */
+  int alloc_msgs_max;     /* allocated messages buffer size */
 
   /* stats info */
-  msec_t stats_interval;           /* stats aggregation interval */
+  int stats_interval;              /* stats aggregation interval */
   struct conf_listen stats_listen; /* stats_listen: socket info for stats */
 
   /* connection pool details */
-  uint8_t datastore_connections;
-  uint8_t local_peer_connections;
-  uint8_t remote_peer_connections;
+  int datastore_connections;
+  int local_peer_connections;
+  int remote_peer_connections;
 
   /* repairs enabled */
-  bool read_repairs_enabled;
+  int read_repairs_enabled;
 };
 
 struct conf {
