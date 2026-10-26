@@ -158,7 +158,6 @@ AS_IF([test "x$ac_cv_epoll_works" = "xno" &&
   [AC_MSG_ERROR([either epoll or kqueue or event ports support is required])], [])
 
 AM_CONDITIONAL([OS_LINUX], [test "x$ac_cv_epoll_works" = "xyes"])
-AM_CONDITIONAL([OS_BSD], [test "x$ac_cv_kqueue_works" = "xyes"])
 AM_CONDITIONAL([OS_SOLARIS], [test "x$ac_cv_evports_works" = "xyes"])
 
 # Package options
@@ -199,7 +198,6 @@ AC_MSG_RESULT($disable_stats)
 
 # Define Makefiles
 AC_CONFIG_FILES([Makefile
-                 contrib/Makefile
                  src/Makefile
                  src/hashkit/Makefile
                  src/proto/Makefile

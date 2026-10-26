@@ -134,9 +134,3 @@ dynomite_test_LDADD += $(top_builddir)/src/proto/libproto.a
 dynomite_test_LDADD += $(top_builddir)/src/event/libevent.a
 dynomite_test_LDADD += $(top_builddir)/src/entropy/libentropy.a
 dynomite_test_LDADD +=  $(top_builddir)/src/seedsprovider/libseedsprovider.a -lresolv
-
-if OS_BSD
-dynomite_LDADD += $(top_builddir)/contrib/libfmemopen.a
-dynomite_test_LDADD += $(top_builddir)/contrib/libfmemopen.a
-endif
-
