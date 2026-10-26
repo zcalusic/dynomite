@@ -577,7 +577,9 @@ rstatus_t req_forward_local_datastore(struct context *ctx, struct conn *c_conn,
   s_conn = get_datastore_conn(ctx, c_conn->owner, c_conn->sd);
   log_debug(LOG_VERB, "c_conn %p got server conn %p", c_conn, s_conn);
   if (s_conn == NULL) {
-    *dyn_error_code = STORAGE_CONNECTION_REFUSE;
+    // No connection, or it is still connecting: the pool only hands out
+    // connected ones.
+    *dyn_error_code = STORAGE_NOT_CONNECTED;
     return errno;
   }
   ASSERT(s_conn->type == CONN_SERVER);

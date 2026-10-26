@@ -298,6 +298,7 @@ typedef enum dyn_error {
   DYNOMITE_SCRIPT_SPANS_NODES,
   PEER_TIMEOUT,
   STORAGE_TIMEOUT,
+  STORAGE_NOT_CONNECTED,
 } dyn_error_t;
 
 static inline char *dn_strerror(dyn_error_t err) {
@@ -322,6 +323,8 @@ static inline char *dn_strerror(dyn_error_t err) {
       return "Peer Node timed out";
     case STORAGE_TIMEOUT:
       return "Datastore timed out";
+    case STORAGE_NOT_CONNECTED:
+      return "Datastore is not connected";
     case DYNOMITE_NO_QUORUM_ACHIEVED:
       return "Failed to achieve Quorum";
     case DYNOMITE_SCRIPT_SPANS_NODES:
@@ -345,6 +348,7 @@ static inline char *dyn_error_source(dyn_error_t err) {
       return "Peer:";
     case STORAGE_CONNECTION_REFUSE:
     case STORAGE_TIMEOUT:
+    case STORAGE_NOT_CONNECTED:
       return "Storage:";
     default:
       return "unknown:";

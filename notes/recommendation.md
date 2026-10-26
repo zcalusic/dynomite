@@ -32,7 +32,8 @@ When a request times out, dynomite answers it with `-ERR Storage: Datastore time
 
 When dynomite can't serve a request, it answers with an error of the form `-ERR <source> <description>` (redis) or `SERVER_ERROR <source> <description>` (memcache), where the source is `Storage:` (the local datastore), `Peer:` (another dynomite node) or `Dynomite:` (dynomite itself). For example:
 
-+ `-ERR Storage: Datastore refused connection` when the datastore is down or dynomite isn't connected to it yet,
++ `-ERR Storage: Datastore is not connected` when dynomite has no connection to the datastore: it is down, or dynomite hasn't reconnected yet (see [Liveness](#liveness)),
++ `-ERR Storage: Datastore refused connection` when the connection to the datastore failed while the request was on it (the datastore closed or reset it),
 + `-ERR Storage: Datastore timed out` when a request to it timed out (see [Timeout](#timeout)); a request forwarded to another node that doesn't answer in time gets `-ERR Peer: Peer Node timed out`,
 + `-ERR Peer: Peer Node is down` when the node that owns the key can't be reached,
 + `-ERR Dynomite: Failed to achieve Quorum` when a quorum read or write didn't get enough replies.
