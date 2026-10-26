@@ -613,7 +613,9 @@ static char *conf_add_server(struct conf *cf, struct command *cmd, void *conf) {
   string_init(&address);
   p = conf;
   struct conf_server **pfield = (struct conf_server **)(p + cmd->offset);
-  ASSERT(*pfield == NULL);
+  if (*pfield != NULL) {
+    return "has more than one entry, only one is supported";
+  }
   *pfield = (struct conf_server *)dn_zalloc(sizeof(struct conf_server));
   field = *pfield;
   status = conf_server_init(field);

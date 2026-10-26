@@ -1310,16 +1310,21 @@ static const struct conf_case conf_cases[] = {
     /* duplicates are caught for false and 0 too */
     CONF_INVALID("  preconnect: false\n  preconnect: true\n"),
     CONF_INVALID("  server_retry_timeout: 0\n  server_retry_timeout: 5\n"),
+    /* only one datastore server, in the same list or a repeated key */
+    CONF_INVALID("  - 127.0.0.1:22123:1\n"),
+    CONF_INVALID("  - 127.0.0.1:22123:1\n  timeout: 1\n"),
+    CONF_INVALID("  timeout: 1\n  servers:\n  - 127.0.0.1:22123:1\n"),
 };
 
+/* servers comes last, so a case can add entries to its list */
 static const char conf_base[] =
     "dyn_o_mite:\n"
     "  dyn_listen: 0.0.0.0:8101\n"
     "  listen: 0.0.0.0:8102\n"
-    "  servers:\n"
-    "  - 127.0.0.1:22122:1\n"
     "  tokens: 437425602\n"
-    "  stats_listen: 0.0.0.0:22222\n";
+    "  stats_listen: 0.0.0.0:22222\n"
+    "  servers:\n"
+    "  - 127.0.0.1:22122:1\n";
 
 static rstatus_t conf_run(const struct conf_case *tc) {
   char path[] = "/tmp/dynomite-test-XXXXXX";
