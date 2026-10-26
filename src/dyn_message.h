@@ -24,6 +24,7 @@
 #define _DYN_MESSAGE_H_
 
 #include <string.h>
+#include <strings.h>
 
 #include "dyn_dict.h"
 #include "dyn_dnode_msg.h"
@@ -366,13 +367,13 @@ static inline char *get_consistency_string(consistency_t cons) {
 }
 
 static inline consistency_t get_consistency_enum_from_string(char *cons) {
-  if (dn_strcasecmp(cons, "DC_ONE") == 0) {
+  if (strcasecmp(cons, "DC_ONE") == 0) {
     return DC_ONE;
-  } else if (dn_strcasecmp(cons, "DC_QUORUM") == 0) {
+  } else if (strcasecmp(cons, "DC_QUORUM") == 0) {
     return DC_QUORUM;
-  } else if (dn_strcasecmp(cons, "DC_SAFE_QUORUM") == 0) {
+  } else if (strcasecmp(cons, "DC_SAFE_QUORUM") == 0) {
     return DC_SAFE_QUORUM;
-  } else if (dn_strcasecmp(cons, "DC_EACH_SAFE_QUORUM") == 0) {
+  } else if (strcasecmp(cons, "DC_EACH_SAFE_QUORUM") == 0) {
     return DC_EACH_SAFE_QUORUM;
   }
   return -1;

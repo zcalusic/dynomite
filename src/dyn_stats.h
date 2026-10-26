@@ -331,6 +331,7 @@ typedef enum stats_server_field {
 struct stats_cmd {
   stats_cmd_t cmd;
   struct string req_data;
+  int num; /* numeric argument */
 };
 
 #if defined DN_STATS && DN_STATS == 1

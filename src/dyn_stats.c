@@ -62,12 +62,7 @@ static struct stats_desc stats_server_desc[] = {
 #undef DEFINE_ACTION
 
 #define MAX_HTTP_HEADER_SIZE 1024
-static struct string header_str = string(
-    "HTTP/1.1 200 OK \nContent-Type: application/json; charset=utf-8 "
-    "\nContent-Length:");
-// static struct string endline = string("\r\n");
 static struct string ok = string("OK\r\n");
-static struct string err_resp = string("ERR");
 
 static struct string all = string("all");
 
@@ -931,209 +926,224 @@ static void stats_cmd_set_data(struct stats_cmd *st_cmd, const char *val) {
   }
 }
 
-/* Skip a command's name and the '/' before its argument, if there is one. */
-static char *stats_cmd_arg(char *path, size_t len) {
+/*
+ * If path is the command name, or the name followed by '/' and an argument,
+ * return the argument ("" if there is none); otherwise NULL.
+ */
+static char *stats_path_arg(char *path, const char *name) {
+  size_t len = strlen(name);
+
+  if (strncmp(path, name, len) != 0) {
+    return NULL;
+  }
   path += len;
-  return *path == '/' ? path + 1 : path;
+  if (*path == '\0') {
+    return path;
+  }
+  return *path == '/' ? path + 1 : NULL;
 }
 
-static void parse_request(int sd, struct stats_cmd *st_cmd) {
+/* Parse a decimal integer in [min, max] with nothing after it. */
+static bool stats_parse_int(const char *val, int min, int max, int *out) {
+  char *end;
+  long n;
+
+  if (!isdigit((unsigned char)*val)) {
+    return false;
+  }
+  errno = 0;
+  n = strtol(val, &end, 10);
+  if (errno != 0 || *end != '\0' || n < min || n > max) {
+    return false;
+  }
+  *out = (int)n;
+  return true;
+}
+
+static int parse_path(char *path, struct stats_cmd *st_cmd) {
+  static const struct {
+    const char *path;
+    stats_cmd_t cmd;
+  } fixed[] = {
+      {"/", CMD_INFO},
+      {"/info", CMD_INFO},
+      {"/help", CMD_HELP},
+      {"/ping", CMD_PING},
+      {"/loglevelup", CMD_LOG_LEVEL_UP},
+      {"/logleveldown", CMD_LOG_LEVEL_DOWN},
+      {"/historeset", CMD_HISTO_RESET},
+      {"/cluster_describe", CMD_CL_DESCRIBE},
+      {"/get_consistency", CMD_GET_CONSISTENCY},
+      {"/get_timeout_factor", CMD_GET_TIMEOUT_FACTOR},
+      {"/state/get_state", CMD_GET_STATE},
+      {"/state/standby", CMD_STANDBY},
+      {"/state/writes_only", CMD_WRITES_ONLY},
+      {"/state/normal", CMD_NORMAL},
+      {"/state/resuming", CMD_RESUMING},
+  };
+  static const struct {
+    const char *path;
+    stats_cmd_t cmd;
+  } peer[] = {
+      {"/peer/up", CMD_PEER_UP},
+      {"/peer/down", CMD_PEER_DOWN},
+      {"/peer/reset", CMD_PEER_RESET},
+  };
+  char *arg;
+  size_t i;
+
+  for (i = 0; i < NELEMS(fixed); i++) {
+    if (strcmp(path, fixed[i].path) == 0) {
+      st_cmd->cmd = fixed[i].cmd;
+      return 200;
+    }
+  }
+
+  if ((arg = stats_path_arg(path, "/setloglevel")) != NULL) {
+    log_notice("Setting loglevel: %s", path);
+    if (!stats_parse_int(arg, LOG_EMERG, LOG_PVERB, &st_cmd->num)) {
+      return 400;
+    }
+    st_cmd->cmd = CMD_SET_LOG_LEVEL;
+    return 200;
+  }
+
+  if ((arg = stats_path_arg(path, "/set_timeout_factor")) != NULL) {
+    log_notice("Setting timeout factor: %s", path);
+    if (!stats_parse_int(arg, 1, 10, &st_cmd->num)) {
+      return 400;
+    }
+    st_cmd->cmd = CMD_SET_TIMEOUT_FACTOR;
+    return 200;
+  }
+
+  if ((arg = stats_path_arg(path, "/set_consistency/read")) != NULL ||
+      (arg = stats_path_arg(path, "/set_consistency/write")) != NULL) {
+    log_notice("Setting consistency parameters: %s", path);
+    consistency_t cons = get_consistency_enum_from_string(arg);
+    if (cons == (consistency_t)-1) {
+      return 400;
+    }
+    if (path[dn_strlen("/set_consistency/")] == 'r') {
+      g_read_consistency = cons;
+    } else {
+      g_write_consistency = cons;
+    }
+    st_cmd->cmd = CMD_SET_CONSISTENCY;
+    return 200;
+  }
+
+  for (i = 0; i < NELEMS(peer); i++) {
+    if ((arg = stats_path_arg(path, peer[i].path)) != NULL) {
+      log_debug(LOG_VERB, "Setting peer - URL Parameters : %s", path);
+      if (*arg == '\0') {
+        return 400;
+      }
+      st_cmd->cmd = peer[i].cmd;
+      stats_cmd_set_data(st_cmd, arg);
+      return 200;
+    }
+  }
+
+  if (strcmp(path, "/read_repairs/enable") == 0 ||
+      strcmp(path, "/read_repairs/disable") == 0) {
+    log_notice("Setting read_repairs (enabled/disabled): %s", path);
+    g_read_repairs_enabled = path[dn_strlen("/read_repairs/")] == 'e';
+    st_cmd->cmd = CMD_TOGGLE_READ_REPAIRS;
+    return 200;
+  }
+
+  return 404;
+}
+
+/*
+ * Read the request and parse its request line into st_cmd. Returns the HTTP
+ * status to answer with (200 if st_cmd holds a command), or 0 if there is
+ * nothing to answer.
+ */
+static int parse_request(int sd, struct stats_cmd *st_cmd) {
   size_t max_buf_size = 65535;
-  char mesg[max_buf_size], *reqline[3];
-  int rcvd;
+  char mesg[max_buf_size], *reqline[3], *end, *save;
+  ssize_t rcvd;
 
   st_cmd->cmd = CMD_UNKNOWN;
+  st_cmd->num = 0;
   string_init(&st_cmd->req_data);
 
-  memset((void *)mesg, (int)'\0', max_buf_size);
-
-  rcvd = recv(sd, mesg, max_buf_size, 0);
+  rcvd = recv(sd, mesg, max_buf_size - 1, 0);
 
   if (rcvd < 0) {
     log_debug(LOG_VERB, "stats recv error");
-  } else if (rcvd == 0) {  // receive socket closed
-    log_debug(LOG_VERB, "Client disconnected upexpectedly");
-  } else {  // message received
-    log_debug(LOG_VERB, "%s", mesg);
-    reqline[0] = strtok(mesg, " \t\n");
-    if (!reqline[0]) {
-      return;
-    }
-    if (strncmp(reqline[0], "GET\0", 4) == 0) {
-      reqline[1] = strtok(NULL, " \t");
-      reqline[2] = strtok(NULL, " \t\n");
-      log_debug(LOG_VERB, "0: %s\n", reqline[0]);
-      log_debug(LOG_VERB, "1: %s\n", reqline[1]);
-      log_debug(LOG_VERB, "2: %s\n", reqline[2]);
-
-      if (!reqline[1] || !reqline[2] ||
-          (strncmp(reqline[2], "HTTP/1.0", 8) != 0 &&
-           strncmp(reqline[2], "HTTP/1.1", 8) != 0)) {
-        ssize_t wrote = write(sd, "HTTP/1.0 400 Bad Request\n", 25);
-        IGNORE_RET_VAL(wrote);
-        st_cmd->cmd = CMD_UNKNOWN;
-        return;
-      } else {
-        if (strncmp(reqline[1], "/\0", 2) == 0) {
-          st_cmd->cmd = CMD_INFO;
-          return;
-        } else if (strcmp(reqline[1], "/info") == 0) {
-          st_cmd->cmd = CMD_INFO;
-          return;
-        } else if (strcmp(reqline[1], "/help") == 0) {
-          st_cmd->cmd = CMD_HELP;
-          return;
-        } else if (strcmp(reqline[1], "/ping") == 0) {
-          st_cmd->cmd = CMD_PING;
-          return;
-        } else if (strncmp(reqline[1], "/setloglevel",
-                           dn_strlen("/setloglevel")) == 0) {
-          st_cmd->cmd = CMD_SET_LOG_LEVEL;
-          log_notice("Setting loglevel: %s", reqline[1]);
-          char *val = reqline[1] + dn_strlen("/setloglevel");
-          if (*val != '/') {
-            st_cmd->cmd = CMD_UNKNOWN;
-            return;
-          } else {
-            val++;
-            stats_cmd_set_data(st_cmd, val);
-          }
-          return;
-        } else if (strcmp(reqline[1], "/loglevelup") == 0) {
-          st_cmd->cmd = CMD_LOG_LEVEL_UP;
-          return;
-        } else if (strcmp(reqline[1], "/logleveldown") == 0) {
-          st_cmd->cmd = CMD_LOG_LEVEL_DOWN;
-          return;
-        } else if (strcmp(reqline[1], "/historeset") == 0) {
-          st_cmd->cmd = CMD_HISTO_RESET;
-          return;
-        } else if (strcmp(reqline[1], "/cluster_describe") == 0) {
-          st_cmd->cmd = CMD_CL_DESCRIBE;
-          return;
-        } else if (strcmp(reqline[1], "/get_consistency") == 0) {
-          st_cmd->cmd = CMD_GET_CONSISTENCY;
-          return;
-        } else if (strncmp(reqline[1], "/set_consistency", 16) == 0) {
-          st_cmd->cmd = CMD_SET_CONSISTENCY;
-          log_notice("Setting consistency parameters: %s", reqline[1]);
-          char *op = reqline[1] + 16;
-          if (strncmp(op, "/read/", 6) == 0) {
-            consistency_t cons = get_consistency_enum_from_string(op + 6);
-            if (cons == (consistency_t)-1)
-              st_cmd->cmd = CMD_UNKNOWN;
-            else
-              g_read_consistency = cons;
-          } else if (strncmp(op, "/write/", 7) == 0) {
-            consistency_t cons = get_consistency_enum_from_string(op + 7);
-            if (cons == (consistency_t)-1)
-              st_cmd->cmd = CMD_UNKNOWN;
-            else
-              g_write_consistency = cons;
-          } else
-            st_cmd->cmd = CMD_UNKNOWN;
-          return;
-        } else if (strcmp(reqline[1], "/get_timeout_factor") == 0) {
-          st_cmd->cmd = CMD_GET_TIMEOUT_FACTOR;
-          return;
-        } else if (dn_strncmp(reqline[1], "/set_timeout_factor", 19) == 0) {
-          st_cmd->cmd = CMD_SET_TIMEOUT_FACTOR;
-          log_notice("Setting timeout factor: %s", reqline[1]);
-          char *val = reqline[1] + dn_strlen("/set_timeout_factor");
-          if (*val != '/') {
-            st_cmd->cmd = CMD_UNKNOWN;
-            return;
-          } else {
-            val++;
-            stats_cmd_set_data(st_cmd, val);
-          }
-          return;
-        } else if (strncmp(reqline[1], "/peer", 5) == 0) {
-          log_debug(LOG_VERB, "Setting peer - URL Parameters : %s", reqline[1]);
-          char *peer_state = reqline[1] + 5;
-          log_debug(LOG_VERB, "Peer : %s", peer_state);
-          if (strncmp(peer_state, "/down", 5) == 0) {
-            log_debug(LOG_VERB, "Peer's state is down!");
-            st_cmd->cmd = CMD_PEER_DOWN;
-            stats_cmd_set_data(st_cmd, stats_cmd_arg(peer_state, 5));
-          } else if (strncmp(peer_state, "/up", 3) == 0) {
-            log_debug(LOG_VERB, "Peer's state is UP!");
-            st_cmd->cmd = CMD_PEER_UP;
-            stats_cmd_set_data(st_cmd, stats_cmd_arg(peer_state, 3));
-          } else if (strncmp(peer_state, "/reset", 6) == 0) {
-            log_debug(LOG_VERB, "Peer's state is RESET!");
-            st_cmd->cmd = CMD_PEER_RESET;
-            stats_cmd_set_data(st_cmd, stats_cmd_arg(peer_state, 6));
-          } else {
-            st_cmd->cmd = CMD_PING;
-          }
-          return;
-        } else if (strncmp(reqline[1], "/read_repairs", 13) == 0) {
-          log_notice("Setting read_repairs (enabled/disabled): %s", reqline[1]);
-          char *op = reqline[1] + 13;
-          st_cmd->cmd = CMD_TOGGLE_READ_REPAIRS;
-          if (strncmp(op, "/enable", 7) == 0) {
-            g_read_repairs_enabled = true;
-          } else if (strncmp(op, "/disable", 8) == 0) {
-            g_read_repairs_enabled = false;
-          } else {
-            st_cmd->cmd = CMD_UNKNOWN;
-          }
-          return;
-        }
-
-        if (strncmp(reqline[1], "/state", 6) == 0) {
-          log_debug(LOG_VERB, "Setting/Getting state - URL Parameters : %s",
-                    reqline[1]);
-          char *state = reqline[1] + 7;
-          log_debug(LOG_VERB, "cmd : %s", state);
-          if (strcmp(state, "standby") == 0) {
-            st_cmd->cmd = CMD_STANDBY;
-            return;
-          } else if (strcmp(state, "writes_only") == 0) {
-            st_cmd->cmd = CMD_WRITES_ONLY;
-            return;
-          } else if (strcmp(state, "normal") == 0) {
-            st_cmd->cmd = CMD_NORMAL;
-            return;
-          } else if (strcmp(state, "resuming") == 0) {
-            st_cmd->cmd = CMD_RESUMING;
-            return;
-          } else if (strcmp(state, "get_state") == 0) {
-            st_cmd->cmd = CMD_GET_STATE;
-            return;
-          }
-        }
-
-        st_cmd->cmd = CMD_PING;
-        return;
-      }
-    }
+    return 0;
   }
+  if (rcvd == 0) {  // receive socket closed
+    log_debug(LOG_VERB, "Client disconnected upexpectedly");
+    return 0;
+  }
+  mesg[rcvd] = '\0';
+  log_debug(LOG_VERB, "%s", mesg);
+
+  /* Only the request line matters: "<method> <path> HTTP/1.x". */
+  end = strpbrk(mesg, "\r\n");
+  if (end != NULL) {
+    *end = '\0';
+  }
+  reqline[0] = strtok_r(mesg, " \t", &save);
+  reqline[1] = strtok_r(NULL, " \t", &save);
+  reqline[2] = strtok_r(NULL, " \t", &save);
+  if (!reqline[2] || strtok_r(NULL, " \t", &save) != NULL ||
+      (strcmp(reqline[2], "HTTP/1.0") != 0 &&
+       strcmp(reqline[2], "HTTP/1.1") != 0)) {
+    return 400;
+  }
+  if (strcmp(reqline[0], "GET") != 0) {
+    return 405;
+  }
+  return parse_path(reqline[1], st_cmd);
 }
 
-static rstatus_t stats_http_rsp(int sd, uint8_t *content, size_t len) {
-  ssize_t n;
-  uint8_t http_header[MAX_HTTP_HEADER_SIZE];
-  memset((void *)http_header, (int)'\0', MAX_HTTP_HEADER_SIZE);
-  n = dn_snprintf(http_header, MAX_HTTP_HEADER_SIZE, "%.*s %lu \r\n\r\n",
-                  header_str.len, header_str.data, len);
+static rstatus_t stats_http_send(int sd, int status, const char *content_type,
+                                 const uint8_t *content, size_t len) {
+  const char *reason, *extra = "";
+  char http_header[MAX_HTTP_HEADER_SIZE];
+  int n;
 
+  switch (status) {
+    case 200:
+      reason = "OK";
+      break;
+    case 400:
+      reason = "Bad Request";
+      break;
+    case 404:
+      reason = "Not Found";
+      break;
+    case 405:
+      reason = "Method Not Allowed";
+      extra = "Allow: GET\r\n";
+      break;
+    default:
+      status = 500;
+      reason = "Internal Server Error";
+      break;
+  }
+
+  n = dn_snprintf(http_header, MAX_HTTP_HEADER_SIZE,
+                  "HTTP/1.1 %d %s\r\nContent-Type: %s\r\n"
+                  "Content-Length: %zu\r\nConnection: close\r\n%s\r\n",
+                  status, reason, content_type, len, extra);
   if (n < 0 || n >= MAX_HTTP_HEADER_SIZE) {
     close(sd);
     return DN_ERROR;
   }
 
-  n = dn_sendn(sd, http_header, n);
-  if (n < 0) {
+  if (dn_sendn(sd, http_header, (size_t)n) < 0) {
     log_error("send http headers on sd %d failed: %s", sd, strerror(errno));
     close(sd);
     return DN_ERROR;
   }
 
-  n = dn_sendn(sd, content, len);
-
-  if (n < 0) {
+  if (dn_sendn(sd, content, len) < 0) {
     log_error("send stats on sd %d failed: %s", sd, strerror(errno));
     close(sd);
     return DN_ERROR;
@@ -1144,8 +1154,36 @@ static rstatus_t stats_http_rsp(int sd, uint8_t *content, size_t len) {
   return DN_OK;
 }
 
+static rstatus_t stats_http_rsp(int sd, uint8_t *content, size_t len) {
+  return stats_http_send(sd, 200, "application/json; charset=utf-8", content,
+                         len);
+}
+
+/* An error reply, with the status line's reason phrase as a text body. */
+static rstatus_t stats_http_err(int sd, int status) {
+  const char *body;
+
+  switch (status) {
+    case 400:
+      body = "Bad Request\r\n";
+      break;
+    case 404:
+      body = "Not Found, see /help\r\n";
+      break;
+    case 405:
+      body = "Method Not Allowed\r\n";
+      break;
+    default:
+      status = 500;
+      body = "Internal Server Error\r\n";
+      break;
+  }
+  return stats_http_send(sd, status, "text/plain; charset=utf-8",
+                         (const uint8_t *)body, strlen(body));
+}
+
 static rstatus_t stats_send_rsp(struct stats *st) {
-  int sd;
+  int sd, status;
 
   sd = accept(st->sd, NULL, NULL);
   if (sd < 0) {
@@ -1155,36 +1193,42 @@ static rstatus_t stats_send_rsp(struct stats *st) {
 
   struct stats_cmd st_cmd;
 
-  parse_request(sd, &st_cmd);
+  status = parse_request(sd, &st_cmd);
+  if (status == 0) {
+    close(sd);
+    return DN_OK;
+  }
+  if (status != 200) {
+    return stats_http_err(sd, status);
+  }
   stats_cmd_t cmd = st_cmd.cmd;
 
   log_debug(LOG_VERB, "cmd %d", cmd);
 
   if (cmd == CMD_INFO) {
     if (stats_make_info_rsp(st) != DN_OK)
-      return stats_http_rsp(sd, err_resp.data, err_resp.len);
+      return stats_http_err(sd, 500);
     else {
       log_debug(LOG_VERB, "send stats on sd %d %zu bytes", sd, st->buf.len);
       return stats_http_rsp(sd, st->buf.data, st->buf.len);
     }
   } else if (cmd == CMD_HELP) {
-    char rsp[5120];
-    dn_sprintf(rsp,
-               "/info\n/help\n/ping\n/cluster_describe\n"
-               "/setloglevel/<0-11>\n/loglevelup\n/logleveldown\n/historeset\n"
-               "/get_consistency\n/set_consistency/<read|write>/"
-               "<dc_one|dc_quorum|dc_safe_quorum|dc_each_safe_quorum>\n"
-               "/get_timeout_factor\n/set_timeout_factor/<1-10>\n/peer/"
-               "<up|down|reset>\n"
-               "/state/<get_state|standby|writes_only|normal|%s>\n\n",
-               "resuming");
-    return stats_http_rsp(sd, rsp, dn_strlen(rsp));
+    static const char help[] =
+        "/info\n/help\n/ping\n/cluster_describe\n"
+        "/setloglevel/<0-11>\n/loglevelup\n/logleveldown\n/historeset\n"
+        "/get_consistency\n/set_consistency/<read|write>/"
+        "<dc_one|dc_quorum|dc_safe_quorum|dc_each_safe_quorum>\n"
+        "/get_timeout_factor\n/set_timeout_factor/<1-10>\n"
+        "/peer/<up|down|reset>/<name|all>\n"
+        "/read_repairs/<enable|disable>\n"
+        "/state/<get_state|standby|writes_only|normal|resuming>\n\n";
+    return stats_http_rsp(sd, (uint8_t *)help, sizeof(help) - 1);
   } else if (cmd == CMD_NORMAL) {
     core_set_local_state(st->ctx, NORMAL);
     return stats_http_rsp(sd, ok.data, ok.len);
   } else if (cmd == CMD_CL_DESCRIBE) {
     if (stats_make_cl_desc_rsp(st) != DN_OK)
-      return stats_http_rsp(sd, err_resp.data, err_resp.len);
+      return stats_http_err(sd, 500);
     else
       return stats_http_rsp(sd, st->clus_desc_buf.data, st->clus_desc_buf.len);
   } else if (cmd == CMD_STANDBY) {
@@ -1201,15 +1245,8 @@ static rstatus_t stats_send_rsp(struct stats *st) {
     dn_sprintf(rsp, "State: %s\n", get_state(st->ctx->dyn_state));
     return stats_http_rsp(sd, rsp, dn_strlen(rsp));
   } else if (cmd == CMD_SET_LOG_LEVEL) {
-    int loglevel = 0;
-    log_warn("st_cmd.req_data '%.*s' ", st_cmd.req_data.len,
-             st_cmd.req_data.data);
-    if (!string_empty(&st_cmd.req_data)) {
-      sscanf((char *)st_cmd.req_data.data, "%d", &loglevel);
-    }
-    string_deinit(&st_cmd.req_data);
-    log_warn("setting log level = %d", loglevel);
-    log_level_set(loglevel);
+    log_warn("setting log level = %d", st_cmd.num);
+    log_level_set(st_cmd.num);
     return stats_http_rsp(sd, ok.data, ok.len);
   } else if (cmd == CMD_LOG_LEVEL_UP) {
     log_level_up();
@@ -1232,18 +1269,7 @@ static rstatus_t stats_send_rsp(struct stats *st) {
     dn_sprintf(rsp, "Timeout factor: %d\n", g_timeout_factor);
     return stats_http_rsp(sd, rsp, dn_strlen(rsp));
   } else if (cmd == CMD_SET_TIMEOUT_FACTOR) {
-    int timeout_factor = 0;
-    log_warn("st_cmd.req_data '%.*s' ", st_cmd.req_data.len,
-             st_cmd.req_data.data);
-    if (!string_empty(&st_cmd.req_data)) {
-      sscanf((char *)st_cmd.req_data.data, "%d", &timeout_factor);
-    }
-    string_deinit(&st_cmd.req_data);
-    log_warn("timeout factor = %d", timeout_factor);
-    // make sure timeout factor is within a range
-    if (timeout_factor < 1) timeout_factor = 1;
-    if (timeout_factor > 10) timeout_factor = 10;
-    g_timeout_factor = timeout_factor;
+    g_timeout_factor = (uint8_t)st_cmd.num;
     log_warn("setting timeout_factor to %d", g_timeout_factor);
     return stats_http_rsp(sd, ok.data, ok.len);
   } else if (cmd == CMD_PEER_DOWN || cmd == CMD_PEER_UP ||
@@ -1252,6 +1278,7 @@ static rstatus_t stats_send_rsp(struct stats *st) {
               st_cmd.req_data.data);
     struct server_pool *sp = &st->ctx->pool;
     uint32_t i, len;
+    bool found = false;
 
     // I think it is ok to keep this simple without a synchronization
     for (i = 0, len = array_n(&sp->peers); i < len; i++) {
@@ -1264,6 +1291,7 @@ static rstatus_t stats_send_rsp(struct stats *st) {
             "\t\tSetting peer '%.*s' to state %d due to RESET/ALL command",
             st_cmd.req_data.len, st_cmd.req_data.data, cmd);
         peer->state = RESET;
+        found = true;
       } else if (string_compare(&peer->name, &st_cmd.req_data) == 0) {
         log_debug(LOG_VERB,
                   "\t\tSetting peer '%.*s' to a new state due to command %d",
@@ -1281,17 +1309,20 @@ static rstatus_t stats_send_rsp(struct stats *st) {
           default:
             peer->state = NORMAL;
         }
+        found = true;
         break;
       }
     }
     string_deinit(&st_cmd.req_data);
+    if (!found) {
+      return stats_http_err(sd, 404);
+    }
+    return stats_http_rsp(sd, ok.data, ok.len);
   } else if (cmd == CMD_TOGGLE_READ_REPAIRS) {
     char repairs_rsp[1024];
     dn_sprintf(repairs_rsp, "Read Repairs: %s\r\n",
         (g_read_repairs_enabled) ? "ENABLED" : "DISABLED" );
     return stats_http_rsp(sd, repairs_rsp, dn_strlen(repairs_rsp));
-  } else {
-    log_debug(LOG_VERB, "Unsupported cmd");
   }
 
   return stats_http_rsp(sd, ok.data, ok.len);

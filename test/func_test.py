@@ -1,4 +1,5 @@
 import redis
+import requests
 import random
 import socket
 import string
@@ -376,6 +377,44 @@ def run_incr_replicas_test(c, incrs_per_dc=3):
     assert all(v == expected for v in replicas), (expected, values)
     print("\t-%d replicas, each incremented %d times" % (num_racks, expected))
 
+def run_rest_api_test(c):
+    """Checks the stats REST API's HTTP statuses: unknown paths, bad
+    arguments, other methods and malformed requests get errors, not OK."""
+    print("Running REST_API test")
+    nodes = c.get_dynomite_cluster().nodes
+    node = nodes[0]
+    base = 'http://{}:{}'.format(node.ip, node.spec.stats_port)
+    expected = {
+        '/info': 200, '/ping': 200, '/help': 200, '/get_consistency': 200,
+        '/state/get_state': 200, '/peer/up/' + nodes[1].ip: 200,
+        '/bogus': 404, '/state': 404, '/stateX': 404, '/state/bogus': 404,
+        '/setloglevelX': 404, '/peer/bogus': 404, '/peer/update': 404,
+        '/peer/up/10.255.255.1': 404, '/read_repairs': 404,
+        '/setloglevel': 400, '/setloglevel/abc': 400, '/setloglevel/12': 400,
+        '/set_timeout_factor/0': 400, '/set_consistency/write': 400,
+        '/set_consistency/read/bogus': 400,
+        '/set_consistency/read/dc_one_bogus': 400, '/peer/up': 400,
+    }
+    for path, status in expected.items():
+        r = requests.get(base + path)
+        assert r.status_code == status, (path, r.status_code, r.text)
+    r = requests.post(base + '/info')
+    assert r.status_code == 405 and r.headers['Allow'] == 'GET', r.headers
+    # A malformed request line gets one 400 reply and nothing else.
+    with socket.create_connection((node.ip, node.spec.stats_port),
+                                  timeout=2) as s:
+        s.sendall(b'HELLO\r\n\r\n')
+        received = b''
+        while True:
+            data = s.recv(4096)
+            if not data:
+                break
+            received += data
+    assert received.startswith(b'HTTP/1.1 400 '), received
+    assert received.endswith(b'\r\n\r\nBad Request\r\n'), received
+    print("\t-%d paths, POST and a malformed request answered as expected"
+          % len(expected))
+
 def comparison_test(redis, dynomite, debug):
     c = dual_run(redis, dynomite, debug)
     run_key_value_tests(c)
@@ -389,6 +428,7 @@ def comparison_test(redis, dynomite, debug):
     run_script_tests(c)
     run_encrypted_peer_msg_test(c)
     run_incr_replicas_test(c)
+    run_rest_api_test(c)
 
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM
