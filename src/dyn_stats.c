@@ -921,6 +921,22 @@ static rstatus_t stats_make_cl_desc_rsp(struct stats *st) {
   return DN_OK;
 }
 
+/* Copy a request argument into st_cmd->req_data; an empty one stays empty. */
+static void stats_cmd_set_data(struct stats_cmd *st_cmd, const char *val) {
+  if (*val == '\0') {
+    return;
+  }
+  if (string_copy_c(&st_cmd->req_data, (const uint8_t *)val) != DN_OK) {
+    string_init(&st_cmd->req_data);
+  }
+}
+
+/* Skip a command's name and the '/' before its argument, if there is one. */
+static char *stats_cmd_arg(char *path, size_t len) {
+  path += len;
+  return *path == '/' ? path + 1 : path;
+}
+
 static void parse_request(int sd, struct stats_cmd *st_cmd) {
   size_t max_buf_size = 65535;
   char mesg[max_buf_size], *reqline[3];
@@ -978,7 +994,7 @@ static void parse_request(int sd, struct stats_cmd *st_cmd) {
           } else {
             val++;
             string_init(&st_cmd->req_data);
-            string_copy_c(&st_cmd->req_data, val);
+            stats_cmd_set_data(st_cmd, val);
           }
           return;
         } else if (strcmp(reqline[1], "/loglevelup") == 0) {
@@ -1028,7 +1044,7 @@ static void parse_request(int sd, struct stats_cmd *st_cmd) {
           } else {
             val++;
             string_init(&st_cmd->req_data);
-            string_copy_c(&st_cmd->req_data, val);
+            stats_cmd_set_data(st_cmd, val);
           }
           return;
         } else if (strncmp(reqline[1], "/peer", 5) == 0) {
@@ -1039,17 +1055,17 @@ static void parse_request(int sd, struct stats_cmd *st_cmd) {
             log_debug(LOG_VERB, "Peer's state is down!");
             st_cmd->cmd = CMD_PEER_DOWN;
             string_init(&st_cmd->req_data);
-            string_copy_c(&st_cmd->req_data, peer_state + 6);
+            stats_cmd_set_data(st_cmd, stats_cmd_arg(peer_state, 5));
           } else if (strncmp(peer_state, "/up", 3) == 0) {
             log_debug(LOG_VERB, "Peer's state is UP!");
             st_cmd->cmd = CMD_PEER_UP;
             string_init(&st_cmd->req_data);
-            string_copy_c(&st_cmd->req_data, peer_state + 4);
+            stats_cmd_set_data(st_cmd, stats_cmd_arg(peer_state, 3));
           } else if (strncmp(peer_state, "/reset", 6) == 0) {
             log_debug(LOG_VERB, "Peer's state is RESET!");
             st_cmd->cmd = CMD_PEER_RESET;
             string_init(&st_cmd->req_data);
-            string_copy_c(&st_cmd->req_data, peer_state + 7);
+            stats_cmd_set_data(st_cmd, stats_cmd_arg(peer_state, 6));
           } else {
             st_cmd->cmd = CMD_PING;
           }
@@ -1189,7 +1205,10 @@ static rstatus_t stats_send_rsp(struct stats *st) {
     int loglevel = 0;
     log_warn("st_cmd.req_data '%.*s' ", st_cmd.req_data.len,
              st_cmd.req_data.data);
-    sscanf((char *)st_cmd.req_data.data, "%d", &loglevel);
+    if (!string_empty(&st_cmd.req_data)) {
+      sscanf((char *)st_cmd.req_data.data, "%d", &loglevel);
+    }
+    string_deinit(&st_cmd.req_data);
     log_warn("setting log level = %d", loglevel);
     log_level_set(loglevel);
     return stats_http_rsp(sd, ok.data, ok.len);
@@ -1217,7 +1236,10 @@ static rstatus_t stats_send_rsp(struct stats *st) {
     int timeout_factor = 0;
     log_warn("st_cmd.req_data '%.*s' ", st_cmd.req_data.len,
              st_cmd.req_data.data);
-    sscanf((char *)st_cmd.req_data.data, "%d", &timeout_factor);
+    if (!string_empty(&st_cmd.req_data)) {
+      sscanf((char *)st_cmd.req_data.data, "%d", &timeout_factor);
+    }
+    string_deinit(&st_cmd.req_data);
     log_warn("timeout factor = %d", timeout_factor);
     // make sure timeout factor is within a range
     if (timeout_factor < 1) timeout_factor = 1;
