@@ -1,6 +1,7 @@
 dyn_o_mite:
   listen: 127.0.0.1:8102
   dyn_listen: 127.0.0.1:8101
+  stats_listen: 127.0.0.1:22222
   tokens: '101134286'
   servers:
   - 127.0.0.1:22122:1
