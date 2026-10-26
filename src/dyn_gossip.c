@@ -165,11 +165,11 @@ static int write_number(uint8_t *pos, uint64_t num, int *count) {
 static void string_write_uint32(struct string *str, uint32_t num,
                                 uint32_t pos) {
   if (num < 10) {
-    *(str->data + pos) = '0' + num;
+    *(str->data + pos) = (uint8_t)('0' + num);
     return;
   }
 
-  *(str->data + pos) = '0' + (num % 10);
+  *(str->data + pos) = (uint8_t)('0' + num % 10);
   string_write_uint32(str, num / 10, pos - 1);
 }
 

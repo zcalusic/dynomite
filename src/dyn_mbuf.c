@@ -81,7 +81,7 @@ static struct mbuf *_mbuf_get(void) {
    */
   mbuf = (struct mbuf *)(buf + mbuf_offset);
   mbuf->magic = MBUF_MAGIC;
-  mbuf->chunk_size = mbuf_chunk_size;
+  mbuf->chunk_size = (uint32_t)mbuf_chunk_size; /* at most MBUF_MAX_SIZE */
 
 done:
   STAILQ_NEXT(mbuf, next) = NULL;
@@ -307,7 +307,7 @@ void mbuf_deinit(void) {
 
 void mbuf_write_char(struct mbuf *mbuf, char ch) {
   ASSERT(mbuf_remaining_space(mbuf) >= 1);
-  *mbuf->last = ch;
+  *mbuf->last = (uint8_t)ch;
   mbuf->last += 1;
 }
 
@@ -317,41 +317,41 @@ void mbuf_write_string(struct mbuf *mbuf, const struct string *s) {
 }
 
 void mbuf_write_mbuf(struct mbuf *mbuf, struct mbuf *data) {
-  mbuf_copy(mbuf, data->pos, data->last - data->pos);
+  mbuf_copy(mbuf, data->pos, (size_t)(data->last - data->pos));
 }
 
-void mbuf_write_bytes(struct mbuf *mbuf, unsigned char *data, int len) {
+void mbuf_write_bytes(struct mbuf *mbuf, unsigned char *data, size_t len) {
   mbuf_copy(mbuf, data, len);
 }
 
 void mbuf_write_uint8(struct mbuf *mbuf, uint8_t num) {
   if (num < 10) {
-    mbuf_write_char(mbuf, '0' + num);
+    mbuf_write_char(mbuf, (char)('0' + num));
     return;
   }
 
   mbuf_write_uint8(mbuf, num / 10);
-  mbuf_write_char(mbuf, '0' + (num % 10));
+  mbuf_write_char(mbuf, (char)('0' + num % 10));
 }
 
 void mbuf_write_uint32(struct mbuf *mbuf, uint32_t num) {
   if (num < 10) {
-    mbuf_write_char(mbuf, '0' + num);
+    mbuf_write_char(mbuf, (char)('0' + num));
     return;
   }
 
   mbuf_write_uint32(mbuf, num / 10);
-  mbuf_write_char(mbuf, '0' + (num % 10));
+  mbuf_write_char(mbuf, (char)('0' + num % 10));
 }
 
 void mbuf_write_uint64(struct mbuf *mbuf, uint64_t num) {
   if (num < 10) {
-    mbuf_write_char(mbuf, '0' + num);
+    mbuf_write_char(mbuf, (char)('0' + num));
     return;
   }
 
   mbuf_write_uint64(mbuf, num / 10);
-  mbuf_write_char(mbuf, '0' + (num % 10));
+  mbuf_write_char(mbuf, (char)('0' + num % 10));
 }
 
 // allocate an arbitrary size mbuf for a general purpose operation
@@ -365,7 +365,7 @@ struct mbuf *mbuf_alloc(const size_t size) {
 
   struct mbuf *mbuf = (struct mbuf *)(buf + size);
   mbuf->magic = MBUF_MAGIC;
-  mbuf->chunk_size = chunk_size;
+  mbuf->chunk_size = (uint32_t)chunk_size;
 
   STAILQ_NEXT(mbuf, next) = NULL;
 
