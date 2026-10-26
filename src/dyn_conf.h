@@ -90,7 +90,6 @@ struct conf_pool {
   int timeout;               /* timeout: in msec */
   int backlog;               /* backlog: */
   int data_store;            /* data_store: */
-  int preconnect;            /* preconnect: */
   int server_retry_timeout_ms;        /* server_retry_timeout: in msec */
   struct conf_server *conf_datastore; /* This is the underlying datastore */
   unsigned valid : 1;                 /* valid? */

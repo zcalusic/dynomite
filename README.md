@@ -106,7 +106,6 @@ Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible)
 + **hash**: The hash function used to map keys to tokens. One of one_at_a_time, md5, crc16, crc32, crc32a, fnv1_64, fnv1a_64, fnv1_32, fnv1a_32, hsieh, murmur or jenkins. Defaults to murmur.
 + **hash_tag**: A two-character string, such as `{}`, that selects the part of a key to hash: when a key contains both characters, only the part between them is hashed, so related keys can be kept on the same node. Not set by default.
 + **timeout**: The timeout value in msec that we wait for to establish a connection to the server or receive a response from a server. Defaults to 5000 msec; must be at least 1.
-+ **preconnect**: A boolean value that controls if dynomite should preconnect to all the servers in this pool on process start. Defaults to true.
 + **data_store**: An integer value that controls if a server pool speaks redis (0) or memcached (1). Defaults to redis (0).
 + **server_retry_timeout**: The longest wait in msec between attempts to reconnect to the server: the wait starts at 1 second and doubles after each failure, up to this limit in whole seconds (rounded down), so values below 2000, including 0, reconnect every second. Defaults to 10000 msec.
 + **servers**: A list of local server address, port and weight (name:port:weight or ip:port:weight) for this server pool. Exactly one is supported; a second entry is a configuration error.
@@ -123,7 +122,7 @@ Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible)
 + **remote_peer_connections**: Maximum number of connections to a remote DC peer. Defaults to 1; 1 to 255.
 + **conn_msg_rate**: The maximum number of messages per second sent on each connection to a node in a remote datacenter. Defaults to 50000; must be at least 1.
 
-The keys **client_connections**, **distribution**, **server_connections**, **dyn_port**, **dyn_connections**, **dyn_read_timeout**, **dyn_write_timeout**, **recon_key_file**, **recon_iv_file**, **auto_eject_hosts** and **server_failure_limit** are still accepted for compatibility, but are ignored. The inter-node port comes from **dyn_listen**.
+The keys **client_connections**, **distribution**, **server_connections**, **dyn_port**, **dyn_connections**, **dyn_read_timeout**, **dyn_write_timeout**, **recon_key_file**, **recon_iv_file**, **auto_eject_hosts**, **server_failure_limit** and **preconnect** are still accepted for compatibility, but are ignored. The inter-node port comes from **dyn_listen**. Dynomite always connects to the datastore and to its peers at startup.
 
 See [conf/dynomite.yml](conf/dynomite.yml) for an example; [conf/](conf/) has more, such as [conf/redis_single.yml](conf/redis_single.yml).
 

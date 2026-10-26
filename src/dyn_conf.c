@@ -52,7 +52,6 @@
 #define CONF_DEFAULT_TIMEOUT 5000
 #define CONF_DEFAULT_LISTEN_BACKLOG 512
 #define CONF_DEFAULT_DATASTORE DATA_REDIS
-#define CONF_DEFAULT_PRECONNECT true
 #define CONF_DEFAULT_SERVER_RETRY_TIMEOUT 10 * 1000 /* in msec */
 #define CONF_DEFAULT_KETAMA_PORT 11211
 
@@ -188,7 +187,6 @@ static rstatus_t conf_pool_init(struct conf_pool *cp, struct string *name) {
 
 
   cp->data_store = CONF_UNSET_NUM;
-  cp->preconnect = CONF_UNSET_NUM;
   cp->server_retry_timeout_ms = CONF_UNSET_NUM;
   cp->datastore_connections = CONF_UNSET_NUM;
   cp->local_peer_connections = CONF_UNSET_NUM;
@@ -340,7 +338,6 @@ static void conf_dump(struct conf *cf) {
     temp_log = "memcache";
   }
   log_debug(LOG_VVERB, "  data_store: %d (%s)", cp->data_store, temp_log);
-  log_debug(LOG_VVERB, "  preconnect: %d", cp->preconnect);
   log_debug(LOG_VVERB, "  server_retry_timeout: %d (msec)",
             cp->server_retry_timeout_ms);
 
@@ -1058,8 +1055,8 @@ static struct command conf_commands[] = {
     {string("data_store"), conf_set_num,
      offsetof(struct conf_pool, data_store)},
 
-    {string("preconnect"), conf_set_bool,
-     offsetof(struct conf_pool, preconnect)},
+    {string("preconnect"), conf_set_deprecated,
+     offsetof(struct conf_pool, deprecated)},
 
     {string("auto_eject_hosts"), conf_set_deprecated,
      offsetof(struct conf_pool, deprecated)},
@@ -1834,10 +1831,6 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
   }
   THROW_STATUS(
       conf_check_num("data_store", cp->data_store, DATA_REDIS, DATA_MEMCACHE));
-
-  if (cp->preconnect == CONF_UNSET_NUM) {
-    cp->preconnect = CONF_DEFAULT_PRECONNECT;
-  }
 
   if (cp->enable_gossip == CONF_UNSET_NUM) {
     cp->enable_gossip = false;

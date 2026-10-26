@@ -868,10 +868,6 @@ rstatus_t dnode_peer_pool_preconnect(struct context *ctx) {
   rstatus_t status;
   struct server_pool *sp = &ctx->pool;
 
-  if (!sp->preconnect) {
-    return DN_OK;
-  }
-
   status = array_each(&sp->peers, dnode_peer_each_preconnect);
   if (status != DN_OK) {
     return status;

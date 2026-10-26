@@ -11,4 +11,3 @@ dyn_o_mite:
         - 127.0.0.1:11370:1
     data_store: 0
     stats_listen: 0.0.0.0:33333
-    preconnect: true

@@ -1265,7 +1265,6 @@ static const struct conf_case conf_cases[] = {
     /* unset directives get their defaults */
     CONF_VALID("", timeout, 5000),
     CONF_VALID("", backlog, 512),
-    CONF_VALID("", preconnect, true),
     CONF_VALID("", enable_gossip, false),
     CONF_VALID("", read_repairs_enabled, false),
     CONF_VALID("", server_retry_timeout_ms, 10000),
@@ -1276,7 +1275,7 @@ static const struct conf_case conf_cases[] = {
     CONF_VALID("", mbuf_size, CONF_UNSET_NUM),
     CONF_VALID("", alloc_msgs_max, CONF_UNSET_NUM),
     /* explicit false and 0 are kept, not taken for unset */
-    CONF_VALID("  preconnect: false\n", preconnect, false),
+    CONF_VALID("  enable_gossip: false\n", enable_gossip, false),
     CONF_VALID("  read_repairs_enabled: true\n", read_repairs_enabled, true),
     CONF_VALID("  server_retry_timeout: 0\n", server_retry_timeout_ms, 0),
     CONF_VALID("  data_store: 1\n", data_store, DATA_MEMCACHE),
@@ -1303,12 +1302,13 @@ static const struct conf_case conf_cases[] = {
     CONF_INVALID("  mbuf_size: 0\n"),
     CONF_INVALID("  mbuf_size: 520\n"),
     CONF_INVALID("  max_msgs: 0\n"),
-    CONF_INVALID("  preconnect: maybe\n"),
+    CONF_INVALID("  read_repairs_enabled: maybe\n"),
     /* deprecated directives are accepted and ignored */
-    CONF_VALID("  auto_eject_hosts: true\n  server_failure_limit: 3\n", timeout,
-               5000),
+    CONF_VALID("  auto_eject_hosts: true\n  server_failure_limit: 3\n"
+               "  preconnect: false\n",
+               timeout, 5000),
     /* duplicates are caught for false and 0 too */
-    CONF_INVALID("  preconnect: false\n  preconnect: true\n"),
+    CONF_INVALID("  enable_gossip: false\n  enable_gossip: true\n"),
     CONF_INVALID("  server_retry_timeout: 0\n  server_retry_timeout: 5\n"),
     /* only one datastore server, in the same list or a repeated key */
     CONF_INVALID("  - 127.0.0.1:22123:1\n"),

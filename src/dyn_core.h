@@ -213,7 +213,6 @@ struct server_pool {
   msec_t timeout;                 /* timeout in msec */
   int backlog;                    /* listen backlog */
   msec_t server_retry_timeout_ms; /* server retry timeout in msec */
-  unsigned preconnect : 1;        /* preconnect? */
 
   /* dynomite */
   struct string seed_provider;

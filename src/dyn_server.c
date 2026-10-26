@@ -321,9 +321,6 @@ struct conn *get_datastore_conn(struct context *ctx, struct server_pool *pool,
 }
 
 rstatus_t server_pool_preconnect(struct context *ctx) {
-  if (!ctx->pool.preconnect) {
-    return DN_OK;
-  }
   return datastore_preconnect(ctx->pool.datastore);
 }
 
@@ -381,7 +378,6 @@ rstatus_t server_pool_init(struct server_pool *sp, struct conf_pool *cp,
   sp->backlog = cp->backlog;
 
   sp->server_retry_timeout_ms = (msec_t)cp->server_retry_timeout_ms;
-  sp->preconnect = cp->preconnect ? 1 : 0;
 
   sp->datastore = dn_zalloc(sizeof(*sp->datastore));
   init_object(&(sp->datastore->obj), OBJ_DATASTORE, _print_datastore);
