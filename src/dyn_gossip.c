@@ -524,8 +524,8 @@ static rstatus_t gossip_add_node(struct server_pool *sp, struct string *dc,
                                  struct gossip_rack *g_rack,
                                  struct string *address, struct string *ip,
                                  const struct string *port,
-                                 struct dyn_token *token,
-                                 uint8_t state) {
+                                 struct dyn_token *token, uint8_t state,
+                                 const uint64_t timestamp) {
   rstatus_t status;
   log_debug(
       LOG_VERB,
@@ -541,6 +541,7 @@ static rstatus_t gossip_add_node(struct server_pool *sp, struct string *dc,
 
   node_count++;
   gnode->state = state;
+  gnode->ts = timestamp;
 
   status = gossip_msg_to_core(sp, gnode, dnode_peer_add);
   return status;
@@ -635,7 +636,8 @@ static rstatus_t gossip_add_node_if_absent(
     log_debug(LOG_NOTICE, "adding node : port[%.*s]", port->len, port->data);
     log_debug(LOG_NOTICE, "suggested state : %d", state);
     // print_dyn_token(token, 6);
-    gossip_add_node(sp, dc, g_rack, address, ip, port, token, state);
+    gossip_add_node(sp, dc, g_rack, address, ip, port, token, state,
+                    timestamp);
   } else if (dictFind(g_rack->dict_name_nodes, ip) != NULL) {
     log_debug(LOG_VERB, "Node found");
     if (!g_node->is_local) {  // don't update myself here

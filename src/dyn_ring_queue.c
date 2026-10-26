@@ -115,8 +115,10 @@ rstatus_t node_init(struct gossip_node *node) {
 
   node->port = 8101;
 
+  node->is_secure = false;
   node->is_local = false;
   node->state = INIT;
+  node->ts = 0;
 
   return DN_OK;
 }
@@ -140,6 +142,7 @@ rstatus_t node_copy(const struct gossip_node *src, struct gossip_node *dst) {
   if (src == NULL || dst == NULL) return DN_ERROR;
 
   dst->state = src->state;
+  dst->ts = src->ts;
   dst->is_local = src->is_local;
   dst->port = src->port;
   dst->is_secure = src->is_secure;
