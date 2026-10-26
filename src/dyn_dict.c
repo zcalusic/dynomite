@@ -61,7 +61,7 @@ static unsigned int dict_force_resize_ratio = 5;
 
 static int _dictExpandIfNeeded(dict *ht);
 static unsigned long _dictNextPower(unsigned long size);
-static int _dictKeyIndex(dict *ht, const void *key);
+static long _dictKeyIndex(dict *ht, const void *key);
 static int _dictInit(dict *ht, dictType *type, void *privDataPtr);
 
 /* -------------------------- hash functions -------------------------------- */
@@ -155,7 +155,8 @@ unsigned int dictGenCaseHashFunction(const unsigned char *buf, uint32_t len) {
   unsigned int hash = (unsigned int)dict_hash_function_seed;
 
   while (len--)
-    hash = ((hash << 5) + hash) + (tolower(*buf++)); /* hash * 33 + c */
+    hash = ((hash << 5) + hash) +
+           (unsigned int)tolower(*buf++); /* hash * 33 + c */
   return hash;
 }
 
@@ -192,7 +193,7 @@ int _dictInit(dict *d, dictType *type, void *privDataPtr) {
 /* Resize the table to the minimal size that contains all the elements,
  * but with the invariant of a USED/BUCKETS ratio near to <= 1 */
 int dictResize(dict *d) {
-  int minimal;
+  unsigned long minimal;
 
   if (!dict_can_resize || dictIsRehashing(d)) return DICT_ERR;
   minimal = d->ht[0].used;
@@ -254,7 +255,7 @@ int dictRehash(dict *d, int n) {
     de = d->ht[0].table[d->rehashidx];
     /* Move all the keys in this bucket from the old to the new hash HT */
     while (de) {
-      unsigned int h;
+      unsigned long h;
 
       nextde = de->next;
       /* Get the index in the new hash table */
@@ -331,7 +332,7 @@ int dictAdd(dict *d, void *key, void *val) {
  * If key was added, the hash entry is returned to be manipulated by the caller.
  */
 dictEntry *dictAddRaw(dict *d, void *key) {
-  int index;
+  long index;
   dictEntry *entry;
   dictht *ht;
 
@@ -390,7 +391,8 @@ dictEntry *dictReplaceRaw(dict *d, void *key) {
 
 /* Search and remove an element */
 static int dictGenericDelete(dict *d, const void *key, int nofree) {
-  unsigned int h, idx;
+  unsigned int h;
+  unsigned long idx;
   dictEntry *he, *prevHe;
   int table;
 
@@ -473,7 +475,8 @@ void dictRelease(dict *d) {
 
 dictEntry *dictFind(dict *d, const void *key) {
   dictEntry *he;
-  unsigned int h, idx, table;
+  unsigned int h, table;
+  unsigned long idx;
 
   if (d->ht[0].size == 0) return NULL; /* We don't have a table at all */
   if (dictIsRehashing(d)) _dictRehashStep(d);
@@ -508,11 +511,11 @@ long long dictFingerprint(dict *d) {
   int j;
 
   integers[0] = (long)d->ht[0].table;
-  integers[1] = d->ht[0].size;
-  integers[2] = d->ht[0].used;
+  integers[1] = (long long)d->ht[0].size;
+  integers[2] = (long long)d->ht[0].used;
   integers[3] = (long)d->ht[1].table;
-  integers[4] = d->ht[1].size;
-  integers[5] = d->ht[1].used;
+  integers[4] = (long long)d->ht[1].size;
+  integers[5] = (long long)d->ht[1].used;
 
   /* We hash N integers by summing every successive integer with the integer
    * hashing of the previous sum. Basically:
@@ -603,20 +606,19 @@ void dictReleaseIterator(dictIterator *iter) {
  * implement randomized algorithms */
 dictEntry *dictGetRandomKey(dict *d) {
   dictEntry *he, *orighe;
-  unsigned int h;
-  int listlen, listele;
+  unsigned long h, listlen, listele;
 
   if (dictSize(d) == 0) return NULL;
   if (dictIsRehashing(d)) _dictRehashStep(d);
   if (dictIsRehashing(d)) {
     do {
-      h = random() % (d->ht[0].size + d->ht[1].size);
+      h = (unsigned long)random() % (d->ht[0].size + d->ht[1].size);
       he = (h >= d->ht[0].size) ? d->ht[1].table[h - d->ht[0].size]
                                 : d->ht[0].table[h];
     } while (he == NULL);
   } else {
     do {
-      h = random() & d->ht[0].sizemask;
+      h = (unsigned long)random() & d->ht[0].sizemask;
       he = d->ht[0].table[h];
     } while (he == NULL);
   }
@@ -631,7 +633,7 @@ dictEntry *dictGetRandomKey(dict *d) {
     he = he->next;
     listlen++;
   }
-  listele = random() % listlen;
+  listele = (unsigned long)random() % listlen;
   he = orighe;
   while (listele--) he = he->next;
   return he;
@@ -660,12 +662,12 @@ int dictGetRandomKeys(dict *d, dictEntry **des, int count) {
   int j; /* internal hash table id, 0 or 1. */
   int stored = 0;
 
-  if (dictSize(d) < count) count = dictSize(d);
+  if (dictSize(d) < (unsigned long)count) count = (int)dictSize(d);
   while (stored < count) {
     for (j = 0; j < 2; j++) {
       /* Pick a random point inside the hash table 0 or 1. */
-      unsigned int i = random() & d->ht[j].sizemask;
-      int size = d->ht[j].size;
+      unsigned long i = (unsigned long)random() & d->ht[j].sizemask;
+      unsigned long size = d->ht[j].size;
 
       /* Make sure to visit every bucket by iterating 'size' times. */
       while (size--) {
@@ -693,7 +695,7 @@ int dictGetRandomKeys(dict *d, dictEntry **des, int count) {
  * http://graphics.stanford.edu/~seander/bithacks.html#ReverseParallel */
 static unsigned long rev(unsigned long v) {
   unsigned long s = 8 * sizeof(v);  // bit size; must be power of 2
-  unsigned long mask = ~0;
+  unsigned long mask = ~0UL;
   while ((s >>= 1) > 0) {
     mask ^= (mask << s);
     v = ((v >> s) & mask) | ((v << s) & ~mask);
@@ -892,9 +894,9 @@ static unsigned long _dictNextPower(unsigned long size) {
  *
  * Note that if we are in the process of rehashing the hash table, the
  * index is always returned in the context of the second (new) hash table. */
-static int _dictKeyIndex(dict *d, const void *key) {
+static long _dictKeyIndex(dict *d, const void *key) {
   unsigned int h, table;
-  int idx;
+  long idx;
   dictEntry *he;
 
   /* Expand the hash table if needed */
@@ -902,7 +904,7 @@ static int _dictKeyIndex(dict *d, const void *key) {
   /* Compute the key hash value */
   h = dictHashKey(d, key);
   for (table = 0; table <= 1; table++) {
-    idx = h & d->ht[table].sizemask;
+    idx = (long)(h & d->ht[table].sizemask);
     /* Search if this slot does not already contain the given key */
     he = d->ht[table].table[idx];
     while (he) {
