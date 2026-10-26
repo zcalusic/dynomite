@@ -200,7 +200,7 @@ static rstatus_t parse_tokens_of_type(int num_tokens, int out_token_idx,
   if (num_tokens == 0) return DN_OK;
 
   if (*out == NULL) {
-    *out = array_create(num_tokens, sizeof(struct argpos));
+    *out = array_create((uint32_t)num_tokens, sizeof(struct argpos));
     if (*out == NULL) return DN_ENOMEM;
   }
 
@@ -211,15 +211,15 @@ static rstatus_t parse_tokens_of_type(int num_tokens, int out_token_idx,
   for (; num_tokens > 0; -- num_tokens) {
     if (!is_key) {
       struct argpos *token_pos = (struct argpos*)array_push(*out);
-      struct argpos *orig_token_pos =
-          (struct argpos*)array_get(source_info, start_pos - 1 + out_token_idx);
+      struct argpos *orig_token_pos = (struct argpos *)array_get(
+          source_info, (uint32_t)(start_pos - 1 + out_token_idx));
       *token_pos = *orig_token_pos;
       out_token_idx += jump_by;
     } else {
       // TODO: Make more concise.
       struct keypos *token_pos = (struct keypos*)array_push(*out);
-      struct keypos *orig_token_pos =
-          (struct keypos*)array_get(source_info, start_pos - 1 + out_token_idx);
+      struct keypos *orig_token_pos = (struct keypos *)array_get(
+          source_info, (uint32_t)(start_pos - 1 + out_token_idx));
       token_pos->start = orig_token_pos->start;
       token_pos->end = orig_token_pos->end;
       token_pos->tag_start = orig_token_pos->tag_start;
@@ -233,7 +233,7 @@ static rstatus_t parse_tokens_of_type(int num_tokens, int out_token_idx,
 
 static rstatus_t get_values_from_source(int num_tokens, int start_pos,
     struct array *source_info, struct array **out_values) {
-  *out_values = array_create(num_tokens, sizeof(struct argpos));
+  *out_values = array_create((uint32_t)num_tokens, sizeof(struct argpos));
   if (*out_values == NULL) return DN_ENOMEM;
 
   if (start_pos + num_tokens > (int)array_n(source_info)) return DN_ERROR;
@@ -241,7 +241,8 @@ static rstatus_t get_values_from_source(int num_tokens, int start_pos,
   int i;
   for (i = 0; i < num_tokens; ++i) {
     struct argpos *value_pos = (struct argpos*)array_push(*out_values);
-    struct argpos *orig_value_pos = (struct argpos*)array_get(source_info, start_pos++);
+    struct argpos *orig_value_pos =
+        (struct argpos *)array_get(source_info, (uint32_t)start_pos++);
     *value_pos = *orig_value_pos;
   }
 
@@ -263,19 +264,20 @@ static bool arg_is(const struct argpos *arg, const char *word) {
  * DN_ERROR for ones Redis would reject, so that the msg isn't rewritten and
  * Redis gets to reject it.
  */
-rstatus_t post_parse_optional_args(struct msg *orig_msg) {
+static rstatus_t post_parse_optional_args(struct msg *orig_msg) {
   struct write_with_ts *out_struct = &orig_msg->msg_info;
 
   switch (orig_msg->type) {
     case MSG_REQ_REDIS_ZADD: ;
       int idx = 0;
-      int num_args = array_n(orig_msg->args);
+      int num_args = (int)array_n(orig_msg->args);
 
       // All the optional fields for ZADD come before the first score, so record all the options
       // provided.
       bool nx = false, xx = false, gt = false, lt = false;
       while (idx < num_args) {
-        struct argpos *opt_arg = (struct argpos*)array_get(orig_msg->args, idx);
+        struct argpos *opt_arg =
+            (struct argpos *)array_get(orig_msg->args, (uint32_t)idx);
         if (opt_arg == NULL) return DN_ERROR;
 
         if (arg_is(opt_arg, "NX")) {
@@ -319,16 +321,15 @@ rstatus_t post_parse_optional_args(struct msg *orig_msg) {
  * TODO: Consider getting rid of this function if we move to a per-command parser model.
  *
  */
-rstatus_t post_parse_msg(struct msg *orig_msg) {
-
+static rstatus_t post_parse_msg(struct msg *orig_msg) {
   struct write_with_ts *out_struct = &orig_msg->msg_info;
   struct cmd_info *orig_cmd_info = &proto_cmd_info[orig_msg->type];
   ASSERT(out_struct != NULL);
 
   out_struct->cmd_type = orig_msg->type;
   out_struct->ts = orig_msg->timestamp;
-  out_struct->num_fields = orig_cmd_info->min_num_fields;
-  out_struct->num_values = orig_cmd_info->min_num_values;
+  out_struct->num_fields = (int)orig_cmd_info->min_num_fields;
+  out_struct->num_values = (int)orig_cmd_info->min_num_values;
   out_struct->num_optionals = 0;
   out_struct->keys = NULL;
   out_struct->fields = NULL;
@@ -352,15 +353,14 @@ rstatus_t post_parse_msg(struct msg *orig_msg) {
       out_struct->num_keys = 0;
     }
     out_struct->num_keys += total_tokens_of_type(
-        orig_cmd_info->variadic_key_jump,
-        start_from_arg_pos,
-        orig_cmd_info->min_num_keys,
-        orig_msg->args->nelem);
+        orig_cmd_info->variadic_key_jump, start_from_arg_pos,
+        (int)orig_cmd_info->min_num_keys, (int)orig_msg->args->nelem);
   }
 
   if (out_struct->num_keys > 0) {
     // TODO: Make more concise.
-    out_struct->keys = array_create(out_struct->num_keys, sizeof(struct keypos));
+    out_struct->keys =
+        array_create((uint32_t)out_struct->num_keys, sizeof(struct keypos));
     if (out_struct->keys == NULL) goto error;
 
     int key_idx = 0;
@@ -404,10 +404,8 @@ rstatus_t post_parse_msg(struct msg *orig_msg) {
   }
 
   out_struct->num_fields = total_tokens_of_type(
-      orig_cmd_info->variadic_field_jump,
-      first_field_pos - 1 /* start_pos */,
-      orig_cmd_info->min_num_fields,
-      orig_msg->args->nelem);
+      orig_cmd_info->variadic_field_jump, first_field_pos - 1 /* start_pos */,
+      (int)orig_cmd_info->min_num_fields, (int)orig_msg->args->nelem);
 
   if (parse_tokens_of_type(out_struct->num_fields, 0,
           orig_cmd_info->variadic_field_jump, first_field_pos,
@@ -416,10 +414,8 @@ rstatus_t post_parse_msg(struct msg *orig_msg) {
   }
 
   out_struct->num_values = total_tokens_of_type(
-      orig_cmd_info->variadic_value_jump,
-      first_value_pos - 1/* start_pos */,
-      orig_cmd_info->min_num_values,
-      orig_msg->args->nelem);
+      orig_cmd_info->variadic_value_jump, first_value_pos - 1 /* start_pos */,
+      (int)orig_cmd_info->min_num_values, (int)orig_msg->args->nelem);
 
   if (parse_tokens_of_type(out_struct->num_values, 0,
           orig_cmd_info->variadic_value_jump, first_value_pos,
@@ -466,10 +462,9 @@ error:
  * 'most_updated_rsp'.
  *
  */
-rstatus_t obtain_info_from_latest_rsp(struct response_mgr *rspmgr,
-    struct msg *most_updated_rsp, bool repair_by_add,
-    struct write_with_ts *repair_msg_info) {
-
+static rstatus_t obtain_info_from_latest_rsp(
+    struct response_mgr *rspmgr, struct msg *most_updated_rsp,
+    bool repair_by_add, struct write_with_ts *repair_msg_info) {
   msg_type_t orig_msg_type = rspmgr->msg->orig_type;
   msg_type_t repair_msg_type = (repair_by_add == true) ?
                                 proto_cmd_info[orig_msg_type].repair_by_add :
@@ -533,7 +528,7 @@ rstatus_t obtain_info_from_latest_rsp(struct response_mgr *rspmgr,
     repair_msg_info->values = NULL;
   }
   return DN_ERROR;
-}
+ }
 
 #define REDIS_PRTCL_BEGIN_TOTAL_TOKENS "*%d\r\n"
 #define REDIS_PRTCL_INT_ARG_FMT "$%d\r\n%d\r\n"
@@ -545,46 +540,48 @@ rstatus_t obtain_info_from_latest_rsp(struct response_mgr *rspmgr,
  * information already present in the struct.
  *
  */
-void update_total_num_tokens(struct write_with_ts *src) {
-  int num_keys = src->num_keys;
-  int num_fields = src->num_fields;
-  int num_values = src->num_values;
-  int num_optionals = src->num_optionals;
+ static void update_total_num_tokens(struct write_with_ts *src) {
+   int num_keys = src->num_keys;
+   int num_fields = src->num_fields;
+   int num_values = src->num_values;
+   int num_optionals = src->num_optionals;
 
-  // Add 2 by default, one for the 'EVAL' command and one for the script itself.
-  src->total_num_tokens = 2;
+   // Add 2 by default, one for the 'EVAL' command and one for the script
+   // itself.
+   src->total_num_tokens = 2;
 
-  // Add one token for the total number of keys.
-  ++src->total_num_tokens;
+   // Add one token for the total number of keys.
+   ++src->total_num_tokens;
 
-  // Add all the keys touched in the query.
-  src->total_num_tokens += num_keys;
+   // Add all the keys touched in the query.
+   src->total_num_tokens += num_keys;
 
-  // Add the add-set and rem-set keys.
-  src->total_num_tokens += 2;
+   // Add the add-set and rem-set keys.
+   src->total_num_tokens += 2;
 
-  // Add the command string. (Eg: SET, HSET, etc.)
-  // Add the number of fields.
-  // Add the timestamp.
-  src->total_num_tokens += 3;
+   // Add the command string. (Eg: SET, HSET, etc.)
+   // Add the number of fields.
+   // Add the timestamp.
+   src->total_num_tokens += 3;
 
-  if (proto_cmd_info[src->cmd_type].num_optionals > 0) {
-    // If this command supports optional fields, add one token for the number of optional args.
-    src->total_num_tokens += 1;
-    // Then add the number of tokens for the optional fields themselves.
-    src->total_num_tokens += num_optionals;
-  }
+   if (proto_cmd_info[src->cmd_type].num_optionals > 0) {
+     // If this command supports optional fields, add one token for the number
+     // of optional args.
+     src->total_num_tokens += 1;
+     // Then add the number of tokens for the optional fields themselves.
+     src->total_num_tokens += num_optionals;
+   }
 
-  if (num_fields > 0 || num_values > 0) {
-
-    // If we have both fields and values present, each field and value must be present in
-    // pairs (since all Redis commands follow that protocol), else we list all the fields
-    // or all the values.
-    src->total_num_tokens += (num_fields > 0 && num_values > 0) ? num_fields * 2 :
-         ((num_fields > 0) ? num_fields : num_values);
-  }
-
-}
+   if (num_fields > 0 || num_values > 0) {
+     // If we have both fields and values present, each field and value must be
+     // present in pairs (since all Redis commands follow that protocol), else
+     // we list all the fields or all the values.
+     src->total_num_tokens +=
+         (num_fields > 0 && num_values > 0)
+             ? num_fields * 2
+             : ((num_fields > 0) ? num_fields : num_values);
+   }
+ }
 
 /*
  * Using the information found in 'write_with_ts', this function populates 'msg'
@@ -621,18 +618,19 @@ static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
 
   // Add the total number of keys in the command. We add 2 for the add and remove sets.
   THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_INT_ARG_FMT,
-      count_digits(num_keys + 2), num_keys + 2));
+                                 count_digits((uint64_t)(num_keys + 2)),
+                                 num_keys + 2));
 
   // Add all the keys touched in the query, whole: the script works on them, and
   // routing finds their hash tags again.
   for (i = 0; i < src->num_keys; ++i) {
-    struct keypos *elem = array_get(src->keys, i);
+    struct keypos *elem = array_get(src->keys, (uint32_t)i);
     THROW_STATUS(msg_append_bulk(msg, elem->start,
         (uint32_t)(elem->end - elem->start)));
   }
   // Add the add-set and rem-set keys.
-  int add_set_len = strlen(src->add_set);
-  int rem_set_len = strlen(src->rem_set);
+  int add_set_len = (int)strlen(src->add_set);
+  int rem_set_len = (int)strlen(src->rem_set);
   THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, add_set_len,
       add_set_len, src->add_set));
   THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, rem_set_len,
@@ -649,12 +647,14 @@ static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
   // expect a number of 0 or more.
   if (orig_cmd_info->num_optionals > 0) {
     THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_INT_ARG_FMT,
-        count_digits(num_optionals), num_optionals));
+                                   count_digits((uint64_t)num_optionals),
+                                   num_optionals));
   }
 
   // Add the number of fields.
   THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_INT_ARG_FMT,
-      count_digits(num_fields), num_fields));
+                                 count_digits((uint64_t)num_fields),
+                                 num_fields));
 
   // Add the timestamp.
   THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_LLU_ARG_FMT,
@@ -663,7 +663,7 @@ static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
   // Add the optional elements.
   if (num_optionals > 0) {
     for (i = 0; i < num_optionals; ++i) {
-      struct argpos *opt_elem = array_get(src->optionals, i);
+      struct argpos *opt_elem = array_get(src->optionals, (uint32_t)i);
       THROW_STATUS(msg_append_arg(msg, opt_elem));
     }
   }
@@ -678,12 +678,12 @@ static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
 
     for (i = 0; i < total_iterations; ++i) {
       if (num_fields > 0) {
-        struct argpos *field_elem = array_get(src->fields, i);
+        struct argpos *field_elem = array_get(src->fields, (uint32_t)i);
         THROW_STATUS(msg_append_arg(msg, field_elem));
       }
 
       if (num_values > 0) {
-        struct argpos *value_elem = array_get(src->values, i);
+        struct argpos *value_elem = array_get(src->values, (uint32_t)i);
         THROW_STATUS(msg_append_arg(msg, value_elem));
       }
     }
@@ -773,7 +773,7 @@ static struct msg* find_most_updated_rsp(struct response_mgr *rspmgr,
     ASSERT(ts_arg->len <= sizeof(digits));
     ndigits = argpos_copy(ts_arg, digits, sizeof(digits));
     for (j = 0; j < ndigits; ++j) {
-      char digit_ch = digits[j];
+      char digit_ch = (char)digits[j];
       ASSERT(isdigit(digit_ch));
       cur_rsp->timestamp = cur_rsp->timestamp * 10 + (uint64_t)(digit_ch - '0');
     }
@@ -888,9 +888,9 @@ rstatus_t redis_make_repair_query(struct context *ctx, struct response_mgr *rspm
   // Redis commands either lookup keys or fields (secondary keys), so the number of
   // expected values would be based on either one of them.
   if (rspmgr->msg->orig_msg->msg_info.num_fields > 0) {
-    num_values = rspmgr->msg->orig_msg->msg_info.num_fields;
+    num_values = (uint32_t)rspmgr->msg->orig_msg->msg_info.num_fields;
   } else {
-    num_values = rspmgr->msg->orig_msg->msg_info.num_keys;
+    num_values = (uint32_t)rspmgr->msg->orig_msg->msg_info.num_keys;
   }
 
   most_updated_rsp = find_most_updated_rsp(rspmgr, &repair_by_add);
@@ -977,7 +977,8 @@ static rstatus_t create_cleanup_script(struct context *ctx, struct msg *orig_msg
   msg_info.num_values = 0;
   msg_info.num_optionals = 0;
 
-  msg_info.keys = array_create(msg_info.num_keys, sizeof(struct keypos));
+  msg_info.keys =
+      array_create((uint32_t)msg_info.num_keys, sizeof(struct keypos));
   if (msg_info.keys == NULL) goto error;
 
   struct keypos *kpos = (struct keypos*)array_push(msg_info.keys);
@@ -1002,7 +1003,8 @@ static rstatus_t create_cleanup_script(struct context *ctx, struct msg *orig_msg
     case MSG_REQ_REDIS_SREM:
       msg_info.rewrite_script = CLEANUP_HDEL_SCRIPT;
       msg_info.num_fields = 1;
-      msg_info.fields = array_create(msg_info.num_fields, sizeof(struct argpos));
+      msg_info.fields =
+          array_create((uint32_t)msg_info.num_fields, sizeof(struct argpos));
       if (msg_info.fields == NULL) goto error;
       struct argpos *field_pos = (struct argpos*)array_push(msg_info.fields);
       struct argpos *orig_field_pos = (struct argpos*)array_get(orig_msg->args, 0);
