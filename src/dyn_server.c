@@ -297,41 +297,6 @@ static void server_connected(struct context *ctx, struct conn *conn) {
   log_notice("%s connected ", print_obj(conn));
 }
 
-static void server_ok(struct context *ctx, struct conn *conn) {
-  struct datastore *server = conn->owner;
-
-  ASSERT(conn->type == CONN_SERVER);
-  ASSERT(conn->connected);
-
-  if (log_loggable(LOG_VERB)) {
-    log_debug(LOG_VERB,
-              "reset server '%.*s' failure count from %" PRIu32 " to 0",
-              server->endpoint.pname.len, server->endpoint.pname.data,
-              server->failure_count);
-  }
-  server->failure_count = 0;
-  server->next_retry_ms = 0ULL;
-}
-
-static rstatus_t datastore_check_autoeject(struct datastore *datastore) {
-  struct server_pool *pool = datastore->owner;
-  if (!pool->auto_eject_hosts) {
-    return DN_OK;
-  }
-
-  msec_t now_ms = dn_msec_now();
-  if (now_ms == 0) {
-    return DN_ERROR;
-  }
-
-  if (now_ms <= datastore->next_retry_ms) {
-    errno = ECONNREFUSED;
-    return DN_ERROR;
-  }
-
-  return DN_OK;
-}
-
 struct conn *get_datastore_conn(struct context *ctx, struct server_pool *pool,
                                 int tag) {
   rstatus_t status;
@@ -339,10 +304,6 @@ struct conn *get_datastore_conn(struct context *ctx, struct server_pool *pool,
   struct conn *conn;
 
   ASSERT(datastore);
-  status = datastore_check_autoeject(datastore);
-  if (status != DN_OK) {
-    return NULL;
-  }
 
   /* pick a connection to a given server */
   conn = server_conn(datastore, tag);
@@ -420,8 +381,6 @@ rstatus_t server_pool_init(struct server_pool *sp, struct conf_pool *cp,
   sp->backlog = cp->backlog;
 
   sp->server_retry_timeout_ms = (msec_t)cp->server_retry_timeout_ms;
-  sp->server_failure_limit = (uint8_t)cp->server_failure_limit;
-  sp->auto_eject_hosts = cp->auto_eject_hosts ? 1 : 0;
   sp->preconnect = cp->preconnect ? 1 : 0;
 
   sp->datastore = dn_zalloc(sizeof(*sp->datastore));
@@ -478,7 +437,7 @@ rstatus_t server_pool_init(struct server_pool *sp, struct conf_pool *cp,
   struct datastore *datastore = sp->datastore;
   datastore->conn_pool = conn_pool_create(
       ctx, datastore, datastore->max_connections, init_server_conn,
-      sp->server_failure_limit, sp->server_retry_timeout_ms / 1000);
+      sp->server_retry_timeout_ms / 1000);
   log_debug(LOG_DEBUG, "Initialized server pool");
   return DN_OK;
 }
@@ -768,9 +727,6 @@ static void server_rsp_forward(struct context *ctx, struct conn *s_conn,
   struct msg *req;
   struct conn *c_conn;
   ASSERT(s_conn->type == CONN_SERVER);
-
-  /* response from server implies that server is ok and heartbeating */
-  server_ok(ctx, s_conn);
 
   /* dequeue peer message (request) from server */
   req = TAILQ_FIRST(&s_conn->omsg_q);

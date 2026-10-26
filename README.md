@@ -108,9 +108,7 @@ Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible)
 + **timeout**: The timeout value in msec that we wait for to establish a connection to the server or receive a response from a server. Defaults to 5000 msec; must be at least 1.
 + **preconnect**: A boolean value that controls if dynomite should preconnect to all the servers in this pool on process start. Defaults to true.
 + **data_store**: An integer value that controls if a server pool speaks redis (0) or memcached (1). Defaults to redis (0).
-+ **auto_eject_hosts**: A boolean value that controls if server should be ejected temporarily when it fails consecutively server_failure_limit times. See [liveness recommendations](notes/recommendation.md#liveness) for information. Defaults to true.
 + **server_retry_timeout**: The longest wait in msec between attempts to reconnect to the server: the wait starts at 1 second and doubles after each failure, up to this limit in whole seconds (rounded down), so values below 2000, including 0, reconnect every second. Defaults to 10000 msec.
-+ **server_failure_limit**: The number of consecutive failures on a server that would lead to it being temporarily ejected when auto_eject_hosts is set to true. Defaults to 3; at most 255.
 + **servers**: A list of local server address, port and weight (name:port:weight or ip:port:weight) for this server pool. Currently, there is just one.
 + **secure_server_option**: Encrypted communication. Must be one of 'none', 'rack', 'datacenter', or 'all'. ```datacenter``` means all communication between datacenters is encrypted but within a datacenter it is not. ```rack``` means all communication between racks and regions is encrypted however communication between nodes within the same rack is not encrypted. ```all``` means all communication between all nodes is encrypted. And ```none``` means none of the communication is encrypted. 
 + **pem_key_file**: The RSA private key file used for encrypted communication between nodes. Defaults to conf/dynomite.pem, relative to the working directory.
@@ -125,7 +123,7 @@ Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible)
 + **remote_peer_connections**: Maximum number of connections to a remote DC peer. Defaults to 1; 1 to 255.
 + **conn_msg_rate**: The maximum number of messages per second sent on each connection to a node in a remote datacenter. Defaults to 50000; must be at least 1.
 
-The keys **client_connections**, **distribution**, **server_connections**, **dyn_port**, **dyn_connections**, **dyn_read_timeout**, **dyn_write_timeout**, **recon_key_file** and **recon_iv_file** are still accepted for compatibility, but are ignored. The inter-node port comes from **dyn_listen**.
+The keys **client_connections**, **distribution**, **server_connections**, **dyn_port**, **dyn_connections**, **dyn_read_timeout**, **dyn_write_timeout**, **recon_key_file**, **recon_iv_file**, **auto_eject_hosts** and **server_failure_limit** are still accepted for compatibility, but are ignored. The inter-node port comes from **dyn_listen**.
 
 See [conf/dynomite.yml](conf/dynomite.yml) for an example; [conf/](conf/) has more, such as [conf/redis_single.yml](conf/redis_single.yml).
 

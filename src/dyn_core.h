@@ -159,9 +159,6 @@ struct datastore {
 
   conn_pool_t *conn_pool;
   uint8_t max_connections;
-
-  msec_t next_retry_ms;   /* next retry time in msec */
-  uint32_t failure_count; /* # consecutive failures */
 };
 
 /** \struct node
@@ -175,9 +172,6 @@ struct node {
   struct string name; /* name (ref in conf_server) */
 
   conn_pool_t *conn_pool; /* the only peer connection */
-
-  msec_t next_retry_ms;   /* next retry time in msec */
-  uint32_t failure_count; /* # consecutive failures */
 
   struct string rack;     /* logical rack */
   struct string dc;       /* server's dc */
@@ -219,8 +213,6 @@ struct server_pool {
   msec_t timeout;                 /* timeout in msec */
   int backlog;                    /* listen backlog */
   msec_t server_retry_timeout_ms; /* server retry timeout in msec */
-  uint8_t server_failure_limit;   /* server failure limit */
-  unsigned auto_eject_hosts : 1;  /* auto_eject_hosts? */
   unsigned preconnect : 1;        /* preconnect? */
 
   /* dynomite */
@@ -231,7 +223,6 @@ struct server_pool {
   int d_timeout;            /* peer timeout in msec */
   int d_backlog;            /* listen backlog */
   int64_t d_retry_timeout;  /* peer retry timeout in usec */
-  uint32_t d_failure_limit; /* peer failure limit */
   uint8_t max_local_peer_connections;
   uint8_t max_remote_peer_connections;
   struct string rack;  /* the rack for this node */

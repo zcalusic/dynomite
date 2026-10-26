@@ -185,7 +185,7 @@ static void dnode_create_connection_pool(struct server_pool *sp,
                                   : sp->max_remote_peer_connections;
     peer->conn_pool = conn_pool_create(
         ctx, peer, max_connections, init_dnode_peer_conn,
-        sp->server_failure_limit, MAX_WAIT_BEFORE_RECONNECT_IN_SECS);
+        MAX_WAIT_BEFORE_RECONNECT_IN_SECS);
   }
 }
 
@@ -756,19 +756,6 @@ void dnode_peer_connected(struct context *ctx, struct conn *conn) {
   log_notice("%s connected", print_obj(conn));
 }
 
-static void dnode_peer_ok(struct context *ctx, struct conn *conn) {
-  struct node *server = conn->owner;
-
-  ASSERT(conn->type == CONN_DNODE_PEER_SERVER);
-  ASSERT(conn->connected);
-
-  log_debug(LOG_VERB,
-            "dyn: reset peer '%.*s' failure count from %" PRIu32 " to 0",
-            server->endpoint.pname.len, server->endpoint.pname.data,
-            server->failure_count);
-  server->failure_count = 0;
-}
-
 static rstatus_t dnode_peer_pool_update(struct server_pool *pool) {
   msec_t now = dn_msec_now();
   if (now < 0) {
@@ -1030,9 +1017,6 @@ static void dnode_rsp_forward(struct context *ctx, struct conn *peer_conn,
   struct conn *c_conn;
 
   ASSERT(peer_conn->type == CONN_DNODE_PEER_SERVER);
-
-  /* response from a peer implies that peer is ok and heartbeating */
-  dnode_peer_ok(ctx, peer_conn);
 
   /* dequeue peer message (request) from peer conn */
   while (true) {

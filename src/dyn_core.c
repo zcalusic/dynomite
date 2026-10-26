@@ -563,8 +563,6 @@ void core_debug(struct context *ctx) {
     log_debug(LOG_VERB, "\tPeer port          : %" PRIu32 "",
               peer->endpoint.port);
     log_debug(LOG_VERB, "\tPeer is_local      : %" PRIu32 " ", peer->is_local);
-    log_debug(LOG_VERB, "\tPeer failure_count : %" PRIu32 " ",
-              peer->failure_count);
     log_debug(LOG_VERB, "\tPeer num tokens    : %d", array_n(&peer->tokens));
 
     uint32_t k;

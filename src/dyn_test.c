@@ -208,9 +208,6 @@ static rstatus_t init_peer(struct node *s) {
   s->endpoint.addrlen = info->addrlen;
   s->endpoint.addr = (struct sockaddr *)&info->addr;
 
-  s->next_retry_ms = 0ULL;
-  s->failure_count = 0;
-
   s->processed = 0;
   s->is_secure = 0;
 
@@ -1269,11 +1266,9 @@ static const struct conf_case conf_cases[] = {
     CONF_VALID("", timeout, 5000),
     CONF_VALID("", backlog, 512),
     CONF_VALID("", preconnect, true),
-    CONF_VALID("", auto_eject_hosts, true),
     CONF_VALID("", enable_gossip, false),
     CONF_VALID("", read_repairs_enabled, false),
     CONF_VALID("", server_retry_timeout_ms, 10000),
-    CONF_VALID("", server_failure_limit, 3),
     CONF_VALID("", gos_interval, 30000),
     CONF_VALID("", stats_interval, 30000),
     CONF_VALID("", conn_msg_rate, 50000),
@@ -1282,15 +1277,12 @@ static const struct conf_case conf_cases[] = {
     CONF_VALID("", alloc_msgs_max, CONF_UNSET_NUM),
     /* explicit false and 0 are kept, not taken for unset */
     CONF_VALID("  preconnect: false\n", preconnect, false),
-    CONF_VALID("  auto_eject_hosts: false\n", auto_eject_hosts, false),
     CONF_VALID("  read_repairs_enabled: true\n", read_repairs_enabled, true),
     CONF_VALID("  server_retry_timeout: 0\n", server_retry_timeout_ms, 0),
-    CONF_VALID("  server_failure_limit: 0\n", server_failure_limit, 0),
     CONF_VALID("  data_store: 1\n", data_store, DATA_MEMCACHE),
     /* limits */
     CONF_VALID("  timeout: 1\n", timeout, 1),
     CONF_VALID("  timeout: 2147483647\n", timeout, INT_MAX),
-    CONF_VALID("  server_failure_limit: 255\n", server_failure_limit, 255),
     CONF_VALID("  datastore_connections: 255\n", datastore_connections, 255),
     CONF_VALID("  local_peer_connections: 255\n", local_peer_connections, 255),
     CONF_VALID("  remote_peer_connections: 1\n", remote_peer_connections, 1),
@@ -1304,7 +1296,6 @@ static const struct conf_case conf_cases[] = {
     CONF_INVALID("  stats_interval: 0\n"),
     CONF_INVALID("  conn_msg_rate: 0\n"),
     CONF_INVALID("  data_store: 2\n"),
-    CONF_INVALID("  server_failure_limit: 256\n"),
     CONF_INVALID("  datastore_connections: 0\n"),
     CONF_INVALID("  datastore_connections: 256\n"),
     CONF_INVALID("  local_peer_connections: 0\n"),
@@ -1313,6 +1304,9 @@ static const struct conf_case conf_cases[] = {
     CONF_INVALID("  mbuf_size: 520\n"),
     CONF_INVALID("  max_msgs: 0\n"),
     CONF_INVALID("  preconnect: maybe\n"),
+    /* deprecated directives are accepted and ignored */
+    CONF_VALID("  auto_eject_hosts: true\n  server_failure_limit: 3\n", timeout,
+               5000),
     /* duplicates are caught for false and 0 too */
     CONF_INVALID("  preconnect: false\n  preconnect: true\n"),
     CONF_INVALID("  server_retry_timeout: 0\n  server_retry_timeout: 5\n"),

@@ -14,7 +14,7 @@ typedef struct conn_pool conn_pool_t;
 conn_pool_t *conn_pool_create(struct context *ctx, void *owner,
                               uint8_t max_connections,
                               func_conn_init_t func_conn_init,
-                              uint8_t max_failures, sec_t max_timeout);
+                              sec_t max_timeout);
 
 /**
  * This function starts a preconnect process for every underlying connection

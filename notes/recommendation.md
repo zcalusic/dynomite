@@ -4,7 +4,7 @@ If you are deploying dynomite in your production environment, here are a few rec
 
 By default debug logging is disabled in dynomite. However, it is worthwhile running dynomite with debug logging enabled and verbosity level set to LOG_INFO (-v 6 or --verbosity=6). This in reality does not add much overhead as you only pay the cost of checking an if condition for every log line encountered during the run time.
 
-At LOG_INFO level, dynomite logs the life cycle of every client and server connection and important events like the server being ejected from the hash ring and so on. Eg.
+At LOG_INFO level, dynomite logs the life cycle of every client and server connection and other important events. Eg.
 
     [Thu Aug  2 00:03:09 2012] dn_proxy.c:336 accepted c 7 on p 6 from '127.0.0.1:54009'
     [Thu Aug  2 00:03:09 2012] dn_server.c:528 connected on s 8 to server '127.0.0.1:11211:1'
@@ -25,32 +25,20 @@ To enable debug logging, you have to compile dynomite with logging enabled using
 
 ## Liveness
 
-Failures are a fact of life, especially when things are distributed. To be resilient against failures, it is recommended that you configure the following keys for every server pool. Eg:
+When a connection to the datastore or to a peer fails, dynomite reconnects in the background: it waits 1 second, then doubles the wait after each failed attempt. The wait is capped by `server_retry_timeout:` (in msec, applied in whole seconds) for the datastore and at 10 seconds for peers. Dynomite itself does not retry a request, so clients should retry requests that fail (see [Error Response](#error-response)).
 
-    resilient_pool:
-      auto_eject_hosts: true
-      server_retry_timeout: 30000
-      server_failure_limit: 3
-
-Enabling `auto_eject_hosts:` ensures that a dead server can be ejected out of the hash ring after `server_failure_limit:` consecutive failures have been encountered on that said server. A non-zero `server_retry_timeout:` ensures that we don't incorrectly mark a server as dead forever especially when the failures were really transient. The combination of `server_retry_timeout:` and `server_failure_limit:` controls the tradeoff between resiliency to permanent and transient failures.
-
-Note that an ejected server will not be included in the hash ring for any requests until the retry timeout passes. This will lead to data partitioning as keys originally on the ejected server will now be written to a server still in the pool.
-
-To ensure that requests always succeed in the face of server ejections (`auto_eject_hosts:` is enabled), some form of retry must be implemented at the client layer since dynomite itself does not retry a request. This client-side retry count must be greater than `server_failure_limit:` value, which ensures that the original request has a chance to make it to a live server.
+Dynomite does not eject failing servers from the hash ring. The keys `auto_eject_hosts:` and `server_failure_limit:` are accepted for compatibility, but ignored.
 
 ## Timeout
 
 It is always a good idea to configure dynomite `timeout:` for every server pool, rather than purely relying on client-side timeouts. Eg:
 
     resilient_pool_with_timeout:
-      auto_eject_hosts: true
-      server_retry_timeout: 30000
-      server_failure_limit: 3
       timeout: 400
 
 Relying only on client-side timeouts has the adverse effect of the original request having timedout on the client to proxy connection, but still pending and outstanding on the proxy to server connection. This further gets exacerbated when client retries the original request.
 
-By default, dynomite waits indefinitely for any request sent to the server. However, when `timeout:` key is configured, a requests for which no response is received from the server in `timeout:` msec is timedout and an error response `SERVER_ERROR Connection timed out\r\n` is sent back to the client.
+By default, `timeout:` is 5000 msec. A request for which no response is received from the server in `timeout:` msec is timed out and an error response `SERVER_ERROR Connection timed out\r\n` is sent back to the client.
 
 ## Error Response
 
@@ -97,7 +85,7 @@ Or,
      - 127.0.0.1:6382:1 server4
 
 
-In the former configuration, keys are mapped **directly** to **'host:port:weight'** triplet and in the latter they are mapped to **node names** which are then mapped to nodes i.e. host:port pair. The latter configuration gives us the freedom to relocate nodes to a different server without disturbing the hash ring and hence makes this configuration ideal when auto_eject_hosts is set to false. See [issue 25](https://github.com/twitter/dynomite/issues/25) for details.
+In the former configuration, keys are mapped **directly** to **'host:port:weight'** triplet and in the latter they are mapped to **node names** which are then mapped to nodes i.e. host:port pair. The latter configuration gives us the freedom to relocate nodes to a different server without disturbing the hash ring. See [issue 25](https://github.com/twitter/dynomite/issues/25) for details.
 
 Note that when using node names for consistent hashing, dynomite ignores the weight value in the 'host:port:weight name' format string.
 
@@ -112,7 +100,6 @@ For example, the configuration of server pool _beta_, aslo shown below, specifie
       hash: fnv1a_64
       hash_tag: "{}"
       distribution: ketama
-      auto_eject_hosts: false
       timeout: 400
       redis: true
       servers:
@@ -122,23 +109,14 @@ For example, the configuration of server pool _beta_, aslo shown below, specifie
        - 127.0.0.1:6383:1 server4
        
        
-## Graphing Cache-pool State
+## Graphing Datastore Failures
 
-When running dynomite in production, you often would like to know the list of live and ejected servers at any given time. You can easily answer this question, by generating a time series graph of live and/or dead servers that are part of any cache pool. To do this your graphing client must collect the following stats exposed by dynomite:
+To follow the health of the datastore over time, graph these stats exposed by dynomite:
 
-- **server_eof** which is incremented when server closes the connection normally which should not happen because we use persistent connections.
-- **server_timedout** is incremented when the connection / request to server timedout.
+- **server_eof** is incremented when the server closes the connection normally, which should not happen because we use persistent connections.
+- **server_timedout** is incremented when the connection / request to the server timed out.
 - **server_err** is incremented for any other kinds of errors.
-
-So, on a given server, the cumulative number of times a server is ejected can be computed as:
-
-```c
-(server_err + server_timedout + server_eof) / server_failure_limit
-```
-
-A diff of the above value between two successive time intervals would generate a nice timeseries graph for ejected servers.
-
-You can also graph the timestamp at which any given server was ejected by graphing `server_ejected_at` stat.
+- **server_ejects** is incremented on every failure of a datastore connection, and **server_ejected_at** holds the time of the last one. Despite their names, no server is ejected.
 
 ## server_connections: > 1
 

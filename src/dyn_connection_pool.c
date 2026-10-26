@@ -18,8 +18,6 @@ struct conn_pool {
   uint8_t active_conn_count;       /* Count of currently good connections */
 
   // backoff logic
-  uint8_t failure_count;
-  uint8_t max_failure_count;
   msec_t current_timeout_sec;
   msec_t max_timeout_sec;
   struct task *scheduled_reconnect_task;
@@ -64,7 +62,7 @@ static void _create_missing_connections(conn_pool_t *cp) {
 conn_pool_t *conn_pool_create(struct context *ctx, void *owner,
                               uint8_t max_connections,
                               func_conn_init_t func_conn_init,
-                              uint8_t max_failures, sec_t max_timeout) {
+                              sec_t max_timeout) {
   conn_pool_t *cp = dn_alloc(sizeof(struct conn_pool));
   if (!cp) return NULL;
   init_object(&cp->obj, OBJ_CONN_POOL, _print_conn_pool);
@@ -80,8 +78,6 @@ conn_pool_t *conn_pool_create(struct context *ctx, void *owner,
     dn_free(cp);
     return NULL;
   }
-  cp->failure_count = 0;
-  cp->max_failure_count = max_failures;
   cp->current_timeout_sec = 0;
   cp->max_timeout_sec = max_timeout;
   cp->scheduled_reconnect_task = NULL;
@@ -187,8 +183,7 @@ void conn_pool_notify_conn_errored(conn_pool_t *cp) {
                cp->scheduled_reconnect_task);
     return;
   }
-  // else increase error count, and schedule a task after the backoff wait
-  cp->failure_count++;
+  // else schedule a task after the backoff wait
 
   if (cp->current_timeout_sec < (MIN_WAIT_BEFORE_RECONNECT_IN_SECS))
     cp->current_timeout_sec = MIN_WAIT_BEFORE_RECONNECT_IN_SECS;
@@ -205,7 +200,6 @@ void conn_pool_notify_conn_errored(conn_pool_t *cp) {
 }
 
 void conn_pool_connected(conn_pool_t *cp, struct conn *conn) {
-  cp->failure_count = 0;
   cp->current_timeout_sec = 0;
 }
 

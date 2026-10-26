@@ -91,9 +91,7 @@ struct conf_pool {
   int backlog;               /* backlog: */
   int data_store;            /* data_store: */
   int preconnect;            /* preconnect: */
-  int auto_eject_hosts;      /* auto_eject_hosts: */
   int server_retry_timeout_ms;        /* server_retry_timeout: in msec */
-  int server_failure_limit;           /* server_failure_limit: */
   struct conf_server *conf_datastore; /* This is the underlying datastore */
   unsigned valid : 1;                 /* valid? */
   struct conf_listen dyn_listen;      /* dyn_listen  */

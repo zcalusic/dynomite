@@ -53,9 +53,7 @@
 #define CONF_DEFAULT_LISTEN_BACKLOG 512
 #define CONF_DEFAULT_DATASTORE DATA_REDIS
 #define CONF_DEFAULT_PRECONNECT true
-#define CONF_DEFAULT_AUTO_EJECT_HOSTS true
 #define CONF_DEFAULT_SERVER_RETRY_TIMEOUT 10 * 1000 /* in msec */
-#define CONF_DEFAULT_SERVER_FAILURE_LIMIT 3
 #define CONF_DEFAULT_KETAMA_PORT 11211
 
 #define CONF_DEFAULT_SEEDS 5
@@ -154,8 +152,6 @@ rstatus_t conf_datastore_transform(struct datastore *s, struct conf_pool *cp,
   s->endpoint.addr = (struct sockaddr *)&cs->info.addr;
   s->conn_pool = NULL;
   s->max_connections = (uint8_t)cp->datastore_connections;
-  s->next_retry_ms = 0ULL;
-  s->failure_count = 0;
 
   log_debug(LOG_NOTICE, "Created %s", print_obj(s));
 
@@ -193,9 +189,7 @@ static rstatus_t conf_pool_init(struct conf_pool *cp, struct string *name) {
 
   cp->data_store = CONF_UNSET_NUM;
   cp->preconnect = CONF_UNSET_NUM;
-  cp->auto_eject_hosts = CONF_UNSET_NUM;
   cp->server_retry_timeout_ms = CONF_UNSET_NUM;
-  cp->server_failure_limit = CONF_UNSET_NUM;
   cp->datastore_connections = CONF_UNSET_NUM;
   cp->local_peer_connections = CONF_UNSET_NUM;
   cp->remote_peer_connections = CONF_UNSET_NUM;
@@ -347,10 +341,8 @@ static void conf_dump(struct conf *cf) {
   }
   log_debug(LOG_VVERB, "  data_store: %d (%s)", cp->data_store, temp_log);
   log_debug(LOG_VVERB, "  preconnect: %d", cp->preconnect);
-  log_debug(LOG_VVERB, "  auto_eject_hosts: %d", cp->auto_eject_hosts);
   log_debug(LOG_VVERB, "  server_retry_timeout: %d (msec)",
             cp->server_retry_timeout_ms);
-  log_debug(LOG_VVERB, "  server_failure_limit: %d", cp->server_failure_limit);
 
   log_debug(LOG_VVERB, "  datastore: ");
   log_debug(LOG_VVERB, "    %.*s", cp->conf_datastore->name.len,
@@ -1067,8 +1059,8 @@ static struct command conf_commands[] = {
     {string("preconnect"), conf_set_bool,
      offsetof(struct conf_pool, preconnect)},
 
-    {string("auto_eject_hosts"), conf_set_bool,
-     offsetof(struct conf_pool, auto_eject_hosts)},
+    {string("auto_eject_hosts"), conf_set_deprecated,
+     offsetof(struct conf_pool, deprecated)},
 
     {string("server_connections"), conf_set_deprecated,
      offsetof(struct conf_pool, deprecated)},
@@ -1076,8 +1068,8 @@ static struct command conf_commands[] = {
     {string("server_retry_timeout"), conf_set_num,
      offsetof(struct conf_pool, server_retry_timeout_ms)},
 
-    {string("server_failure_limit"), conf_set_num,
-     offsetof(struct conf_pool, server_failure_limit)},
+    {string("server_failure_limit"), conf_set_deprecated,
+     offsetof(struct conf_pool, deprecated)},
 
     {string("servers"), conf_add_server,
      offsetof(struct conf_pool, conf_datastore)},
@@ -1845,10 +1837,6 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
     cp->preconnect = CONF_DEFAULT_PRECONNECT;
   }
 
-  if (cp->auto_eject_hosts == CONF_UNSET_NUM) {
-    cp->auto_eject_hosts = CONF_DEFAULT_AUTO_EJECT_HOSTS;
-  }
-
   if (cp->enable_gossip == CONF_UNSET_NUM) {
     cp->enable_gossip = false;
   }
@@ -1862,12 +1850,6 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
   }
   THROW_STATUS(conf_check_num("server_retry_timeout",
                               cp->server_retry_timeout_ms, 0, INT_MAX));
-
-  if (cp->server_failure_limit == CONF_UNSET_NUM) {
-    cp->server_failure_limit = CONF_DEFAULT_SERVER_FAILURE_LIMIT;
-  }
-  THROW_STATUS(conf_check_num("server_failure_limit", cp->server_failure_limit,
-                              0, UINT8_MAX));
 
   if (cp->gos_interval == CONF_UNSET_NUM) {
     cp->gos_interval = CONF_DEFAULT_GOS_INTERVAL;
