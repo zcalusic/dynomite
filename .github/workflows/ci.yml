@@ -31,7 +31,8 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           autoreconf -fvi
           ./configure
-          make -j "$(nproc)" install-strip
+          # -Werror only here, not for configure's own feature tests.
+          make -j "$(nproc)" install-strip CFLAGS="-g -O2 -Werror"
 
       - name: Check
         run: |
@@ -39,7 +40,7 @@ jobs:
           dynomite -t -c conf/redis_single.yml
 
       - name: Unit tests
-        run: make -j "$(nproc)" check VERBOSE=1
+        run: make -j "$(nproc)" check VERBOSE=1 CFLAGS="-g -O2 -Werror"
 
       - name: Distribution check
         run: make -j "$(nproc)" distcheck VERBOSE=1
