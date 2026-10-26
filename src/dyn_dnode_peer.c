@@ -297,7 +297,10 @@ static void dnode_peer_ack_err(struct context *ctx, struct conn *conn,
   // Create an appropriate response for the request so its propagated up;
   // This response gets dropped in rsp_make_error anyways. But since this is
   // an error path its ok with the overhead.
-  struct msg *rsp = msg_get_error(conn, PEER_CONNECTION_REFUSE, conn->err);
+  // core_timeout() closes the connection with ETIMEDOUT.
+  dyn_error_t dyn_error_code =
+      conn->err == ETIMEDOUT ? PEER_TIMEOUT : PEER_CONNECTION_REFUSE;
+  struct msg *rsp = msg_get_error(conn, dyn_error_code, conn->err);
   if (rsp == NULL) {
     // TODO: It's not clear how the peer should behave if we hit this error
     // condition. Return an appropriate error instead.
@@ -308,7 +311,7 @@ static void dnode_peer_ack_err(struct context *ctx, struct conn *conn,
   rsp->peer = req;
   rsp->is_error = req->is_error = 1;
   rsp->error_code = req->error_code = conn->err;
-  rsp->dyn_error_code = req->dyn_error_code = PEER_CONNECTION_REFUSE;
+  rsp->dyn_error_code = req->dyn_error_code = dyn_error_code;
   rsp->dmsg = dmsg_get();
   rsp->dmsg->id = req->id;
   rsp->owner = conn;

@@ -26,13 +26,14 @@ Dynomite does not eject failing servers from the hash ring. The keys `auto_eject
 
 `timeout:` (default 5000 msec, at least 1) limits how long dynomite waits for the datastore to answer a request. It is a good idea to set it, rather than relying only on client-side timeouts: a request that timed out on the client would otherwise still be pending between dynomite and the datastore, and a client retry adds to the load.
 
-When a request times out, dynomite answers it with an error and closes the connection to the datastore, so the other requests queued on that connection fail as well. Requests then fail until the connection is back (see [Liveness](#liveness)), which can take a few seconds. Choose a `timeout:` well above the datastore's normal response times, so that a single slow command doesn't cut off everything else.
+When a request times out, dynomite answers it with `-ERR Storage: Datastore timed out` and closes the connection to the datastore, so the other requests queued on that connection get the same error. Requests then fail until the connection is back (see [Liveness](#liveness)), which can take a few seconds. Choose a `timeout:` well above the datastore's normal response times, so that a single slow command doesn't cut off everything else.
 
 ## Error Response
 
 When dynomite can't serve a request, it answers with an error of the form `-ERR <source> <description>` (redis) or `SERVER_ERROR <source> <description>` (memcache), where the source is `Storage:` (the local datastore), `Peer:` (another dynomite node) or `Dynomite:` (dynomite itself). For example:
 
-+ `-ERR Storage: Datastore refused connection` when the datastore is down, and also when a request to it timed out,
++ `-ERR Storage: Datastore refused connection` when the datastore is down or dynomite isn't connected to it yet,
++ `-ERR Storage: Datastore timed out` when a request to it timed out (see [Timeout](#timeout)); a request forwarded to another node that doesn't answer in time gets `-ERR Peer: Peer Node timed out`,
 + `-ERR Peer: Peer Node is down` when the node that owns the key can't be reached,
 + `-ERR Dynomite: Failed to achieve Quorum` when a quorum read or write didn't get enough replies.
 
