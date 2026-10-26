@@ -1851,6 +1851,7 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
                                 CONF_DEFAULT_MBUF_MIN_SIZE,
                                 CONF_DEFAULT_MBUF_MAX_SIZE));
 
+    /* keeps the struct mbuf at the end of each chunk aligned */
     if (cp->mbuf_size % 16 != 0) {
       log_error("conf: directive \"mbuf_size:\" must be a multiple of 16");
       return DN_ERROR;

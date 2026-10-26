@@ -679,19 +679,19 @@ static void parse_cases_init(void) {
   parse_add(tc, MSG_REQ_REDIS_GET, "a{b", "GET a{b");
   parse_add(tc, MSG_REQ_REDIS_GET, "a}b{c}(c)", "GET a}b{c}");
   /*
-   * The first key is cut at the end of the smallest mbuf (448 bytes, without
-   * its MBUF_ESIZE extra room), then the second one, after its hash tag.
+   * The first key is cut at the end of the smallest mbuf (456 bytes), then
+   * the second one, after its hash tag.
    */
-  dn_snprintf(words, sizeof(words), "MGET %.*s {t}abcdefghijklmnop", 430, big);
-  dn_snprintf(rsp, sizeof(rsp), "%.*s {t}abcdefghijklmnop(t)", 430, big);
+  dn_snprintf(words, sizeof(words), "MGET %.*s {t}abcdefghijklmnop", 438, big);
+  dn_snprintf(rsp, sizeof(rsp), "%.*s {t}abcdefghijklmnop(t)", 438, big);
   parse_add(tc, MSG_REQ_REDIS_MGET, rsp, words);
-  dn_snprintf(words, sizeof(words), "MGET %.*s {t}abcdefghijklmnop", 412, big);
-  dn_snprintf(rsp, sizeof(rsp), "%.*s {t}abcdefghijklmnop(t)", 412, big);
+  dn_snprintf(words, sizeof(words), "MGET %.*s {t}abcdefghijklmnop", 420, big);
+  dn_snprintf(rsp, sizeof(rsp), "%.*s {t}abcdefghijklmnop(t)", 420, big);
   parse_add(tc, MSG_REQ_REDIS_MGET, rsp, words);
 
   /* the number of keys is the last byte of the smallest mbuf */
   tc = parse_case_new("redis eval cut", DATA_REDIS, false);
-  dn_snprintf(words, sizeof(words), "EVAL %.*s 1 ek arg", 421, big);
+  dn_snprintf(words, sizeof(words), "EVAL %.*s 1 ek arg", 429, big);
   parse_add(tc, MSG_REQ_REDIS_EVAL, "ek", words);
 
   tc = parse_case_new("memcache hash tags", DATA_MEMCACHE, false);

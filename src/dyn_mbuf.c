@@ -70,12 +70,10 @@ static struct mbuf *_mbuf_get(void) {
    *   |       mbuf data                      |  mbuf header   |
    *   |     (mbuf_offset)                    | (struct mbuf)  |
    *   +-------------------------------------------------------+
-   *   ^           ^        ^      ^          ^^
-   *   |           |        |      |          ||
-   *   |           |        |      |          \ \mbuf->end_extra (one byte past
-   * valid bound)
-   *   \           |        |      \           \
-   *   mbuf->start \        |      mbuf->end    mbuf
+   *   ^           ^        ^             ^
+   *   |           |        |             |
+   *   \           |        |             \
+   *   mbuf->start \        |             mbuf->end, mbuf
    *             mbuf->pos  |
    *                        \
    *                       mbuf->last (one byte past valid byte)
@@ -102,16 +100,13 @@ struct mbuf *mbuf_get(void) {
 
   buf = (uint8_t *)mbuf - mbuf_offset;
   mbuf->start = buf;
-  mbuf->end = buf + mbuf_offset - MBUF_ESIZE;
-  mbuf->end_extra = buf + mbuf_offset;
+  mbuf->end = buf + mbuf_offset;
 
   // ASSERT(mbuf->end - mbuf->start == (int)mbuf_offset);
   ASSERT(mbuf->start < mbuf->end);
 
   mbuf->pos = mbuf->start;
   mbuf->last = mbuf->start;
-
-  mbuf->flags = 0;
 
   log_debug(LOG_VVERB, "get mbuf %p", mbuf);
 
@@ -293,7 +288,7 @@ void mbuf_init(size_t mbuf_size) {
   nfree_mbufq = 0;
   STAILQ_INIT(&free_mbufq);
 
-  mbuf_chunk_size = mbuf_size + MBUF_ESIZE;
+  mbuf_chunk_size = mbuf_size;
   mbuf_offset = mbuf_chunk_size - MBUF_HSIZE;
 
   log_debug(LOG_DEBUG, "mbuf hsize %zu chunk size %zu offset %zu length %zu",
@@ -375,8 +370,7 @@ struct mbuf *mbuf_alloc(const size_t size) {
   STAILQ_NEXT(mbuf, next) = NULL;
 
   mbuf->start = buf;
-  mbuf->end = buf + size - MBUF_ESIZE;
-  mbuf->end_extra = buf + size;
+  mbuf->end = buf + size;
 
   mbuf->pos = mbuf->start;
   mbuf->last = mbuf->start;
