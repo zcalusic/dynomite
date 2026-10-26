@@ -28,13 +28,6 @@
 #include "../dyn_string.h"
 #include "../dyn_util.h"
 
-/* bitsPerDigit radix of 10 multiplied by 1024, rounded up to avoid
- * underallocation */
-#define BITS_PER_DIGIT 3402
-
-/* TODO: jeb - this should be 9, but hacked for POC */
-#define DIGITS_PER_INT 10
-
 void init_dyn_token(struct dyn_token *token) {
   token->signum = 0;
   token->len = 0;
@@ -80,75 +73,32 @@ void print_dyn_token(struct dyn_token *token, int num_tabs) {
             num_tabs, '\t', token->signum, token->mag[0], token->len);
 }
 
-static void add_next_word(uint32_t *buf, uint32_t len, uint32_t next_int) {
-  uint64_t product = 0;
-  uint64_t carry = 0;
-
-  /* magick! */
-  uint32_t radix_val = 0x17179149;
-  uint32_t i;
-  for (i = len; i-- > 0;) {
-    product = radix_val * buf[i] + carry;
-    buf[i] = (uint32_t)product;
-    carry = product >> 32;
-  }
-
-  uint64_t sum = buf[len - 1] + next_int;
-  buf[len - 1] = (uint32_t)sum;
-  carry = sum >> 32;
-  for (i = len - 1; i-- > 0;) {
-    sum = buf[i] + carry;
-    buf[i] = (uint32_t)sum;
-    carry = sum >> 32;
-  }
-}
-
+/*
+ * Tokens are 32-bit: only decimal digits, from 0 to UINT32_MAX, are accepted.
+ * Anything else (a sign, spaces, a bigger number) is DN_ERROR and leaves the
+ * token 0.
+ */
 rstatus_t parse_dyn_token(uint8_t *start, uint32_t len,
                           struct dyn_token *token) {
-  ASSERT(len > 0);
   ASSERT(token != NULL);
 
-  /* TODO-jeb: check for whitespace */
-  char sign = '-';
-  uint8_t *p = start;
-  uint8_t *q = p + len;
-  uint32_t digits = len;
-  if (p[0] == sign) {
-    /* -1 as unsigned, so cmp_dyn_token() sorts it above any other sign */
-    token->signum = UINT32_MAX;
-    p++;
-    digits--;
-    ASSERT(digits > 0);
-  } else if (digits == 1 && p[0] == '0') {
-    token->signum = 0;
-  } else {
-    token->signum = 1;
+  set_int_dyn_token(token, 0);
+  if (len == 0) {
+    return DN_ERROR;
   }
 
-  uint32_t nwords;
-  /* if (digits < 10) { */
-  nwords = 1;
-  /* } else { */
-  /*     uint32_t nbits = ((digits * BITS_PER_DIGIT) >> 10) + 1; */
-  /*     nwords = (nbits + 32) >> 5; */
-  /* } */
-
-  uint32_t *buf = token->mag;
-  token->len = nwords;
-
-  // Process first (potentially short) digit group
-  uint32_t first_group_len = digits % DIGITS_PER_INT;
-  if (first_group_len == 0) first_group_len = DIGITS_PER_INT;
-  buf[nwords - 1] = dn_atoui(p, first_group_len);
-  p += first_group_len;
-
-  // Process remaining digit groups
-  while (p < q) {
-    uint32_t local_int = dn_atoui(p, DIGITS_PER_INT);
-    add_next_word(buf, nwords, local_int);
-    p += DIGITS_PER_INT;
+  uint64_t val = 0;
+  for (uint32_t i = 0; i < len; i++) {
+    if (start[i] < '0' || start[i] > '9') {
+      return DN_ERROR;
+    }
+    val = val * 10 + (uint64_t)(start[i] - '0');
+    if (val > UINT32_MAX) {
+      return DN_ERROR;
+    }
   }
 
+  set_int_dyn_token(token, (uint32_t)val);
   return DN_OK;
 }
 
@@ -208,6 +158,8 @@ rstatus_t derive_tokens(struct array *tokens, uint8_t *start, uint8_t *end) {
 
     rstatus_t status = parse_dyn_token(q, len, token);
     if (status != DN_OK) {
+      log_error("invalid token '%.*s': must be a number from 0 to %" PRIu32,
+                (int)len, q, UINT32_MAX);
       return DN_ERROR;
     }
 
@@ -241,6 +193,8 @@ rstatus_t derive_token(struct dyn_token *token, uint8_t *start, uint8_t *end) {
 
     rstatus_t status = parse_dyn_token(q, len, token);
     if (status != DN_OK) {
+      log_error("invalid token '%.*s': must be a number from 0 to %" PRIu32,
+                (int)len, q, UINT32_MAX);
       return DN_ERROR;
     }
 

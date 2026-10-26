@@ -1662,6 +1662,15 @@ static const struct conf_case conf_cases[] = {
     CONF_INVALID("  - 127.0.0.1:22123:1\n"),
     CONF_INVALID("  - 127.0.0.1:22123:1\n  timeout: 1\n"),
     CONF_INVALID("  timeout: 1\n  servers:\n  - 127.0.0.1:22123:1\n"),
+    /* tokens are 0 to 4294967295; the base's tokens are checked the same way */
+    CONF_VALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:0\n"
+               "  - 127.0.0.3:8101:r1:dc1:4294967295\n",
+               timeout, 5000),
+    CONF_INVALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:-5\n"),
+    CONF_INVALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:4294967296\n"),
+    CONF_INVALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:99999999999\n"),
+    CONF_INVALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:abc\n"),
+    CONF_INVALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:1,\n"),
 };
 
 /* servers comes last, so a case can add entries to its list */
@@ -1793,6 +1802,69 @@ static rstatus_t test_hash(void) {
     return DN_ERROR;
   }
   loga("%zu hash runs passed", nruns);
+  return DN_OK;
+}
+
+/*
+ * Tokens are 32-bit: parse_dyn_token() takes 0 to 4294967295 in decimal and
+ * nothing else, leaving the token 0 on errors.
+ */
+static rstatus_t test_token(void) {
+  static const struct {
+    const char *str;
+    bool valid;
+    uint32_t want;
+  } cases[] = {
+      {"0", true, 0},
+      {"00", true, 0},
+      {"1", true, 1},
+      {"437425602", true, 437425602U},
+      {"0004294967295", true, 4294967295U},
+      {"4294967295", true, 4294967295U},
+      {"", false, 0},
+      {"-0", false, 0},
+      {"-5", false, 0},
+      {"+5", false, 0},
+      {" 5", false, 0},
+      {"5 ", false, 0},
+      {"1a", false, 0},
+      {"4294967296", false, 0},
+      {"10000000000", false, 0},
+      {"99999999999", false, 0},
+      {"18446744073709551621", false, 0},
+  };
+  size_t nfailed = 0;
+
+  print_banner("TOKEN");
+  for (size_t i = 0; i < NELEMS(cases); i++) {
+    struct dyn_token t;
+    memset(&t, 0xff, sizeof(t));
+    rstatus_t status = parse_dyn_token((uint8_t *)cases[i].str,
+                                       (uint32_t)strlen(cases[i].str), &t);
+    uint32_t signum = cases[i].want > 0 ? 1 : 0;
+    if ((status == DN_OK) != cases[i].valid || t.len != 1 ||
+        t.mag[0] != cases[i].want || t.signum != signum) {
+      log_error("token '%s': status %d, signum %u, mag %u, len %u, want %s %u",
+                cases[i].str, status, t.signum, t.mag[0], t.len,
+                cases[i].valid ? "ok" : "error", cases[i].want);
+      nfailed++;
+    }
+  }
+
+  /* a parsed token orders as its number */
+  struct dyn_token a, b;
+  parse_dyn_token((uint8_t *)"0", 1, &a);
+  parse_dyn_token((uint8_t *)"4294967295", 10, &b);
+  if (cmp_dyn_token(&a, &b) >= 0 || cmp_dyn_token(&b, &a) <= 0) {
+    log_error("token 0 doesn't sort below 4294967295");
+    nfailed++;
+  }
+
+  if (nfailed != 0) {
+    log_error("%zu of %zu token cases failed", nfailed, NELEMS(cases) + 1);
+    return DN_ERROR;
+  }
+  loga("%zu token cases passed", NELEMS(cases) + 1);
   return DN_OK;
 }
 
@@ -2004,6 +2076,12 @@ int main(int argc, char **argv) {
   ret = test_hash();
   if (ret != DN_OK) {
     loga("Error in testing the hash functions!!!");
+    goto err_out;
+  }
+
+  ret = test_token();
+  if (ret != DN_OK) {
+    loga("Error in testing the token parser!!!");
     goto err_out;
   }
 

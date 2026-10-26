@@ -836,7 +836,7 @@ static char *conf_add_dyn_server(struct conf *cf, struct command *cmd,
   status = derive_tokens(&field->tokens, tokens, t_end);
   if (status != DN_OK) {
     array_pop(a);
-    return CONF_ERROR;
+    return "has an invalid token in \"hostname:port:rack:dc:tokens [name]\"";
   }
 
   // addr is hostname
@@ -895,7 +895,7 @@ static char *conf_set_tokens(struct conf *cf, struct command *cmd, void *conf) {
   rstatus_t status = derive_tokens(tokens, value->data, p);
   if (status != DN_OK) {
     // TODO: should we dealloc the tokens/array?
-    return CONF_ERROR;
+    return "has an invalid token";
   }
 
   return CONF_OK;

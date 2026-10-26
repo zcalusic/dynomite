@@ -98,7 +98,7 @@ Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible)
 + **dyn_listen**: The port that dynomite nodes use to inter-communicate and gossip.
 + **enable_gossip**: enable gossip instead of static tokens (default: false). Gossip is experimental.
 + **gos_interval**: The sleeping time in milliseconds at the end of a gossip round. Defaults to 30000; must be at least 1.
-+ **tokens**: The token(s) owned by a node.  Currently, we don't support vnode yet so this only works with one token for the time being.
++ **tokens**: The token(s) owned by a node.  Currently, we don't support vnode yet so this only works with one token for the time being. A token is a number from 0 to 4294967295; anything else is a configuration error.
 + **dyn_seed_provider**: A seed provider implementation to provide a list of seed nodes. One of simple_provider (uses dyn_seeds), florida_provider or dns_provider. Defaults to simple_provider.
 + **dyn_seeds**: A list of seed nodes in the format: address:port:rack:dc:tokens (note that vnode is not supported yet)
 + **listen**: The listening address and port (name:port or ip:port) for this server pool.
