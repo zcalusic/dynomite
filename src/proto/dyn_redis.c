@@ -368,48 +368,47 @@ static bool redis_error(struct msg *r) {
   return false;
 }
 
-rstatus_t record_arg(uint8_t* start_pos, uint8_t* end_pos, struct array *target_arr) {
-  ASSERT(target_arr != NULL && start_pos != NULL && end_pos != NULL);
+/* Start an arg at p, in mbuf b, unless one is being parsed already. */
+static void start_arg(struct msg *r, struct mbuf *b, uint8_t *p) {
+  if (r->arg_start == NULL) {
+    r->arg_start = p;
+    r->arg_mbuf = b;
+  }
+}
 
-  struct argpos *arg_pos;
-  arg_pos = array_push(target_arr);
-  if (arg_pos == NULL) {
+/*
+ * Record the arg (a request arg, or a reply element) that started at
+ * r->arg_start and ends at end, in mbuf b, however many mbufs it spans.
+ */
+static rstatus_t record_arg(struct msg *r, struct mbuf *b, uint8_t *end) {
+  struct mbuf *mbuf = r->arg_mbuf;
+  uint8_t *pos = r->arg_start;
+  struct argpos *arg;
+  uint32_t len = 0;
+
+  r->arg_start = NULL;
+  r->arg_mbuf = NULL;
+  if (pos == NULL || mbuf == NULL) {
+    return DN_ERROR;
+  }
+
+  arg = array_push(r->args);
+  if (arg == NULL) {
     return DN_ENOMEM;
   }
-  arg_pos->start = start_pos;
-  arg_pos->end = end_pos;
+  arg->start = pos;
+  arg->mbuf = mbuf;
+  for (; mbuf != b; pos = mbuf->pos) {
+    len += (uint32_t)(mbuf->last - pos);
+    mbuf = STAILQ_NEXT(mbuf, next);
+    if (mbuf == NULL) {
+      array_pop(r->args);
+      return DN_ERROR;
+    }
+  }
+  arg->len = len + (uint32_t)(end - pos);
 
   return DN_OK;
-}
-
-/*
- * Record the reply element that started at r->arg_start and ends at end, in
- * mbuf b. An element split between mbufs can't be recorded in one piece, so
- * only its part in b is.
- */
-static rstatus_t record_rsp_arg(struct msg *r, struct mbuf *b, uint8_t *end) {
-  uint8_t *start = r->arg_start;
-
-  if (start == NULL || start < b->start || start > end) {
-    start = b->pos;
-  }
-  r->arg_start = NULL;
-  return record_arg(start, end, r->args);
-}
-
-/*
- * Record the request arg that started at r->arg_start and ends at end, in
- * mbuf b, for read repairs. An arg split between mbufs isn't recorded: a
- * request with one isn't rewritten with timestamps anyway.
- */
-static rstatus_t record_req_arg(struct msg *r, struct mbuf *b, uint8_t *end) {
-  uint8_t *start = r->arg_start;
-
-  r->arg_start = NULL;
-  if (start == NULL || start < b->start || start > end) {
-    return DN_OK;
-  }
-  return record_arg(start, end, r->args);
 }
 
 /*
@@ -1905,7 +1904,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         m = p + r->rlen;
 
         if (is_msg_type_dyno_config(r->type)) {
-          rstatus_t argstatus = record_arg(p, m, r->args);
+          start_arg(r, b, p);
+          rstatus_t argstatus = record_arg(r, b, m);
           if (argstatus == DN_ERROR) {
             goto error;
           } else if (argstatus == DN_ENOMEM) {
@@ -1917,19 +1917,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         }
 
         if (read_repairs_enabled) {
-          if (r->arg_start == NULL) {
-            r->arg_start = p;
-          }
+          start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
             int new_mbuf_offset = m - b->last;
             struct mbuf *next_mbuf;
             next_mbuf = STAILQ_NEXT(b, next);
             if (next_mbuf == NULL) break;
-
-            // Since the arg is across mbufs, we don't have logic to rewrite those with
-            // timestamps.
-            r->rewrite_with_ts_possible = false;
 
             m = next_mbuf->pos + new_mbuf_offset;
             b = next_mbuf;
@@ -1949,7 +1943,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         }
 
         if (read_repairs_enabled) {
-          rstatus_t argstatus = record_req_arg(r, b, m);
+          rstatus_t argstatus = record_arg(r, b, m);
           if (argstatus == DN_ERROR) {
             goto error;
           } else if (argstatus == DN_ENOMEM) {
@@ -2056,19 +2050,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
 
         m = p + r->rlen;
         if (read_repairs_enabled) {
-          if (r->arg_start == NULL) {
-            r->arg_start = p;
-          }
+          start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
             int new_mbuf_offset = m - b->last;
             struct mbuf *next_mbuf;
             next_mbuf = STAILQ_NEXT(b, next);
             if (next_mbuf == NULL) break;
-
-            // Since the arg is across mbufs, we don't have logic to rewrite those with
-            // timestamps.
-            r->rewrite_with_ts_possible = false;
 
             m = next_mbuf->pos + new_mbuf_offset;
             b = next_mbuf;
@@ -2094,7 +2082,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         }
 
         if (read_repairs_enabled) {
-          rstatus_t argstatus = record_req_arg(r, b, m);
+          rstatus_t argstatus = record_arg(r, b, m);
           if (argstatus == DN_ERROR) {
             goto error;
           } else if (argstatus == DN_ENOMEM) {
@@ -2215,19 +2203,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
       case SW_ARG3:
         m = p + r->rlen;
         if (read_repairs_enabled) {
-          if (r->arg_start == NULL) {
-            r->arg_start = p;
-          }
+          start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
             int new_mbuf_offset = m - b->last;
             struct mbuf *next_mbuf;
             next_mbuf = STAILQ_NEXT(b, next);
             if (next_mbuf == NULL) break;
-
-            // Since the arg is across mbufs, we don't have logic to rewrite those with
-            // timestamps.
-            r->rewrite_with_ts_possible = false;
 
             m = next_mbuf->pos + new_mbuf_offset;
             b = next_mbuf;
@@ -2247,7 +2229,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         }
 
         if (read_repairs_enabled) {
-          rstatus_t argstatus = record_req_arg(r, b, m);
+          rstatus_t argstatus = record_arg(r, b, m);
           if (argstatus == DN_ERROR) {
             goto error;
           } else if (argstatus == DN_ENOMEM) {
@@ -2323,19 +2305,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
       case SW_ARGN:
         m = p + r->rlen;
         if (read_repairs_enabled) {
-          if (r->arg_start == NULL) {
-            r->arg_start = p;
-          }
+          start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
             int new_mbuf_offset = m - b->last;
             struct mbuf *next_mbuf;
             next_mbuf = STAILQ_NEXT(b, next);
             if (next_mbuf == NULL) break;
-
-            // Since the arg is across mbufs, we don't have logic to rewrite those with
-            // timestamps.
-            r->rewrite_with_ts_possible = false;
 
             m = next_mbuf->pos + new_mbuf_offset;
             b = next_mbuf;
@@ -2355,7 +2331,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         }
 
         if (read_repairs_enabled) {
-          rstatus_t argstatus = record_req_arg(r, b, m);
+          rstatus_t argstatus = record_arg(r, b, m);
           if (argstatus == DN_ERROR) {
             goto error;
           } else if (argstatus == DN_ENOMEM) {
@@ -2400,12 +2376,11 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
   r->pos = p;
   r->state = state;
 
-  // If we have to parse again, we won't be able to write with the timestamp.
-  r->rewrite_with_ts_possible = false;
   if (b->last == b->end && r->token != NULL) {
     r->pos = r->token;
     r->token = NULL;
     r->arg_start = NULL;
+    r->arg_mbuf = NULL;
     r->result = MSG_PARSE_REPAIR;
 
   } else {
@@ -2711,7 +2686,7 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
         if (ch == CR) {
           // Record this argument, with its type byte.
           {
-            rstatus_t argstatus = record_rsp_arg(r, b, p);
+            rstatus_t argstatus = record_arg(r, b, p);
             if (argstatus == DN_ERROR) {
               goto error;
             } else if (argstatus == DN_ENOMEM) {
@@ -2903,7 +2878,8 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
           if (ch == ':' || ch == '+' || ch == '-') {
             /* handles not-found reply = '$-1' or integer reply = ':<num>' */
             /* and *2\r\n$2\r\nr0\r\n+OK\r\n or *1\r\n+OK\r\n */
-            r->arg_start = p;
+            r->arg_start = NULL;
+            start_arg(r, b, p);
             state = SW_SIMPLE;
             break;
           }
@@ -2950,9 +2926,7 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
         break;
 
       case SW_MULTIBULK_ARGN:
-        if (r->arg_start == NULL) {
-          r->arg_start = p;
-        }
+        start_arg(r, b, p);
         m = p + r->rlen;
         if (m >= b->last) {
           r->rlen -= (uint32_t)(b->last - p);
@@ -2967,7 +2941,7 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
 
         {
           // Record all args.
-          rstatus_t argstatus = record_rsp_arg(r, b, m);
+          rstatus_t argstatus = record_arg(r, b, m);
           if (argstatus == DN_ERROR) {
             goto error;
           } else if (argstatus == DN_ENOMEM) {
@@ -3013,6 +2987,8 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
   if (b->last == b->end && r->token != NULL) {
     r->pos = r->token;
     r->token = NULL;
+    r->arg_start = NULL;
+    r->arg_mbuf = NULL;
     r->result = MSG_PARSE_REPAIR;
   } else {
     r->result = MSG_PARSE_AGAIN;

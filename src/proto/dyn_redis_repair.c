@@ -212,8 +212,7 @@ static rstatus_t parse_tokens_of_type(int num_tokens, int out_token_idx,
       struct argpos *token_pos = (struct argpos*)array_push(*out);
       struct argpos *orig_token_pos =
           (struct argpos*)array_get(source_info, start_pos - 1 + out_token_idx);
-      token_pos->start = orig_token_pos->start;
-      token_pos->end = orig_token_pos->end;
+      *token_pos = *orig_token_pos;
       out_token_idx += jump_by;
     } else {
       // TODO: Make more concise.
@@ -236,12 +235,13 @@ static rstatus_t get_values_from_source(int num_tokens, int start_pos,
   *out_values = array_create(num_tokens, sizeof(struct argpos));
   if (*out_values == NULL) return DN_ENOMEM;
 
+  if (start_pos + num_tokens > (int)array_n(source_info)) return DN_ERROR;
+
   int i;
   for (i = 0; i < num_tokens; ++i) {
     struct argpos *value_pos = (struct argpos*)array_push(*out_values);
     struct argpos *orig_value_pos = (struct argpos*)array_get(source_info, start_pos++);
-    value_pos->start = orig_value_pos->start;
-    value_pos->end = orig_value_pos->end;
+    *value_pos = *orig_value_pos;
   }
 
   return DN_OK;
@@ -279,8 +279,7 @@ rstatus_t post_parse_optional_args(struct msg *orig_msg) {
           if (out_struct->optionals == NULL) return DN_ENOMEM;
         }
         struct argpos *record_opt_pos = (struct argpos*)array_push(out_struct->optionals);
-        record_opt_pos->start = opt_arg->start;
-        record_opt_pos->end = opt_arg->end;
+        *record_opt_pos = *opt_arg;
       }
 
       // Both these options cannot be set together.
@@ -448,6 +447,7 @@ rstatus_t obtain_info_from_latest_rsp(struct response_mgr *rspmgr,
 
   repair_msg_info->keys = orig_msg_info->keys;
   repair_msg_info->fields = orig_msg_info->fields;
+  repair_msg_info->values = NULL;
 
   if (repair_by_add) {
     repair_msg_info->add_set = ADD_SET_STR;
@@ -485,7 +485,10 @@ rstatus_t obtain_info_from_latest_rsp(struct response_mgr *rspmgr,
   return DN_OK;
 
  error:
-  array_destroy(repair_msg_info->values);
+  if (repair_msg_info->values != NULL) {
+    array_destroy(repair_msg_info->values);
+    repair_msg_info->values = NULL;
+  }
   return DN_ERROR;
 }
 
@@ -580,9 +583,7 @@ static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
   // Add all the keys touched in the query.
   for (i = 0; i < src->num_keys; ++i) {
     struct keypos *elem = array_get(src->keys, i);
-    uint32_t elem_len = keypos_elem_len(elem);
-    THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, 3, elem_len,
-        elem_len, elem->tag_start));
+    THROW_STATUS(msg_append_bulk(msg, elem->tag_start, keypos_elem_len(elem)));
   }
   // Add the add-set and rem-set keys.
   int add_set_len = strlen(src->add_set);
@@ -617,9 +618,7 @@ static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
   if (num_optionals > 0) {
     for (i = 0; i < num_optionals; ++i) {
       struct argpos *opt_elem = array_get(src->optionals, i);
-      uint32_t opt_len = argpos_elem_len(opt_elem);
-      THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, 3, opt_len,
-            opt_len, opt_elem->start));
+      THROW_STATUS(msg_append_arg(msg, opt_elem));
     }
   }
 
@@ -634,16 +633,12 @@ static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
     for (i = 0; i < total_iterations; ++i) {
       if (num_fields > 0) {
         struct argpos *field_elem = array_get(src->fields, i);
-        uint32_t field_len = argpos_elem_len(field_elem);
-        THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, 3, field_len,
-            field_len, field_elem->start));
+        THROW_STATUS(msg_append_arg(msg, field_elem));
       }
 
       if (num_values > 0) {
         struct argpos *value_elem = array_get(src->values, i);
-        uint32_t value_len = argpos_elem_len(value_elem);
-        THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, 3, value_len,
-            value_len, value_elem->start));
+        THROW_STATUS(msg_append_arg(msg, value_elem));
       }
     }
   }
@@ -711,6 +706,10 @@ static struct msg* find_most_updated_rsp(struct response_mgr *rspmgr,
   for (i = 0; i < rspmgr->good_responses; ++i) {
     struct msg *cur_rsp = rspmgr->responses[i];
 
+    // A reply that isn't from a read repair script (e.g. an error) has no status
+    // and timestamp to compare.
+    if (array_n(cur_rsp->args) < 2) continue;
+
     // Find the status of the key.
     struct argpos *key_status_arg = (struct argpos*)array_get(cur_rsp->args, 0);
     uint8_t *key_status = key_status_arg->start;
@@ -719,12 +718,16 @@ static struct msg* find_most_updated_rsp(struct response_mgr *rspmgr,
     }
 
     struct argpos *ts_arg = (struct argpos*)array_get(cur_rsp->args, 1);
-    uint8_t *j;
+    uint8_t digits[20];
+    uint32_t j, ndigits;
     cur_rsp->timestamp = 0;
 
     // Find the timestamp from the response buffer and tag the 'struct msg' with it.
-    for (j = ts_arg->start; j < ts_arg->end; ++j) {
-      char digit_ch = *j;
+    // It can be split between mbufs.
+    ASSERT(ts_arg->len <= sizeof(digits));
+    ndigits = argpos_copy(ts_arg, digits, sizeof(digits));
+    for (j = 0; j < ndigits; ++j) {
+      char digit_ch = digits[j];
       ASSERT(isdigit(digit_ch));
       cur_rsp->timestamp = cur_rsp->timestamp * 10 + (uint64_t)(digit_ch - '0');
     }
@@ -748,19 +751,43 @@ static struct msg* find_most_updated_rsp(struct response_mgr *rspmgr,
 }
 
 /*
+ * Make the client see 'rsp' from 'offset' bytes after the start of 'arg' on:
+ * empty the mbufs before that point and move the pos of the one holding it.
+ * The point can be in any mbuf after the one 'arg' starts in.
+ */
+static void rsp_skip_to(struct msg *rsp, const struct argpos *arg,
+    uint32_t offset) {
+  struct mbuf *target = arg->mbuf;
+  uint8_t *pos = arg->start;
+  struct mbuf *mbuf;
+
+  while (offset > (uint32_t)(target->last - pos)) {
+    offset -= (uint32_t)(target->last - pos);
+    target = STAILQ_NEXT(target, next);
+    if (target == NULL) return;
+    pos = target->pos;
+  }
+
+  STAILQ_FOREACH(mbuf, &rsp->mhdr, next) {
+    if (mbuf == target) break;
+    mbuf->pos = mbuf->last;
+  }
+  target->pos = pos + offset;
+}
+
+/*
  * The response buffers are returned in an internal Dynomite format which the
  * client should not see. This function adjusts the response buffer of the most
  * updated response (based on timestamp) to what the client would expect to see.
  *
+ * A response is "*<n>\r\n" <status> <ts> <value>..., where <status> is E
+ * (exists), R (removed) or X (doesn't exist), so the client gets everything
+ * after <ts>: the value as it is, or for more than one existing value, an array
+ * of them. Any part of it can be split between mbufs.
+ *
  */
 static void adjust_rsp_buffers_for_client(struct response_mgr *rspmgr,
     uint32_t num_values) {
-  ;int num_value_digits = count_digits(num_values);
-
-  // All responses begin with <status> & <ts>, so the first value, if present, will be at
-  // position 2 in the args array of all responses.
-  int start_idx_from_rsp = 2;
-
   int i;
   for (i = 0; i <rspmgr->good_responses; ++i) {
     struct msg *cur_rsp = rspmgr->responses[i];
@@ -768,70 +795,17 @@ static void adjust_rsp_buffers_for_client(struct response_mgr *rspmgr,
     // time adjusting its buffer.
     if (cur_rsp->needs_repair == true) continue;
 
-    struct mbuf *rsp_mbuf = STAILQ_FIRST(&cur_rsp->mhdr);
+    // Not a reply of a read repair script, so leave it as it is.
+    if (array_n(cur_rsp->args) < 2) continue;
 
-    struct argpos* status_pos = (struct argpos*)array_get(cur_rsp->args, 0);
-    if (*status_pos->start == 'X') {
-      // If the value does not exist, we will get back a buffer of the format:
-      // "*3\r\n$1\r\nX\r\n:0\r\n:0\r\n", so we just move the pointer to point to
-      // ":0"
-      rsp_mbuf->pos = status_pos->start + 7;
-      continue;
-    }
+    struct argpos *status_pos = (struct argpos*)array_get(cur_rsp->args, 0);
+    struct argpos *ts_pos = (struct argpos*)array_get(cur_rsp->args, 1);
 
-    // Update 'pos' pointer so that the metadata is not returned back to the client.
-    if (*status_pos->start == 'R') {
-      // If the item does not exist, the 2nd position in the buffer will be -1,
-      // which is interpreted as "(nil)" by the client, so we just point the response
-      // buffer to that.
-      struct argpos* ts_pos =
-          (struct argpos*)array_get(cur_rsp->args, start_idx_from_rsp - 1);
+    // Skip <ts> and its CRLF.
+    rsp_skip_to(cur_rsp, ts_pos, ts_pos->len + CRLF_LEN);
 
-      rsp_mbuf->pos = ts_pos->end + 2;
-      continue;
-    }
-
-    struct argpos* first_value_pos =
-        (struct argpos*)array_get(cur_rsp->args, start_idx_from_rsp);
-
-    if (num_values > 1) {
-      // Here we're making space to write the total number of value tokens.
-      // In reverse order, it's 2 for "\r\n", 'first_val_len_digits', 1 for "$",
-      // 2 more for "\r\n", the number of token digits and finally 1 for "*".
-      // If the value is an integer, we don't include the multibulk len and its
-      // corressponding CRLF bytes.
-      int go_back_by = 2 + num_value_digits + 1;
-      if (*first_value_pos->start != ':') {
-        int first_val_len_digits =
-            count_digits(first_value_pos->end - first_value_pos->start);
-        go_back_by += 2 + first_val_len_digits + 1;
-      }
-      rsp_mbuf->pos = first_value_pos->start - go_back_by;
-
-      // Now we just need to write the "*" and the total number of tokens, the remaining
-      // already exists as expected.
-      *rsp_mbuf->pos = '*';
-      int num_values_copy = num_values;
-      int num_value_digits_copy = num_value_digits;
-      while(num_value_digits_copy > 0) {
-        int digit = num_values_copy % 10;
-        *(rsp_mbuf->pos + num_value_digits_copy) = digit + '0';
-
-        --num_value_digits_copy;
-        num_values_copy /= 10;
-      }
-    } else {
-      rsp_mbuf->pos = first_value_pos->start;
-
-      // If it's an integer, we already have the right value.
-      if (*rsp_mbuf->pos == ':') continue;
-
-      // If the value is a string.
-      rsp_mbuf->pos -= 2; // Go back 2 bytes to point behind the '\r\n' tokens.
-      // Now go further back over the length of the token till we reach '$'
-      while (*rsp_mbuf->pos != '$') {
-        rsp_mbuf->pos -= 1;
-      }
+    if (*status_pos->start == 'E' && num_values > 1) {
+      IGNORE_RET_VAL(msg_prepend_format(cur_rsp, "*%" PRIu32 "\r\n", num_values));
     }
   }
 }
@@ -881,15 +855,15 @@ rstatus_t redis_make_repair_query(struct context *ctx, struct response_mgr *rspm
   }
 
   struct write_with_ts repair_msg_info;
-  THROW_STATUS(obtain_info_from_latest_rsp(rspmgr, most_updated_rsp,
-      repair_by_add, &repair_msg_info));
+  ret_status = obtain_info_from_latest_rsp(rspmgr, most_updated_rsp,
+      repair_by_add, &repair_msg_info);
+  if (ret_status != DN_OK) {
+    goto done;
+  }
 
   update_total_num_tokens(&repair_msg_info);
 
   ret_status = finalize_repair_msg(ctx, rspmgr->msg->owner, &repair_msg_info, new_msg_ptr);
-  if (ret_status != DN_OK) {
-    goto done;
-  }
 
  done:
   adjust_rsp_buffers_for_client(rspmgr, num_values);
@@ -918,9 +892,6 @@ rstatus_t redis_rewrite_query_with_timestamp_md(struct msg *orig_msg, struct con
 
   // If we don't support read repairs for a command, return.
   if (proto_cmd_info[orig_msg->type].has_repair_support == false) return DN_OK;
-
-  // If the parser couldn't parse the args correctly, return.
-  if (orig_msg->rewrite_with_ts_possible == false) return DN_OK;
 
   rstatus_t status = post_parse_msg(orig_msg);
   if (status != DN_OK) goto error;
@@ -983,8 +954,7 @@ static rstatus_t create_cleanup_script(struct context *ctx, struct msg *orig_msg
       if (msg_info.fields == NULL) goto error;
       struct argpos *field_pos = (struct argpos*)array_push(msg_info.fields);
       struct argpos *orig_field_pos = (struct argpos*)array_get(orig_msg->args, 0);
-      field_pos->start = orig_field_pos->start;
-      field_pos->end = orig_field_pos->end;
+      *field_pos = *orig_field_pos;
       break;
     default:
       return DN_NOOPS;

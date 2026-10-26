@@ -17,6 +17,7 @@
 #include "dyn_core.h"
 #include "dyn_dnode_peer.h"
 #include "dyn_signal.h"
+#include "proto/dyn_proto.h"
 
 #define TEST_CONF_PATH "conf/dynomite.yml"
 
@@ -334,57 +335,85 @@ static const char *parse_mode(void) {
 }
 
 /*
+ * Copy an arg recorded for msg, from as many mbufs as it spans, plus extra
+ * bytes after it, to dst. Fails if the arg doesn't start in one of msg's
+ * mbufs, or msg ends before it does.
+ */
+static bool parse_copy_arg(struct msg *msg, const struct argpos *ap,
+                           uint32_t extra, uint8_t *dst, uint32_t size) {
+  struct argpos arg = *ap;
+  struct mbuf *b;
+
+  STAILQ_FOREACH(b, &msg->mhdr, next) {
+    if (b == ap->mbuf) break;
+  }
+  if (b == NULL || ap->start < b->pos || ap->start > b->last) {
+    return false;
+  }
+  arg.len += extra;
+  return arg.len <= size && argpos_copy(&arg, dst, size) == arg.len;
+}
+
+/* Append the args recorded for msg to out, space-separated. */
+static bool parse_render_args(struct msg *msg, char *out, size_t size,
+                              size_t *len) {
+  static uint8_t buf[PARSE_DATA_MAX];
+
+  for (uint32_t k = 0; k < array_n(msg->args); k++) {
+    struct argpos *ap = array_get(msg->args, k);
+    if (!parse_copy_arg(msg, ap, 0, buf, sizeof(buf))) {
+      return false;
+    }
+    if (*len < size) {
+      *len += (size_t)dn_snprintf(out + *len, size - *len, "%s%.*s",
+                                  k == 0 ? "" : " ", (int)ap->len, buf);
+    }
+  }
+  return true;
+}
+
+/*
  * Check the args read repairs recorded for a redis request: each must be a
- * whole bulk string, in one mbuf, recorded once. When the request can be
- * rewritten with timestamps, the only time they're used, they must also be the
- * ones expected, if given.
+ * whole bulk string, recorded once, however many mbufs it spans. They must
+ * also be the ones expected, if given.
  */
 static rstatus_t parse_check_args(const struct parse_case *tc, size_t chunk,
                                   size_t i, struct msg *msg) {
+  static uint8_t buf[PARSE_DATA_MAX];
   char args[1024] = "";
   size_t len = 0;
 
   for (uint32_t k = 0; k < array_n(msg->args); k++) {
     struct argpos *ap = array_get(msg->args, k);
-    struct mbuf *b;
     uint8_t *q;
     size_t n = 0, scale = 1;
 
-    STAILQ_FOREACH(b, &msg->mhdr, next) {
-      if (ap->start >= b->pos && ap->start <= ap->end && ap->end <= b->last) {
-        break;
-      }
-    }
-    /* CRLF after it and "$<len>\r\n" before it, as far as they're in b */
-    bool whole = b != NULL && (ap->end == b->last || ap->end[0] == CR) &&
-                 (ap->end + 1 >= b->last || ap->end[1] == LF);
-    for (q = ap->start - 1; whole && q >= b->pos; q--) {
+    /* CRLF after it, and "$<len>\r\n" before it, as far as it's in its mbuf */
+    bool whole = parse_copy_arg(msg, ap, CRLF_LEN, buf, sizeof(buf)) &&
+                 buf[ap->len] == CR && buf[ap->len + 1] == LF;
+    for (q = ap->start - 1; whole && q >= ap->mbuf->pos; q--) {
       if (q >= ap->start - 2) {
         whole = *q == (q == ap->start - 1 ? LF : CR);
       } else if (isdigit(*q)) {
         n += (size_t)(*q - '0') * scale;
         scale *= 10;
       } else {
-        whole = *q == '$' && n == (size_t)(ap->end - ap->start);
+        whole = *q == '$' && n == ap->len;
         break;
       }
     }
     if (!whole) {
       log_error("%s (mbuf %zu, chunk %zu%s): request %zu has arg %u of "
-                "length %td, not a whole bulk string in one mbuf",
+                "length %" PRIu32 ", not a whole bulk string",
                 tc->name, mbuf_data_size(), chunk, parse_mode(), i + 1, k + 1,
-                ap->end - ap->start);
+                ap->len);
       return DN_ERROR;
-    }
-    if (len < sizeof(args)) {
-      len += (size_t)dn_snprintf(args + len, sizeof(args) - len, "%s%.*s",
-                                 k == 0 ? "" : " ", (int)(ap->end - ap->start),
-                                 ap->start);
     }
   }
 
-  if (tc->reqs[i].args != NULL && msg->rewrite_with_ts_possible &&
-      strcmp(args, tc->reqs[i].args) != 0) {
+  if (tc->reqs[i].args != NULL &&
+      (!parse_render_args(msg, args, sizeof(args), &len) ||
+       strcmp(args, tc->reqs[i].args) != 0)) {
     log_error("%s (mbuf %zu, chunk %zu%s): request %zu has args [%s], want "
               "[%s]",
               tc->name, mbuf_data_size(), chunk, parse_mode(), i + 1, args,
@@ -401,19 +430,10 @@ static rstatus_t parse_check(const struct parse_case *tc, size_t chunk,
   char keys[sizeof(tc->reqs[0].keys)] = "";
   size_t len = 0;
 
-  /*
-   * The args of a response split between mbufs aren't checked: only the part
-   * of an arg in its last mbuf is recorded.
-   */
-  bool args_unchecked = tc->response && STAILQ_FIRST(&msg->mhdr) !=
-                                            STAILQ_LAST(&msg->mhdr, mbuf, next);
-  if (tc->response) {
-    for (uint32_t k = 0; k < array_n(msg->args); k++) {
-      struct argpos *ap = array_get(msg->args, k);
-      len += (size_t)dn_snprintf(keys + len, sizeof(keys) - len, "%s%.*s",
-                                 k == 0 ? "" : " ", (int)(ap->end - ap->start),
-                                 ap->start);
-    }
+  if (tc->response && !parse_render_args(msg, keys, sizeof(keys), &len)) {
+    log_error("%s (mbuf %zu, chunk %zu%s): %s %zu has an arg outside it",
+              tc->name, mbuf_data_size(), chunk, parse_mode(), what, i + 1);
+    return DN_ERROR;
   }
   for (uint32_t k = 0; k < array_n(msg->keys); k++) {
     struct keypos *kp = array_get(msg->keys, k);
@@ -435,7 +455,7 @@ static rstatus_t parse_check(const struct parse_case *tc, size_t chunk,
     return DN_ERROR;
   }
   if (msg->type != tc->reqs[i].type ||
-      (!args_unchecked && strcmp(keys, tc->reqs[i].keys) != 0)) {
+      strcmp(keys, tc->reqs[i].keys) != 0) {
     log_error("%s (mbuf %zu, chunk %zu%s): %s %zu is %.*s [%s], want "
               "%.*s [%s]",
               tc->name, mbuf_data_size(), chunk, parse_mode(), what, i + 1,
@@ -552,11 +572,19 @@ static struct parse_case *parse_case_new(const char *name,
 
 static void parse_cases_init(void) {
   struct parse_case *tc;
-  char big[600 + 1], words[700], rsp[2048], args[1024];
+  /* the expected request args must outlive this function */
+  static char big[600 + 1], big_v[700];
+  char words[700], rsp[2048], args[1024];
 
-  /* a value larger than the smallest mbuf */
-  memset(big, 'x', sizeof(big) - 1);
+  /*
+   * A value larger than the smallest mbuf, of letters in turn, so that a byte
+   * lost or repeated where it's split between mbufs shows.
+   */
+  for (size_t i = 0; i < sizeof(big) - 1; i++) {
+    big[i] = (char)('a' + i % 26);
+  }
   big[sizeof(big) - 1] = '\0';
+  dn_snprintf(big_v, sizeof(big_v), "%s v", big);
 
   tc = parse_case_new("redis pipeline", DATA_REDIS, false);
   parse_add(tc, MSG_REQ_REDIS_PING, "", "PING");
@@ -565,7 +593,9 @@ static void parse_cases_init(void) {
   parse_add_args(tc, MSG_REQ_REDIS_SET, "foo", "bar", "SET foo bar");
   parse_add(tc, MSG_REQ_REDIS_GET, "foo", "get foo");
   dn_snprintf(words, sizeof(words), "SET big %s", big);
-  parse_add(tc, MSG_REQ_REDIS_SET, "big", words);
+  parse_add_args(tc, MSG_REQ_REDIS_SET, "big", big, words);
+  dn_snprintf(words, sizeof(words), "HSET h %s v", big);
+  parse_add_args(tc, MSG_REQ_REDIS_HSET, "h", big_v, words);
   parse_add_args(tc, MSG_REQ_REDIS_MSET, "k1 k2", "v1 v2", "MSET k1 v1 k2 v2");
   parse_add(tc, MSG_REQ_REDIS_MGET, "k1 k2 k3", "MGET k1 k2 k3");
   parse_add(tc, MSG_REQ_REDIS_DEL, "k1 k2", "DEL k1 k2");
@@ -691,6 +721,11 @@ static void parse_cases_init(void) {
                 "*3\r\n$1\r\nE\r\n$13\r\n1700000000000\r\n$3\r\nbar\r\n");
   parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "X :0 :0",
                 "*3\r\n$1\r\nX\r\n:0\r\n:0\r\n");
+  dn_snprintf(rsp, sizeof(rsp),
+              "*3\r\n$1\r\nE\r\n$13\r\n1700000000000\r\n$%zu\r\n%s\r\n",
+              strlen(big), big);
+  dn_snprintf(args, sizeof(args), "E 1700000000000 %s", big);
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, args, rsp);
   /* SCAN: a cursor, then the keys */
   parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "0 a b",
                 "*2\r\n$1\r\n0\r\n*2\r\n$1\r\na\r\n$1\r\nb\r\n");
@@ -825,6 +860,202 @@ static rstatus_t test_parser(struct conn *conn) {
     return DN_ERROR;
   }
   loga("%zu parser runs passed", nruns);
+  return DN_OK;
+}
+
+/*
+ * Parse one whole message from data, put in as many mbufs as it needs, the
+ * way msg_recv_chain() and msg_repair() would.
+ */
+static struct msg *repair_parse(struct conn *conn, bool request,
+                                const char *data) {
+  struct msg *msg = msg_get(conn, request, __FUNCTION__);
+  size_t len = strlen(data), fed = 0;
+
+  while (msg != NULL) {
+    struct mbuf *mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
+    if (mbuf == NULL || mbuf_full(mbuf)) {
+      mbuf = mbuf_get();
+      mbuf_insert(&msg->mhdr, mbuf);
+      msg->pos = mbuf->pos;
+    }
+    size_t n = MIN(len - fed, mbuf_remaining_space(mbuf));
+    mbuf_copy(mbuf, (uint8_t *)data + fed, n);
+    fed += n;
+    msg->mlen += (uint32_t)n;
+
+    msg->parser(msg, ctx);
+    if (msg->result == MSG_PARSE_OK && fed == len &&
+        msg->pos == STAILQ_LAST(&msg->mhdr, mbuf, next)->last) {
+      return msg;
+    }
+    if (msg->result == MSG_PARSE_REPAIR) {
+      struct mbuf *nbuf = mbuf_split(&msg->mhdr, msg->pos, NULL, NULL);
+      mbuf_insert(&msg->mhdr, nbuf);
+      msg->pos = nbuf->pos;
+    } else if (msg->result != MSG_PARSE_AGAIN || fed == len) {
+      log_error("failed to parse '%.40s...'", data);
+      msg_put(msg);
+      return NULL;
+    }
+  }
+  return NULL;
+}
+
+/* Copy what would be sent of msg, from all its mbufs, to out. */
+static const char *repair_data(struct msg *msg, char *out, size_t size) {
+  struct mbuf *mbuf;
+  size_t len = 0;
+
+  STAILQ_FOREACH(mbuf, &msg->mhdr, next) {
+    size_t n = MIN(mbuf_length(mbuf), size - 1 - len);
+    memcpy(out + len, mbuf->pos, n);
+    len += n;
+  }
+  out[len] = '\0';
+  return out;
+}
+
+/*
+ * A GET with read repairs: the replies of its script from two replicas, the
+ * first older than the second, or the same age (no repair). Values are larger
+ * than the mbufs, so the replies, the repair and what the client gets are
+ * split between them.
+ */
+struct repair_case {
+  const char *name;
+  const char *rsp[2];
+  bool repair;
+  const char *repair_has[2]; /* in the repair query, if any */
+  const char *client;        /* what the client gets */
+};
+
+static rstatus_t repair_run(struct conn *conn, const struct repair_case *rc) {
+  static char buf[4096];
+  struct msg *req, *wreq = NULL, *repair = NULL;
+  struct response_mgr rspmgr;
+  bool did_rewrite = false;
+  rstatus_t status = DN_ERROR;
+
+  memset(&rspmgr, 0, sizeof(rspmgr));
+  req = repair_parse(conn, true, "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n");
+  if (req == NULL ||
+      redis_rewrite_query_with_timestamp_md(req, ctx, &did_rewrite, &wreq) !=
+          DN_OK ||
+      !did_rewrite) {
+    log_error("%s (mbuf %zu): GET not rewritten", rc->name, mbuf_data_size());
+    if (req != NULL) msg_put(req);
+    return DN_ERROR;
+  }
+  wreq->orig_msg = req;
+  wreq->orig_type = req->type;
+
+  rspmgr.msg = wreq;
+  for (int i = 0; i < 2; i++) {
+    rspmgr.responses[i] = repair_parse(conn, false, rc->rsp[i]);
+    if (rspmgr.responses[i] == NULL) goto out;
+    rspmgr.good_responses++;
+  }
+
+  if (redis_make_repair_query(ctx, &rspmgr, &repair) != DN_OK ||
+      (repair != NULL) != rc->repair ||
+      rspmgr.responses[0]->needs_repair != rc->repair ||
+      rspmgr.responses[1]->needs_repair) {
+    log_error("%s (mbuf %zu): repair %s, replies needing it %d %d", rc->name,
+              mbuf_data_size(), repair != NULL ? "made" : "not made",
+              rspmgr.responses[0]->needs_repair,
+              rspmgr.responses[1]->needs_repair);
+    goto out;
+  }
+  for (int i = 0; repair != NULL && i < 2; i++) {
+    if (rc->repair_has[i] != NULL &&
+        strstr(repair_data(repair, buf, sizeof(buf)), rc->repair_has[i]) ==
+            NULL) {
+      log_error("%s (mbuf %zu): repair '%.60s...' lacks '%.60s...'", rc->name,
+                mbuf_data_size(), buf, rc->repair_has[i]);
+      goto out;
+    }
+  }
+  if (strcmp(repair_data(rspmgr.responses[1], buf, sizeof(buf)), rc->client) !=
+      0) {
+    log_error("%s (mbuf %zu): client gets '%.60s...', want '%.60s...'",
+              rc->name, mbuf_data_size(), buf, rc->client);
+    goto out;
+  }
+  status = DN_OK;
+
+out:
+  for (int i = 0; i < rspmgr.good_responses; i++) {
+    msg_put(rspmgr.responses[i]);
+  }
+  if (repair != NULL) msg_put(repair);
+  msg_put(wreq);
+  return status;
+}
+
+static rstatus_t test_read_repair(struct conn *conn) {
+  static const size_t mbuf_sizes[] = {MBUF_MIN_SIZE, TEST_MBUF_SIZE};
+  static char big[1000 + 1], rsp_e1[1100], rsp_e2[1100], rsp_r[1100],
+      has_big[1100], client_big[1100];
+  size_t nruns = 0, nfailed = 0;
+
+  print_banner("READ REPAIR");
+
+  for (size_t i = 0; i < sizeof(big) - 1; i++) {
+    big[i] = (char)('a' + i % 26);
+  }
+  big[sizeof(big) - 1] = '\0';
+  dn_snprintf(rsp_e1, sizeof(rsp_e1),
+              "*3\r\n$1\r\nE\r\n$13\r\n1700000000000\r\n$3\r\nold\r\n");
+  dn_snprintf(rsp_e2, sizeof(rsp_e2),
+              "*3\r\n$1\r\nE\r\n$13\r\n1700000000001\r\n$%zu\r\n%s\r\n",
+              strlen(big), big);
+  dn_snprintf(rsp_r, sizeof(rsp_r),
+              "*3\r\n$1\r\nR\r\n$13\r\n1700000000000\r\n$%zu\r\n%s\r\n",
+              strlen(big), big);
+  dn_snprintf(has_big, sizeof(has_big), "\r\n$%zu\r\n%s\r\n", strlen(big),
+              big);
+  dn_snprintf(client_big, sizeof(client_big), "$%zu\r\n%s\r\n", strlen(big),
+              big);
+
+  const struct repair_case cases[] = {
+      {"newer value", {rsp_e1, rsp_e2}, true,
+       {has_big, "\r\n$13\r\n1700000000001\r\n"}, client_big},
+      {"newer removal",
+       {rsp_r, "*3\r\n$1\r\nR\r\n$13\r\n1700000000001\r\n$-1\r\n"}, true,
+       {"\r\n$3\r\nDEL\r\n", "\r\n$13\r\n1700000000001\r\n"}, "$-1\r\n"},
+      {"same age", {rsp_r, rsp_r}, false, {NULL, NULL}, client_big},
+      {"missing everywhere",
+       {"*3\r\n$1\r\nX\r\n:0\r\n$-1\r\n", "*3\r\n$1\r\nX\r\n:0\r\n$-1\r\n"},
+       false, {NULL, NULL}, "$-1\r\n"},
+      {"not a script reply", {"-ERR x\r\n", "-ERR x\r\n"}, false, {NULL, NULL},
+       "-ERR x\r\n"},
+  };
+
+  g_data_store = DATA_REDIS;
+  conn->dyn_mode = 0;
+  g_read_repairs_enabled = true;
+  g_read_consistency = g_write_consistency = DC_QUORUM;
+  for (size_t m = 0; m < NELEMS(mbuf_sizes); m++) {
+    mbuf_deinit();
+    mbuf_init(mbuf_sizes[m]);
+    for (size_t c = 0; c < NELEMS(cases); c++) {
+      nruns++;
+      if (repair_run(conn, &cases[c]) != DN_OK) {
+        nfailed++;
+      }
+    }
+  }
+  mbuf_deinit();
+  mbuf_init(TEST_MBUF_SIZE);
+  g_read_repairs_enabled = false;
+  g_read_consistency = g_write_consistency = DC_ONE;
+
+  if (nfailed != 0) {
+    log_error("%zu of %zu read repair runs failed", nfailed, nruns);
+    return DN_ERROR;
+  }
+  loga("%zu read repair runs passed", nruns);
   return DN_OK;
 }
 
@@ -1075,6 +1306,12 @@ int main(int argc, char **argv) {
   rstatus_t ret = test_parser(conn);
   if (ret != DN_OK) {
     loga("Error in testing the parser!!!");
+    goto err_out;
+  }
+
+  ret = test_read_repair(conn);
+  if (ret != DN_OK) {
+    loga("Error in testing read repairs!!!");
     goto err_out;
   }
 

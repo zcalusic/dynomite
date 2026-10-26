@@ -612,5 +612,5 @@ uint32_t keypos_elem_len(struct keypos* elem) {
 
 uint32_t argpos_elem_len(struct argpos* elem) {
   if (elem == NULL) return 0;
-  return elem->end - elem->start;
+  return elem->len;
 }

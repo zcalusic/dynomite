@@ -357,6 +357,7 @@ done:
   msg->pos = NULL;
   msg->token = NULL;
   msg->arg_start = NULL;
+  msg->arg_mbuf = NULL;
 
   msg->parser = NULL;
   msg->result = MSG_PARSE_OK;
@@ -416,7 +417,6 @@ done:
   msg->orig_type = MSG_UNKNOWN;
   msg->orig_msg = NULL;
   msg->needs_repair = false;
-  msg->rewrite_with_ts_possible = true;
   msg->additional_each_rspmgrs = NULL;
   msg->rspmgrs_inited = false;
 
@@ -1422,6 +1422,89 @@ rstatus_t msg_append(struct msg *msg, uint8_t *pos, size_t n) {
   msg->mlen += (uint32_t)n;
 
   return DN_OK;
+}
+
+/* Append n bytes of data, in as many mbufs as they need. */
+static rstatus_t msg_append_bytes(struct msg *msg, const uint8_t *pos,
+                                  size_t n) {
+  while (n > 0) {
+    struct mbuf *mbuf = msg_ensure_mbuf(msg, 1);
+    if (mbuf == NULL) {
+      return DN_ENOMEM;
+    }
+
+    size_t len = MIN(n, (size_t)mbuf_remaining_space(mbuf));
+    mbuf_copy(mbuf, pos, len);
+    msg->mlen += (uint32_t)len;
+    pos += len;
+    n -= len;
+  }
+
+  return DN_OK;
+}
+
+/*
+ * Append data as a redis bulk string, "$<n>\r\n<data>\r\n". The data can be
+ * binary.
+ */
+rstatus_t msg_append_bulk(struct msg *msg, const uint8_t *pos, uint32_t n) {
+  struct argpos arg = {(uint8_t *)pos, n, NULL};
+  return msg_append_arg(msg, &arg);
+}
+
+/* Append an argument, from as many mbufs as it spans, as a redis bulk string. */
+rstatus_t msg_append_arg(struct msg *msg, const struct argpos *arg) {
+  char len[16];
+  struct mbuf *mbuf = arg->mbuf;
+  uint8_t *pos = arg->start;
+  uint32_t left = arg->len;
+  int n = dn_scnprintf(len, sizeof(len), "$%" PRIu32 "\r\n", arg->len);
+
+  THROW_STATUS(msg_append_bytes(msg, (uint8_t *)len, (size_t)n));
+  while (left > 0) {
+    size_t avail = left;
+    if (mbuf != NULL) {
+      avail = MIN(avail, (size_t)(mbuf->last - pos));
+    }
+    THROW_STATUS(msg_append_bytes(msg, pos, avail));
+    left -= (uint32_t)avail;
+    if (left > 0) {
+      mbuf = STAILQ_NEXT(mbuf, next);
+      if (mbuf == NULL) {
+        return DN_ERROR;
+      }
+      pos = mbuf->pos;
+    }
+  }
+  return msg_append_bytes(msg, (uint8_t *)CRLF, CRLF_LEN);
+}
+
+/*
+ * Copy up to size bytes of an argument, from as many mbufs as it spans, to
+ * dst. Returns the number of bytes copied.
+ */
+uint32_t argpos_copy(const struct argpos *arg, uint8_t *dst, uint32_t size) {
+  struct mbuf *mbuf = arg->mbuf;
+  uint8_t *pos = arg->start;
+  uint32_t left = MIN(arg->len, size), copied = 0;
+
+  while (left > 0) {
+    uint32_t n = left;
+    if (mbuf != NULL) {
+      n = MIN(n, (uint32_t)(mbuf->last - pos));
+    }
+    dn_memcpy(dst + copied, pos, n);
+    copied += n;
+    left -= n;
+    if (left > 0) {
+      mbuf = STAILQ_NEXT(mbuf, next);
+      if (mbuf == NULL) {
+        break;
+      }
+      pos = mbuf->pos;
+    }
+  }
+  return copied;
 }
 
 /*

@@ -422,9 +422,14 @@ struct keypos {
   uint8_t *tag_end;   /* hashtagged key end pos */
 };
 
+/*
+ * An argument, starting at start in mbuf. It can go on into the mbufs after
+ * mbuf, from their pos.
+ */
 struct argpos {
-  uint8_t *start;     // Argument start position
-  uint8_t *end;       // Argument end position
+  uint8_t *start;    // Argument start position
+  uint32_t len;      // Argument length
+  struct mbuf *mbuf; // The mbuf holding start
 };
 
 // This struct is used when 'read_repairs' is enabled. It holds information required to
@@ -473,7 +478,8 @@ struct msg {
   int state;      /* current parser state */
   uint8_t *pos;   /* parser position marker */
   uint8_t *token; /* token marker */
-  uint8_t *arg_start; /* start of the reply element being parsed (redis) */
+  uint8_t *arg_start;    /* start of the arg being parsed (redis) */
+  struct mbuf *arg_mbuf; /* the mbuf holding arg_start */
 
   func_msg_parse_t parser;   /* message parser */
   msg_parse_result_t result; /* message parsing result */
@@ -521,9 +527,6 @@ struct msg {
   unsigned rsp_sent : 1; /* is a response sent for this request?*/
   uint64_t timestamp;   // Timestamp of request. Used only if 'read_repiars' is enabled.
 
-  // Some 'msg's are not possible to rewrite.
-  // Currently, the main reason is if an arg is across mbuf's.
-  bool rewrite_with_ts_possible;
   bool needs_repair;    // If 'true', a repair msg will be sent to 'owner'.
   struct write_with_ts msg_info;
   struct msg *orig_msg; // The original message if a rewrite took place.
@@ -593,6 +596,9 @@ struct msg *msg_get_rsp_integer(struct conn *conn);
 struct mbuf *msg_ensure_mbuf(struct msg *msg, size_t len);
 rstatus_t msg_append(struct msg *msg, uint8_t *pos, size_t n);
 rstatus_t msg_append_format(struct msg *msg, const char *fmt, int num_args, ...);
+rstatus_t msg_append_bulk(struct msg *msg, const uint8_t *pos, uint32_t n);
+rstatus_t msg_append_arg(struct msg *msg, const struct argpos *arg);
+uint32_t argpos_copy(const struct argpos *arg, uint8_t *dst, uint32_t size);
 rstatus_t msg_prepend(struct msg *msg, uint8_t *pos, size_t n);
 rstatus_t msg_prepend_format(struct msg *msg, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));

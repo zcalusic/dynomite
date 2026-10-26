@@ -176,11 +176,12 @@ def run_hash_tests(c, max_keys=10, max_fields=1000):
         #if next_index == 0:
             #break
 
-def run_read_repair_test(c, num_keys=10):
+def run_read_repair_test(c, num_keys=10, min_size=1, max_size=1024):
     # Enable read repairs (TODO)
 
     test_name="READ_REPAIR_TEST"
-    print("Running %s tests" % test_name)
+    print("Running %s tests, values of %d to %d bytes" %
+          (test_name, min_size, max_size))
 
     dyno_cluster = c.get_dynomite_cluster()
 
@@ -199,8 +200,8 @@ def run_read_repair_test(c, num_keys=10):
     dyno_cluster.set_cluster_consistency_level("DC_SAFE_QUORUM")
 
     # Set a key
-    key = create_key(test_name, "_1")
-    value = string_generator(size=random.randint(1, 1024))
+    key = create_key(test_name, "_%d" % max_size)
+    value = string_generator(size=random.randint(min_size, max_size))
 
     print("\t-Writing to key '%s'" % key)
     c.run_verify("set", key, value)
@@ -214,7 +215,8 @@ def run_read_repair_test(c, num_keys=10):
     # After simulating such a write, doing a quorum read will eventually fix the
     # key on all replicas.
     ADD_SET_MD_KEY = "._add-set"
-    REPAIRED_VALUE = "REPAIRED_VALUE"
+    REPAIRED_VALUE = "REPAIRED_VALUE" + string_generator(
+        size=random.randint(min_size, max_size))
 
     # Find a DC with multiple racks (i.e. RF > 1)
     dc_name, racks = dyno_cluster.get_multi_rack_dc()
@@ -284,4 +286,7 @@ def comparison_test(redis, dynomite, debug):
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM
     run_read_repair_test(c)
+    # Values larger than an mbuf (16 KB), in the requests, the replies and the
+    # repairs
+    run_read_repair_test(c, min_size=64*1024, max_size=100*1024)
     print("All test ran fine")
