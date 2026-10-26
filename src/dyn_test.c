@@ -233,9 +233,10 @@ struct parse_req {
   msg_type_t type;
   char keys[1024];  /* space-separated */
   const char *args; /* space-separated, NULL if not checked */
+  bool too_long;    /* a key was skipped as too long (keys has the others) */
 };
 
-#define PARSE_DATA_MAX 8192
+#define PARSE_DATA_MAX 81920
 #define PARSE_REQS_MAX 32
 
 /* A stream of requests or responses, and what the parser should make of it. */
@@ -297,6 +298,7 @@ static void parse_add_req(struct parse_case *tc, msg_type_t type,
   tc->reqs[tc->nreqs].type = type;
   dn_snprintf(tc->reqs[tc->nreqs].keys, sizeof(tc->reqs[0].keys), "%s", keys);
   tc->reqs[tc->nreqs].args = NULL;
+  tc->reqs[tc->nreqs].too_long = false;
   tc->nreqs++;
 }
 
@@ -311,6 +313,16 @@ static void parse_add_args(struct parse_case *tc, msg_type_t type,
                            const char *words) {
   parse_add(tc, type, keys, words);
   tc->reqs[tc->nreqs - 1].args = args;
+}
+
+/*
+ * Append a request with a key too long to keep, which the parser should skip
+ * and flag; keys are the other ones.
+ */
+static void parse_add_too_long(struct parse_case *tc, msg_type_t type,
+                               const char *keys, const char *words) {
+  parse_add(tc, type, keys, words);
+  tc->reqs[tc->nreqs - 1].too_long = true;
 }
 
 /* Append a response the parser should accept, with its type and args. */
@@ -451,6 +463,12 @@ static rstatus_t parse_check(const struct parse_case *tc, size_t chunk,
               keys);
     return DN_ERROR;
   }
+  if (msg->key_too_long != tc->reqs[i].too_long) {
+    log_error("%s (mbuf %zu, chunk %zu%s): %s %zu %s a key too long", tc->name,
+              mbuf_data_size(), chunk, parse_mode(), what, i + 1,
+              msg->key_too_long ? "has" : "doesn't have");
+    return DN_ERROR;
+  }
   if (msg->type != tc->reqs[i].type ||
       strcmp(keys, tc->reqs[i].keys) != 0) {
     log_error("%s (mbuf %zu, chunk %zu%s): %s %zu is %.*s [%s], want "
@@ -571,6 +589,8 @@ static void parse_cases_init(void) {
   struct parse_case *tc;
   /* the expected request args must outlive this function */
   static char big[600 + 1], big_v[700];
+  /* a key longer than the largest test mbuf, of letters in turn too */
+  static char huge[TEST_MBUF_SIZE + 600 + 1], long_words[sizeof(huge) + 700];
   char words[700], rsp[2048], args[1024];
 
   /*
@@ -582,6 +602,10 @@ static void parse_cases_init(void) {
   }
   big[sizeof(big) - 1] = '\0';
   dn_snprintf(big_v, sizeof(big_v), "%s v", big);
+  for (size_t i = 0; i < sizeof(huge) - 1; i++) {
+    huge[i] = (char)('a' + i % 26);
+  }
+  huge[sizeof(huge) - 1] = '\0';
 
   tc = parse_case_new("redis pipeline", DATA_REDIS, false);
   parse_add(tc, MSG_REQ_REDIS_PING, "", "PING");
@@ -670,8 +694,50 @@ static void parse_cases_init(void) {
     parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
     parse_reject(tc, mc_rejects[i].data);
   }
-  /* a key one byte longer than memcache allows (MEMCACHE_MAX_KEY_LENGTH) */
-  tc = parse_case_new("memcache long key", DATA_MEMCACHE, false);
+  /*
+   * Keys too long to keep: longer than both test mbufs for redis, than
+   * memcached allows (MEMCACHE_MAX_KEY_LENGTH) for memcache. From a client,
+   * the parser skips them and flags the request, which goes on; requests
+   * after it must parse as usual. From a peer, it rejects them.
+   */
+  tc = parse_case_new("redis long keys", DATA_REDIS, false);
+  parse_add(tc, MSG_REQ_REDIS_GET, "foo", "GET foo");
+  dn_snprintf(long_words, sizeof(long_words), "GET %s", huge);
+  parse_add_too_long(tc, MSG_REQ_REDIS_GET, "", long_words);
+  dn_snprintf(long_words, sizeof(long_words), "SET %s %s", huge, big);
+  parse_add_too_long(tc, MSG_REQ_REDIS_SET, "", long_words);
+  dn_snprintf(long_words, sizeof(long_words), "MGET k1 %s k3", huge);
+  parse_add_too_long(tc, MSG_REQ_REDIS_MGET, "k1 k3", long_words);
+  dn_snprintf(long_words, sizeof(long_words), "MSET k1 v1 %s v2", huge);
+  parse_add_too_long(tc, MSG_REQ_REDIS_MSET, "k1", long_words);
+  parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
+
+  tc = parse_case_new("dnode long key", DATA_REDIS, true);
+  parse_add(tc, MSG_REQ_REDIS_SET, "foo1", "set foo1 bar1");
+  dn_snprintf(long_words, sizeof(long_words), "GET %s", huge);
+  parse_reject(tc, long_words);
+
+  tc = parse_case_new("memcache long keys", DATA_MEMCACHE, false);
+  parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
+  dn_snprintf(words, sizeof(words), "get %.*s\r\n", 251, big);
+  parse_add_too_long(tc, MSG_REQ_MC_GET, "", words);
+  dn_snprintf(words, sizeof(words), "get k1 %.*s k2\r\n", 300, big);
+  parse_add_too_long(tc, MSG_REQ_MC_GET, "k1 k2", words);
+  dn_snprintf(long_words, sizeof(long_words), "set %s 0 0 5\r\nhello\r\n",
+              huge);
+  parse_add_too_long(tc, MSG_REQ_MC_SET, "", long_words);
+  dn_snprintf(words, sizeof(words), "set %.*s 0 0 5 noreply\r\nhello\r\n",
+              251, big);
+  parse_add_too_long(tc, MSG_REQ_MC_SET, "", words);
+  dn_snprintf(words, sizeof(words), "delete %.*s\r\n", 251, big);
+  parse_add_too_long(tc, MSG_REQ_MC_DELETE, "", words);
+  /* the longest memcached allows */
+  dn_snprintf(words, sizeof(words), "get %.*s\r\n", 250, big);
+  dn_snprintf(rsp, sizeof(rsp), "%.*s", 250, big);
+  parse_add(tc, MSG_REQ_MC_GET, rsp, words);
+  parse_add(tc, MSG_REQ_MC_GET, "last", "get last\r\n");
+
+  tc = parse_case_new("memcache dnode long key", DATA_MEMCACHE, true);
   parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
   dn_snprintf(words, sizeof(words), "get %.*s\r\n", 251, big);
   parse_reject(tc, words);

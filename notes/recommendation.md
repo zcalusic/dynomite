@@ -46,7 +46,7 @@ Dynomite keeps requests and responses in mbufs, buffers of `mbuf_size:` bytes (d
 
 ## Maximum Key Length
 
-The memcache protocol limits keys to 250 characters. Redis has no such limit, but dynomite needs every key to fit in one mbuf. In both cases a request with a longer key gets its client connection closed, without an error reply. If your redis keys can be long, choose a larger `mbuf_size:`.
+The memcache protocol limits keys to 250 characters. Redis has no such limit, but dynomite needs every key to fit in one mbuf, so a redis key can be at most `mbuf_size:` minus 57 bytes long (16327 bytes with the default mbuf size). A request with a longer key gets an error and isn't run, and the connection stays open: `-ERR Dynomite: Key is too long, the limit is 16327 bytes` (redis) or `CLIENT_ERROR Dynomite: Key is too long, the limit is 250 bytes` (memcache; a `noreply` request gets no reply). If your redis keys can be long, choose a larger `mbuf_size:`. Requests between nodes are still parsed against the receiving node's mbuf size, so give every node the same `mbuf_size:`.
 
 ## Hash Tags
 

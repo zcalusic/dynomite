@@ -537,6 +537,8 @@ struct msg {
    * destination */
   unsigned dnode_header_prepended : 1;
   unsigned rsp_sent : 1; /* is a response sent for this request?*/
+  /* A key was too long to keep: req_filter() answers with an error. */
+  unsigned key_too_long : 1;
   uint64_t timestamp;   // Timestamp of request. Used only if 'read_repiars' is enabled.
 
   bool needs_repair;    // If 'true', a repair msg will be sent to 'owner'.
@@ -685,6 +687,9 @@ rstatus_t simulate_ok_rsp(struct context *ctx, struct conn *conn,
  */
 rstatus_t simulate_rsp(struct context *ctx, struct conn *conn,
     struct msg *msg, const char *rsp_str);
+
+/* The longest memcache key, as in memcached. */
+#define MEMCACHE_MAX_KEY_LENGTH 250
 
 // Returns 'true' if 'msg_type' is a Dynomite configuration command.
 bool is_msg_type_dyno_config(msg_type_t msg_type);

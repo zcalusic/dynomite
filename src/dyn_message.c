@@ -404,6 +404,7 @@ done:
   msg->swallow = 0;
   msg->dnode_header_prepended = 0;
   msg->rsp_sent = 0;
+  msg->key_too_long = 0;
 
   // dynomite
   msg->is_read = 1;

@@ -35,8 +35,9 @@
  * length limit of a key is set at 250 characters (of course, normally
  * clients wouldn't need to use such long keys); the key must not include
  * control characters or whitespace.
+ *
+ * (MEMCACHE_MAX_KEY_LENGTH, in dyn_message.h, so the error reply can name it.)
  */
-#define MEMCACHE_MAX_KEY_LENGTH 250
 
 /*
  * Return true, if the memcache command is a storage command, otherwise
@@ -156,6 +157,7 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
     SW_NOREPLY,
     SW_AFTER_NOREPLY,
     SW_ALMOST_DONE,
+    SW_KEY_SKIP,
     SW_SENTINEL
   } state;
 
@@ -386,6 +388,7 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
           r->ntokens++;
           r->token = NULL;
 
+        key_done:
           /* get next state */
           if (memcache_storage(r)) {
             state = SW_SPACES_BEFORE_FLAGS;
@@ -405,6 +408,26 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
             }
             p = p - 1; /* go back by 1 byte */
           }
+        } else if (p - r->token >= MEMCACHE_MAX_KEY_LENGTH &&
+                   r->owner != NULL && !r->owner->dyn_mode) {
+          /*
+           * Longer than memcached allows. From a client, skip it and answer
+           * the request with an error (req_filter()), instead of keeping it
+           * in one mbuf; a peer can't be answered that way.
+           */
+          log_info("req %" PRIu64 " of type %d has a key longer than %d "
+                   "bytes", r->id, r->type, MEMCACHE_MAX_KEY_LENGTH);
+          r->key_too_long = 1;
+          r->token = NULL;
+          state = SW_KEY_SKIP;
+        }
+
+        break;
+
+      case SW_KEY_SKIP:
+        if (ch == ' ' || ch == CR) {
+          r->ntokens++;
+          goto key_done; /* on as after any key, without keeping this one */
         }
 
         break;

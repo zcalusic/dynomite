@@ -378,6 +378,29 @@ static bool req_filter(struct context *ctx, struct conn *conn,
     return true;
   }
 
+  // The parser skipped a key too long to keep, so the request can't be
+  // routed: answer it with an error, or drop it if it asked for no reply.
+  if (req->key_too_long) {
+    log_debug(LOG_VERB, "%s filter key too long %s", print_obj(conn),
+              print_obj(req));
+    if (!req->expect_datastore_reply) {
+      req_put(req);
+      return true;
+    }
+    char rsp[128];
+    if (g_data_store == DATA_REDIS) {
+      dn_snprintf(rsp, sizeof(rsp),
+                  "-ERR Dynomite: Key is too long, the limit is %zu bytes"
+                  CRLF, mbuf_data_size() - 1);
+    } else {
+      dn_snprintf(rsp, sizeof(rsp),
+                  "CLIENT_ERROR Dynomite: Key is too long, the limit is %d "
+                  "bytes" CRLF, MEMCACHE_MAX_KEY_LENGTH);
+    }
+    IGNORE_RET_VAL(simulate_rsp(ctx, conn, req, rsp));
+    return true;
+  }
+
   // Clients send these on connect. Dynomite can't forward them, since server
   // connections are shared, so answer them here: CLIENT SETINFO with +OK,
   // HELLO with the error older Redis versions send, so that clients fall

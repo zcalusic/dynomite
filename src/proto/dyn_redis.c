@@ -566,6 +566,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
     SW_ARGN_LF,
     SW_FRAGMENT,
     SW_INLINE_PING,
+    SW_KEY_SKIP,
     SW_SENTINEL
   } state;
 
@@ -1722,11 +1723,22 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             goto error;
           }
           if (r->rlen >= mbuf_data_size()) {
-            log_error("parsed bad req %" PRIu64
-                      " of type %d with key length %d that greater than or "
-                      "equal to maximum redis key length of %zu",
-                      r->id, r->type, r->rlen, mbuf_data_size());
-            goto error;
+            /*
+             * A key has to fit in one mbuf. From a client, skip it and
+             * answer the request with an error (req_filter()); a peer
+             * can't be answered that way.
+             */
+            if (r->owner == NULL || r->owner->dyn_mode) {
+              log_error("parsed bad req %" PRIu64
+                        " of type %d with key length %d that greater than or "
+                        "equal to maximum redis key length of %zu",
+                        r->id, r->type, r->rlen, mbuf_data_size());
+              goto error;
+            }
+            log_info("req %" PRIu64 " of type %d has a key of %" PRIu32
+                     " bytes, the limit is %zu",
+                     r->id, r->type, r->rlen, mbuf_data_size() - 1);
+            r->key_too_long = 1;
           }
           if (r->rntokens == 0) {
             goto error;
@@ -1743,7 +1755,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
       case SW_KEY_LEN_LF:
         switch (ch) {
           case LF:
-            state = SW_KEY;
+            state = r->rlen >= mbuf_data_size() ? SW_KEY_SKIP : SW_KEY;
             break;
 
           default:
@@ -1796,6 +1808,23 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           state = SW_KEY_LF;
         }
 
+        break;
+
+      case SW_KEY_SKIP:
+        /* a key too long to keep, read over as many mbufs as it spans */
+        m = p + r->rlen;
+        if (m >= b->last) {
+          r->rlen -= (uint32_t)(b->last - p);
+          m = b->last - 1;
+          p = m;
+          break;
+        }
+        if (*m != CR) {
+          goto error;
+        }
+        p = m;
+        r->rlen = 0;
+        state = SW_KEY_LF;
         break;
 
       case SW_KEY_LF:
