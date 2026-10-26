@@ -4,8 +4,8 @@
 #
 # usage: test/run_tests.sh [-n|--no-rebuild] [request_file ...]
 #
-# Without request files, runs test/no_quorum_request.yaml and
-# test/safe_quorum_request.yaml.
+# Without request files, runs test/no_quorum_request.yaml,
+# test/safe_quorum_request.yaml and test/each_safe_quorum_request.yaml.
 
 usage() {
     echo "usage: $0 [-n|--no-rebuild] [request_file ...]" >&2
@@ -30,7 +30,8 @@ set -o pipefail
 cd "$(dirname "$0")/.."
 
 if [ "$#" -eq 0 ]; then
-    set -- test/no_quorum_request.yaml test/safe_quorum_request.yaml
+    set -- test/no_quorum_request.yaml test/safe_quorum_request.yaml \
+        test/each_safe_quorum_request.yaml
 fi
 
 #build Dynomite

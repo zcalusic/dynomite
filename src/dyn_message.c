@@ -825,10 +825,10 @@ uint32_t msg_payload_crc32(struct msg *rsp) {
      the beginning of the first mbuf */
   bool start_found = rsp->dmsg ? false : true;
 
-  // If the message is from another DC, the mbufs will have the decrypted
-  // payload without the Dynomite header, so we do have the start.
-  // rsp->dmsg->payload for cross DC msgs will have the encrypted payload.
-  if (rsp->dmsg && !rsp->owner->same_dc) start_found = true;
+  // If the message was encrypted, the mbufs will have the decrypted payload
+  // without the Dynomite header, so we do have the start.
+  // rsp->dmsg->payload for encrypted msgs will have the encrypted payload.
+  if (rsp->dmsg && (rsp->dmsg->flags & 0x1)) start_found = true;
 
   STAILQ_FOREACH(mbuf, &rsp->mhdr, next) {
     uint8_t *start = mbuf->start;
