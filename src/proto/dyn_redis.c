@@ -2068,7 +2068,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         if (m >= b->last) {
           // If we don't have a following mbuf, we expect a following incoming
           // buffer to have the rest of the payload.
-          r->rlen -= (uint32_t)(b->last - p);
+          if (r->token != NULL && b->last == b->end) {
+            // msg_repair() moves the number of keys of EVAL/EVALSHA to a new
+            // mbuf, from r->token, where it's parsed again from its start.
+            r->rlen = (uint32_t)(m - r->token);
+          } else {
+            r->rlen -= (uint32_t)(b->last - p);
+          }
           m = b->last - 1;
           p = m;
           break;

@@ -567,6 +567,11 @@ static void parse_cases_init(void) {
   dn_snprintf(rsp, sizeof(rsp), "%.*s {t}abcdefghijklmnop(t)", 430, big);
   parse_add(tc, MSG_REQ_REDIS_MGET, rsp, words);
 
+  /* the number of keys is the last byte of the smallest mbuf */
+  tc = parse_case_new("redis eval cut", DATA_REDIS, false);
+  dn_snprintf(words, sizeof(words), "EVAL %.*s 1 ek arg", 421, big);
+  parse_add(tc, MSG_REQ_REDIS_EVAL, "ek", words);
+
   tc = parse_case_new("memcache hash tags", DATA_MEMCACHE, false);
   tc->hash_tag = "{}";
   parse_add(tc, MSG_REQ_MC_GET, "user:{42}:name(42) b",
