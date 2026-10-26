@@ -1913,7 +1913,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
-            int new_mbuf_offset = m - b->last;
+            size_t new_mbuf_offset = (size_t)(m - b->last);
             struct mbuf *next_mbuf;
             next_mbuf = STAILQ_NEXT(b, next);
             if (next_mbuf == NULL) break;
@@ -2053,7 +2053,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
-            int new_mbuf_offset = m - b->last;
+            size_t new_mbuf_offset = (size_t)(m - b->last);
             struct mbuf *next_mbuf;
             next_mbuf = STAILQ_NEXT(b, next);
             if (next_mbuf == NULL) break;
@@ -2206,7 +2206,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
-            int new_mbuf_offset = m - b->last;
+            size_t new_mbuf_offset = (size_t)(m - b->last);
             struct mbuf *next_mbuf;
             next_mbuf = STAILQ_NEXT(b, next);
             if (next_mbuf == NULL) break;
@@ -2308,7 +2308,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
-            int new_mbuf_offset = m - b->last;
+            size_t new_mbuf_offset = (size_t)(m - b->last);
             struct mbuf *next_mbuf;
             next_mbuf = STAILQ_NEXT(b, next);
             if (next_mbuf == NULL) break;
@@ -3087,9 +3087,9 @@ static rstatus_t redis_copy_bulk(struct msg *dst, struct msg *src, bool log) {
       return DN_ERROR;
     }
   }
-  bytes += CRLF_LEN;
+  bytes += (uint32_t)CRLF_LEN;
   if (!nil) {
-    bytes += len + CRLF_LEN;
+    bytes += len + (uint32_t)CRLF_LEN;
   }
   if (log) log_notice("bulk of %d bytes", bytes);
 
@@ -3232,7 +3232,7 @@ void redis_pre_coalesce(struct msg *rsp) {
  * responses to the fragmented request vector has been received and
  * the fragmented request is consider to be done
  */
-void redis_post_coalesce_mset(struct msg *request) {
+static void redis_post_coalesce_mset(struct msg *request) {
   rstatus_t status;
   struct msg *response = request->selected_rsp;
 
@@ -3243,7 +3243,7 @@ void redis_post_coalesce_mset(struct msg *request) {
   }
 }
 
-void redis_post_coalesce_num(struct msg *request) {
+static void redis_post_coalesce_num(struct msg *request) {
   struct msg *response = request->selected_rsp;
   rstatus_t status;
 
@@ -3330,8 +3330,8 @@ static rstatus_t redis_append_key(struct msg *r, struct keypos *kpos_src) {
   struct keypos *kpos;
 
   /* 1. keylen */
-  uint32_t keylen = kpos_src->end - kpos_src->start;
-  uint32_t taglen = kpos_src->tag_end - kpos_src->tag_start;
+  uint32_t keylen = (uint32_t)(kpos_src->end - kpos_src->start);
+  uint32_t taglen = (uint32_t)(kpos_src->tag_end - kpos_src->tag_start);
   len = (uint32_t)dn_snprintf(printbuf, sizeof(printbuf), "$%d\r\n", keylen);
   mbuf = msg_ensure_mbuf(r, len);
   if (mbuf == NULL) {
@@ -3476,7 +3476,8 @@ static rstatus_t redis_fragment_argx(struct msg *r, struct server_pool *pool,
     struct keypos *kpos = array_get(r->keys, i);
     // use hash-tagged start and end for forwarding.
     uint32_t idx = dnode_peer_idx_for_key_on_rack(
-        pool, rack, kpos->tag_start, kpos->tag_end - kpos->tag_start);
+        pool, rack, kpos->tag_start,
+        (uint32_t)(kpos->tag_end - kpos->tag_start));
     if (sub_msgs[idx] == NULL) {
       sub_msgs[idx] = msg_get(r->owner, r->is_request, __FUNCTION__);
       if (sub_msgs[idx] == NULL) {
@@ -3508,7 +3509,8 @@ static rstatus_t redis_fragment_argx(struct msg *r, struct server_pool *pool,
     struct keypos *kpos = array_get(r->keys, i);
     // use hash-tagged start and end for forwarding.
     uint32_t idx = dnode_peer_idx_for_key_on_rack(
-        pool, rack, kpos->tag_start, kpos->tag_end - kpos->tag_start);
+        pool, rack, kpos->tag_start,
+        (uint32_t)(kpos->tag_end - kpos->tag_start));
 
     // We already created the 'sub_msg' in the previous loop.
     ASSERT(sub_msgs[idx] != NULL);
@@ -3606,7 +3608,8 @@ rstatus_t redis_verify_request(struct msg *r, struct server_pool *pool,
     if (strncmp((char*)kpos->start, ADD_SET_STR, strlen(ADD_SET_STR)) == 0) continue;
     if (strncmp((char*)kpos->start, REM_SET_STR, strlen(REM_SET_STR)) == 0) continue;
     uint32_t idx = dnode_peer_idx_for_key_on_rack(
-        pool, rack, kpos->tag_start, kpos->tag_end - kpos->tag_start);
+        pool, rack, kpos->tag_start,
+        (uint32_t)(kpos->tag_end - kpos->tag_start));
     if (i == 0) prev_idx = idx;
     if (prev_idx != idx) {
       return DYNOMITE_SCRIPT_SPANS_NODES;
@@ -3750,7 +3753,7 @@ static struct msg *redis_get_fragment_quorum(
   }
 }
 
-rstatus_t free_rsp_each(void *elem) {
+static rstatus_t free_rsp_each(void *elem) {
   struct msg *rsp = *(struct msg **)elem;
   ASSERT(rsp->object.type == OBJ_RSP);
   rsp_put(rsp);

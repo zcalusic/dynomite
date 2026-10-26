@@ -348,7 +348,7 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
         }
         if (ch == ' ' || ch == CR) {
           struct keypos *kpos;
-          int keylen = p - r->token;
+          size_t keylen = (size_t)(p - r->token);
           if (keylen > MEMCACHE_MAX_KEY_LENGTH) {
             log_error("parsed bad req %" PRIu64
                       " of type %d with key prefix '%.*s...' and length %td "
@@ -1254,13 +1254,11 @@ error:
               r->id, r->result, r->type, r->state);
 }
 
-bool memcache_failure(struct msg *r) { return false; }
-
 static rstatus_t memcache_append_key(struct msg *r,
                                      struct keypos *kpos_src) {
   struct mbuf *mbuf;
   struct keypos *kpos;
-  uint32_t keylen = kpos_src->end - kpos_src->start;
+  uint32_t keylen = (uint32_t)(kpos_src->end - kpos_src->start);
 
   mbuf = msg_ensure_mbuf(r, keylen + 2);
   if (mbuf == NULL) {
@@ -1333,7 +1331,8 @@ static rstatus_t memcache_fragment_retrieval(struct msg *r,
     struct keypos *kpos = array_get(r->keys, i);
     // use hash-tagged start and end for forwarding.
     uint32_t idx = dnode_peer_idx_for_key_on_rack(
-        pool, rack, kpos->tag_start, kpos->tag_end - kpos->tag_start);
+        pool, rack, kpos->tag_start,
+        (uint32_t)(kpos->tag_end - kpos->tag_start));
 
     if (sub_msgs[idx] == NULL) {
       sub_msgs[idx] = msg_get(r->owner, r->is_request, __FUNCTION__);
@@ -1605,23 +1604,6 @@ void memcache_post_coalesce(struct msg *request) {
     response->owner->err = 1;
     return;
   }
-}
-
-void memcache_post_connect(struct context *ctx, struct conn *conn,
-                           struct server *server) {}
-
-void memcache_swallow_msg(struct conn *conn, struct msg *pmsg,
-                          struct msg *msg) {}
-
-rstatus_t memcache_add_auth(struct context *ctx, struct conn *c_conn,
-                            struct conn *s_conn) {
-  NOT_REACHED();
-  return DN_OK;
-}
-
-rstatus_t memcache_reply(struct msg *r) {
-  NOT_REACHED();
-  return DN_OK;
 }
 
 bool memcache_is_multikey_request(struct msg *r) { return false; }
