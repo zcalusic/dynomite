@@ -621,12 +621,13 @@ consistency_t msg_conn_consistency(struct msg *msg);
 rstatus_t msg_prepend(struct msg *msg, uint8_t *pos, size_t n);
 rstatus_t msg_prepend_format(struct msg *msg, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
+rstatus_t msg_parse_data(struct context *ctx, struct msg *msg,
+                         const uint8_t *data, size_t len);
 
 uint8_t *msg_get_tagged_key(struct msg *req, uint32_t key_index,
                             uint32_t *keylen);
 uint8_t *msg_get_full_key(struct msg *req, uint32_t key_index,
                           uint32_t *keylen);
-uint8_t *msg_get_full_key_copy(struct msg *msg, int idx, uint32_t *keylen);
 
 struct msg *req_get(struct conn *conn);
 void req_put(struct msg *msg);

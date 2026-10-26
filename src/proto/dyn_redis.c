@@ -431,8 +431,8 @@ static rstatus_t record_arg(struct msg *r, struct mbuf *b, uint8_t *end) {
  */
 rstatus_t redis_rewrite_query(struct msg *orig_msg, struct context *ctx,
                               bool *did_rewrite, struct msg **new_msg_ptr) {
-  const char *SMEMBERS_REWRITE_FMT_STRING =
-      "*3\r\n$4\r\nsort\r\n$%d\r\n%s\r\n$5\r\nalpha\r\n";
+  static const char SORT_PREFIX[] = "*3\r\n$4\r\nsort\r\n";
+  static const char SORT_SUFFIX[] = "\r\n$5\r\nalpha\r\n";
 
   ASSERT(orig_msg != NULL);
   ASSERT(orig_msg->is_request);
@@ -440,69 +440,44 @@ rstatus_t redis_rewrite_query(struct msg *orig_msg, struct context *ctx,
 
   *did_rewrite = false;
 
-  struct msg *new_msg = NULL;
-  uint8_t *key = NULL;
-  rstatus_t ret_status = DN_OK;
-
-  switch (orig_msg->type) {
-    case MSG_REQ_REDIS_SMEMBERS:
-
-      if (orig_msg->owner->read_consistency == DC_SAFE_QUORUM) {
-
-        // Get a new 'msg' structure.
-        new_msg = msg_get(orig_msg->owner, true, __FUNCTION__);
-        if (new_msg == NULL) {
-          ret_status = DN_ENOMEM;
-          goto error;
-        }
-
-        uint32_t keylen;
-        // Get a copy of the key from 'orig_msg'.
-        key = msg_get_full_key_copy(orig_msg, 0, &keylen);
-        if (key == NULL) {
-          ret_status = DN_ENOMEM;
-          goto error;
-        }
-
-        // Write the new command into 'new_msg'
-        rstatus_t prepend_status = msg_prepend_format(
-            new_msg, SMEMBERS_REWRITE_FMT_STRING, keylen, key);
-        if (prepend_status != DN_OK) {
-          ret_status = prepend_status;
-          goto error;
-        }
-
-        {
-          // Point the 'pos' pointer in 'new_msg' to the mbuf we've added.
-          struct mbuf *new_mbuf = STAILQ_LAST(&new_msg->mhdr, mbuf, next);
-          new_msg->pos = new_mbuf->pos;
-        }
-        // Parse the message 'new_msg' to populate all of its appropriate
-        // fields.
-        new_msg->parser(new_msg, ctx);
-        // Check if 'new_msg' was parsed successfully.
-        if (new_msg->result != MSG_PARSE_OK) {
-          ret_status = DN_ERROR;
-          goto error;
-        }
-
-        *new_msg_ptr = new_msg;
-        *did_rewrite = true;
-        goto done;
-      }
-      break;
-    default:
-      return DN_OK;
+  if (orig_msg->type != MSG_REQ_REDIS_SMEMBERS ||
+      orig_msg->owner->read_consistency != DC_SAFE_QUORUM) {
+    return DN_OK;
   }
 
-error:
-  if (key != NULL) dn_free(key);
-  // Return the newly allocated message back to the free message queue.
-  if (new_msg != NULL) msg_put(new_msg);
-  return ret_status;
+  // The key can be binary, so write it as the bytes it is, not with %s.
+  uint32_t keylen;
+  uint8_t *key = msg_get_full_key(orig_msg, 0, &keylen);
+  if (key == NULL) return DN_ERROR;
 
-done:
-  if (key != NULL) dn_free(key);
+  char keyhdr[16];
+  int hdrlen = dn_scnprintf(keyhdr, sizeof(keyhdr), "$%" PRIu32 "\r\n", keylen);
+  size_t len = sizeof(SORT_PREFIX) - 1 + (size_t)hdrlen + keylen +
+               sizeof(SORT_SUFFIX) - 1;
+  uint8_t *data = dn_alloc(len), *p = data;
+  if (data == NULL) return DN_ENOMEM;
+  dn_memcpy(p, SORT_PREFIX, sizeof(SORT_PREFIX) - 1);
+  p += sizeof(SORT_PREFIX) - 1;
+  dn_memcpy(p, keyhdr, hdrlen);
+  p += hdrlen;
+  dn_memcpy(p, key, keylen);
+  p += keylen;
+  dn_memcpy(p, SORT_SUFFIX, sizeof(SORT_SUFFIX) - 1);
+
+  // Parse the new query, so that it has its keys etc. like any request.
+  rstatus_t status = DN_ENOMEM;
+  struct msg *new_msg = msg_get(orig_msg->owner, true, __FUNCTION__);
+  if (new_msg != NULL) {
+    status = msg_parse_data(ctx, new_msg, data, len);
+  }
+  dn_free(data);
+  if (status != DN_OK) {
+    if (new_msg != NULL) msg_put(new_msg);
+    return status;
+  }
+
+  *new_msg_ptr = new_msg;
+  *did_rewrite = true;
   return DN_OK;
 }
 

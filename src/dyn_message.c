@@ -793,26 +793,42 @@ uint8_t *msg_get_tagged_key(struct msg *req, uint32_t key_index,
 }
 
 /*
- * Returns the 'idx' key in 'msg'.
- *
- * Transfers ownership of returned buffer to the caller, so the caller must
- * take the responsibility of freeing it.
- *
- * Returns NULL if key does not exist or if we're unable to allocate memory.
+ * Put len bytes of data in msg, an empty message, in as many mbufs as they
+ * need, and parse them as one whole message, the way msg_recv_chain() and
+ * msg_repair() would. Returns DN_ERROR if data isn't exactly one message.
  */
-uint8_t *msg_get_full_key_copy(struct msg *msg, int idx, uint32_t *keylen) {
-  // Get a pointer to the required key in 'msg'.
-  uint8_t *key_ptr = msg_get_full_key(msg, idx, keylen);
+rstatus_t msg_parse_data(struct context *ctx, struct msg *msg,
+                         const uint8_t *data, size_t len) {
+  size_t fed = 0;
 
-  // Allocate a new buffer for the key.
-  uint8_t *copied_key = dn_alloc((size_t)(*keylen + 1));
-  if (copied_key == NULL) return NULL;
+  for (;;) {
+    struct mbuf *mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
+    if (mbuf == NULL || mbuf_full(mbuf)) {
+      mbuf = mbuf_get();
+      if (mbuf == NULL) return DN_ENOMEM;
+      mbuf_insert(&msg->mhdr, mbuf);
+      msg->pos = mbuf->pos;
+    }
+    size_t n = MIN(len - fed, (size_t)mbuf_remaining_space(mbuf));
+    mbuf_copy(mbuf, data + fed, n);
+    fed += n;
+    msg->mlen += (uint32_t)n;
 
-  // Copy contents of the key from 'msg' to our new buffer.
-  dn_memcpy(copied_key, key_ptr, *keylen);
-  copied_key[*keylen] = '\0';
-
-  return copied_key;
+    msg->parser(msg, ctx);
+    if (msg->result == MSG_PARSE_OK) {
+      return fed == len && msg->pos == mbuf->last ? DN_OK : DN_ERROR;
+    }
+    if ((msg->result != MSG_PARSE_AGAIN && msg->result != MSG_PARSE_REPAIR) ||
+        fed == len) {
+      return DN_ERROR;
+    }
+    if (msg->result == MSG_PARSE_REPAIR) {
+      struct mbuf *nbuf = mbuf_split(&msg->mhdr, msg->pos, NULL, NULL);
+      if (nbuf == NULL) return DN_ENOMEM;
+      mbuf_insert(&msg->mhdr, nbuf);
+      msg->pos = nbuf->pos;
+    }
+  }
 }
 
 uint32_t msg_payload_crc32(struct msg *rsp) {

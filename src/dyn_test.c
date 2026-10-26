@@ -942,43 +942,23 @@ static rstatus_t test_parser(struct conn *conn) {
   return DN_OK;
 }
 
-/*
- * Parse one whole message from data, put in as many mbufs as it needs, the
- * way msg_recv_chain() and msg_repair() would.
- */
+/* Parse one whole message from len bytes of data, as msg_parse_data() does. */
+static struct msg *parse_msg(struct conn *conn, bool request, const char *data,
+                             size_t len) {
+  struct msg *msg = msg_get(conn, request, __FUNCTION__);
+
+  if (msg == NULL) return NULL;
+  if (msg_parse_data(ctx, msg, (const uint8_t *)data, len) != DN_OK) {
+    log_error("failed to parse '%.40s...'", data);
+    msg_put(msg);
+    return NULL;
+  }
+  return msg;
+}
+
 static struct msg *repair_parse(struct conn *conn, bool request,
                                 const char *data) {
-  struct msg *msg = msg_get(conn, request, __FUNCTION__);
-  size_t len = strlen(data), fed = 0;
-
-  while (msg != NULL) {
-    struct mbuf *mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
-    if (mbuf == NULL || mbuf_full(mbuf)) {
-      mbuf = mbuf_get();
-      mbuf_insert(&msg->mhdr, mbuf);
-      msg->pos = mbuf->pos;
-    }
-    size_t n = MIN(len - fed, mbuf_remaining_space(mbuf));
-    mbuf_copy(mbuf, (uint8_t *)data + fed, n);
-    fed += n;
-    msg->mlen += (uint32_t)n;
-
-    msg->parser(msg, ctx);
-    if (msg->result == MSG_PARSE_OK && fed == len &&
-        msg->pos == STAILQ_LAST(&msg->mhdr, mbuf, next)->last) {
-      return msg;
-    }
-    if (msg->result == MSG_PARSE_REPAIR) {
-      struct mbuf *nbuf = mbuf_split(&msg->mhdr, msg->pos, NULL, NULL);
-      mbuf_insert(&msg->mhdr, nbuf);
-      msg->pos = nbuf->pos;
-    } else if (msg->result != MSG_PARSE_AGAIN || fed == len) {
-      log_error("failed to parse '%.40s...'", data);
-      msg_put(msg);
-      return NULL;
-    }
-  }
-  return NULL;
+  return parse_msg(conn, request, data, strlen(data));
 }
 
 /* Copy what would be sent of msg, from all its mbufs, to out. */
@@ -1327,6 +1307,109 @@ static rstatus_t test_read_repair(struct conn *conn) {
     return DN_ERROR;
   }
   loga("%zu read repair runs passed", nruns);
+  return DN_OK;
+}
+
+/*
+ * SMEMBERS key -> SORT key ALPHA with DC_SAFE_QUORUM, for a binary key and for
+ * the longest key a client may send, whose SORT doesn't fit in one mbuf.
+ */
+static rstatus_t smembers_run(struct conn *conn, const char *key,
+                              size_t keylen) {
+  static char req[TEST_MBUF_SIZE + 100], want[TEST_MBUF_SIZE + 100],
+      got[TEST_MBUF_SIZE + 100];
+  struct msg *msg, *wreq = NULL;
+  bool did_rewrite = false;
+  rstatus_t status = DN_ERROR;
+  int n;
+
+  n = dn_snprintf(req, sizeof(req), "*2\r\n$8\r\nSMEMBERS\r\n$%zu\r\n", keylen);
+  memcpy(req + n, key, keylen);
+  memcpy(req + n + keylen, "\r\n", 2);
+  msg = parse_msg(conn, true, req, (size_t)n + keylen + 2);
+  if (msg == NULL) {
+    log_error("SMEMBERS (mbuf %zu, key of %zu): not parsed", mbuf_data_size(),
+              keylen);
+    return DN_ERROR;
+  }
+
+  n = dn_snprintf(want, sizeof(want), "*3\r\n$4\r\nsort\r\n$%zu\r\n", keylen);
+  memcpy(want + n, key, keylen);
+  memcpy(want + n + keylen, "\r\n$5\r\nalpha\r\n", 13);
+  size_t wantlen = (size_t)n + keylen + 13, gotlen = 0;
+
+  if (redis_rewrite_query(msg, ctx, &did_rewrite, &wreq) != DN_OK ||
+      !did_rewrite) {
+    log_error("SMEMBERS (mbuf %zu, key of %zu): not rewritten",
+              mbuf_data_size(), keylen);
+    goto out;
+  }
+  struct mbuf *mbuf;
+  STAILQ_FOREACH(mbuf, &wreq->mhdr, next) {
+    size_t len = mbuf_length(mbuf);
+    if (gotlen + len > sizeof(got)) break;
+    memcpy(got + gotlen, mbuf->pos, len);
+    gotlen += len;
+  }
+  uint32_t wkeylen;
+  uint8_t *wkey = msg_get_full_key(wreq, 0, &wkeylen);
+  if (wreq->type != MSG_REQ_REDIS_SORT || gotlen != wantlen ||
+      memcmp(got, want, wantlen) != 0 || wreq->mlen != wantlen ||
+      wkey == NULL || wkeylen != keylen || memcmp(wkey, key, keylen) != 0) {
+    log_error("SMEMBERS (mbuf %zu, key of %zu): rewritten as type %d, '%.*s'",
+              mbuf_data_size(), keylen, wreq->type, (int)MIN(gotlen, 60), got);
+    goto out;
+  }
+  status = DN_OK;
+
+out:
+  if (wreq != NULL) msg_put(wreq);
+  msg_put(msg);
+  return status;
+}
+
+static rstatus_t test_rewrite(struct conn *conn) {
+  static const size_t mbuf_sizes[] = {MBUF_MIN_SIZE, TEST_MBUF_SIZE};
+  static char longest[TEST_MBUF_SIZE];
+  size_t nruns = 0, nfailed = 0;
+
+  print_banner("REWRITE");
+
+  g_data_store = DATA_REDIS;
+  conn->dyn_mode = 0;
+  conn->read_consistency = DC_SAFE_QUORUM;
+  for (size_t m = 0; m < NELEMS(mbuf_sizes); m++) {
+    mbuf_deinit();
+    mbuf_init(mbuf_sizes[m]);
+    /* the longest key a client may send fills an mbuf but one byte */
+    size_t longest_len = mbuf_data_size() - 1;
+    for (size_t i = 0; i < longest_len; i++) {
+      longest[i] = (char)('a' + i % 26);
+    }
+    const struct {
+      const char *key;
+      size_t len;
+    } keys[] = {{"s", 1}, {"a\0b", 3}, {"\0", 1}, {longest, longest_len}};
+    for (int r = 0; r < 2; r++) {
+      g_read_repairs_enabled = r == 1;
+      for (size_t k = 0; k < NELEMS(keys); k++) {
+        nruns++;
+        if (smembers_run(conn, keys[k].key, keys[k].len) != DN_OK) {
+          nfailed++;
+        }
+      }
+    }
+  }
+  mbuf_deinit();
+  mbuf_init(TEST_MBUF_SIZE);
+  g_read_repairs_enabled = false;
+  conn->read_consistency = DC_ONE;
+
+  if (nfailed != 0) {
+    log_error("%zu of %zu rewrite runs failed", nfailed, nruns);
+    return DN_ERROR;
+  }
+  loga("%zu rewrite runs passed", nruns);
   return DN_OK;
 }
 
@@ -1761,6 +1844,12 @@ int main(int argc, char **argv) {
   ret = test_read_repair(conn);
   if (ret != DN_OK) {
     loga("Error in testing read repairs!!!");
+    goto err_out;
+  }
+
+  ret = test_rewrite(conn);
+  if (ret != DN_OK) {
+    loga("Error in testing query rewrites!!!");
     goto err_out;
   }
 
