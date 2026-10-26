@@ -707,9 +707,34 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           break;
         }
 
-        // 'SCRIPT' commands are parsed in 2 steps due to the whitespace in between cmds,
-        // so don't set the type to MSG_UNKNOWN.
-        if (r->type != MSG_REQ_REDIS_SCRIPT) r->type = MSG_UNKNOWN;
+        // 'SCRIPT' is parsed in 2 steps too. Its supported subcommands are
+        // sent to every node.
+        if (r->type == MSG_REQ_REDIS_SCRIPT) {
+          if ((p - m) == 4 && str4icmp(m, 'l', 'o', 'a', 'd')) {
+            r->type = MSG_REQ_REDIS_SCRIPT_LOAD;
+            r->is_read = 0;
+          } else if ((p - m) == 4 && str4icmp(m, 'k', 'i', 'l', 'l')) {
+            r->type = MSG_REQ_REDIS_SCRIPT_KILL;
+            r->is_read = 0;
+          } else if ((p - m) == 5 && str5icmp(m, 'f', 'l', 'u', 's', 'h')) {
+            r->type = MSG_REQ_REDIS_SCRIPT_FLUSH;
+            r->is_read = 0;
+          } else if ((p - m) == 6 &&
+                     str6icmp(m, 'e', 'x', 'i', 's', 't', 's')) {
+            r->type = MSG_REQ_REDIS_SCRIPT_EXISTS;
+            r->is_read = 1;
+          } else {
+            log_error("parsed unsupported command 'SCRIPT %.*s'", (int)(p - m),
+                      m);
+            goto error;
+          }
+          r->msg_routing = ROUTING_ALL_NODES_ALL_RACKS_ALL_DCS;
+          log_debug(LOG_VERB, "parsed command 'SCRIPT %.*s'", (int)(p - m), m);
+          state = SW_REQ_TYPE_LF;
+          break;
+        }
+
+        r->type = MSG_UNKNOWN;
 
         switch (p - m) {
           case 3:
@@ -916,22 +941,6 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               r->quit = 1;
               break;
             }
-            if (str4icmp(m, 'l', 'o', 'a', 'd')) {
-              // A command called 'LOAD' does not exist. This is the second half of the
-              // command 'SCRIPT LOAD'.
-              r->type = MSG_REQ_REDIS_SCRIPT_LOAD;
-              r->msg_routing = ROUTING_ALL_NODES_ALL_RACKS_ALL_DCS;
-              r->is_read = 0;
-              break;
-            }
-            if (str4icmp(m, 'k', 'i', 'l', 'l')) {
-              // A command called 'KILL' does not exist. This is the second half of the
-              // command 'SCRIPT KILL'.
-              r->type = MSG_REQ_REDIS_SCRIPT_KILL;
-              r->msg_routing = ROUTING_ALL_NODES_ALL_RACKS_ALL_DCS;
-              r->is_read = 0;
-              break;
-            }
 
 
             break;
@@ -1055,15 +1064,6 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               r->is_read = 0;
               break;
             }
-            if (str5icmp(m, 'f', 'l', 'u', 's', 'h')) {
-              // A command called 'FLUSH' does not exist. This is the second half of the
-              // command 'SCRIPT FLUSH'.
-              ASSERT(r->type == MSG_REQ_REDIS_SCRIPT);
-              r->type = MSG_REQ_REDIS_SCRIPT_FLUSH;
-              r->msg_routing = ROUTING_ALL_NODES_ALL_RACKS_ALL_DCS;
-              r->is_read = 0;
-              break;
-            }
 
             break;
 
@@ -1087,18 +1087,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               break;
             }
 
-            if (str6icmp(m, 'e', 'x', 'i', 's', 't', 's')
-                && r->type != MSG_REQ_REDIS_SCRIPT) {
+            if (str6icmp(m, 'e', 'x', 'i', 's', 't', 's')) {
               r->type = MSG_REQ_REDIS_EXISTS;
-              r->is_read = 1;
-              break;
-            }
-            if (str6icmp(m, 'e', 'x', 'i', 's', 't', 's')
-                && r->type == MSG_REQ_REDIS_SCRIPT) {
-              // This is not to be confused with 'EXISTS'. This is the second half of the
-              // command 'SCRIPT EXISTS'.
-              r->type = MSG_REQ_REDIS_SCRIPT_EXISTS;
-              r->msg_routing = ROUTING_ALL_NODES_ALL_RACKS_ALL_DCS;
               r->is_read = 1;
               break;
             }
@@ -1630,7 +1620,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           // second keyword as well.
           // Set 'state' back to 'SW_REQ_TYPE_LEN' to parse the second half of the command
           // the space in 'SCRIPT <LOAD/KILL/FLUSH/EXISTS>'.
-          if (r->type == MSG_REQ_REDIS_CLIENT && r->rntokens == 0) {
+          if (r->rntokens == 0) {
             goto error;
           }
           state = SW_REQ_TYPE_LEN;
