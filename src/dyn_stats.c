@@ -942,6 +942,9 @@ static void parse_request(int sd, struct stats_cmd *st_cmd) {
   char mesg[max_buf_size], *reqline[3];
   int rcvd;
 
+  st_cmd->cmd = CMD_UNKNOWN;
+  string_init(&st_cmd->req_data);
+
   memset((void *)mesg, (int)'\0', max_buf_size);
 
   rcvd = recv(sd, mesg, max_buf_size, 0);
@@ -972,7 +975,7 @@ static void parse_request(int sd, struct stats_cmd *st_cmd) {
         return;
       } else {
         if (strncmp(reqline[1], "/\0", 2) == 0) {
-          reqline[1] = "/info";
+          st_cmd->cmd = CMD_INFO;
           return;
         } else if (strcmp(reqline[1], "/info") == 0) {
           st_cmd->cmd = CMD_INFO;
@@ -993,7 +996,6 @@ static void parse_request(int sd, struct stats_cmd *st_cmd) {
             return;
           } else {
             val++;
-            string_init(&st_cmd->req_data);
             stats_cmd_set_data(st_cmd, val);
           }
           return;
@@ -1043,7 +1045,6 @@ static void parse_request(int sd, struct stats_cmd *st_cmd) {
             return;
           } else {
             val++;
-            string_init(&st_cmd->req_data);
             stats_cmd_set_data(st_cmd, val);
           }
           return;
@@ -1054,17 +1055,14 @@ static void parse_request(int sd, struct stats_cmd *st_cmd) {
           if (strncmp(peer_state, "/down", 5) == 0) {
             log_debug(LOG_VERB, "Peer's state is down!");
             st_cmd->cmd = CMD_PEER_DOWN;
-            string_init(&st_cmd->req_data);
             stats_cmd_set_data(st_cmd, stats_cmd_arg(peer_state, 5));
           } else if (strncmp(peer_state, "/up", 3) == 0) {
             log_debug(LOG_VERB, "Peer's state is UP!");
             st_cmd->cmd = CMD_PEER_UP;
-            string_init(&st_cmd->req_data);
             stats_cmd_set_data(st_cmd, stats_cmd_arg(peer_state, 3));
           } else if (strncmp(peer_state, "/reset", 6) == 0) {
             log_debug(LOG_VERB, "Peer's state is RESET!");
             st_cmd->cmd = CMD_PEER_RESET;
-            string_init(&st_cmd->req_data);
             stats_cmd_set_data(st_cmd, stats_cmd_arg(peer_state, 6));
           } else {
             st_cmd->cmd = CMD_PING;
