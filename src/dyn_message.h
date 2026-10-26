@@ -546,6 +546,9 @@ struct msg {
 
   // Additional response_mgrs if we choose to use DC_EACH_SAFE_QUORUM
   struct response_mgr **additional_each_rspmgrs;
+  // Number of entries in 'additional_each_rspmgrs'. DCs can be added while the
+  // request is in flight, so this, not the pool's current DC count, bounds it.
+  uint32_t num_each_rspmgrs;
 
   // Indicates whether the rspmgr and additional_each_rspmgrs(if applicable)
   // are init-ed.

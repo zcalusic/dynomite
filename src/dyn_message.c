@@ -418,6 +418,7 @@ done:
   msg->orig_msg = NULL;
   msg->needs_repair = false;
   msg->additional_each_rspmgrs = NULL;
+  msg->num_each_rspmgrs = 0;
   msg->rspmgrs_inited = false;
 
   // Init the write_with_ts struct:
@@ -675,22 +676,17 @@ void msg_put(struct msg *msg) {
 
   if (msg->additional_each_rspmgrs) {
     ASSERT(msg->consistency == DC_EACH_SAFE_QUORUM);
-    // Only requests have their connection's owner as the 'struct server_pool' object,
-    // and only requests would have 'additional_each_rspmgrs', so it's safe to cast to
-    // 'struct server_pool'.
-    struct server_pool *sp = msg->owner->owner;
-    uint8_t num_dcs = array_n(&sp->datacenters);
-
-    int i;
+    uint32_t i;
     // Every response manager has its own copy of its DC's name. Don't free the
     // 0th one itself, as that points back to the statically allocated 'rspmgr'
     // struct in 'msg'.
-    for (i = 0; i < num_dcs; ++i) {
+    for (i = 0; i < msg->num_each_rspmgrs; ++i) {
       string_deinit(&msg->additional_each_rspmgrs[i]->dc_name);
       if (i > 0) dn_free(msg->additional_each_rspmgrs[i]);
     }
     dn_free(msg->additional_each_rspmgrs);
     msg->additional_each_rspmgrs = NULL;
+    msg->num_each_rspmgrs = 0;
   }
   TAILQ_INSERT_HEAD(&free_msgq, msg, m_tqe);
 }

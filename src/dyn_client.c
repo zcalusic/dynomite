@@ -447,6 +447,11 @@ void req_forward_error(struct context *ctx, struct conn *conn, struct msg *req,
   // This response gets dropped in rsp_make_error anyways. But since this is
   // an error path its ok with the overhead.
   struct msg *rsp = msg_get_error(conn, dyn_error_code, error_code);
+  if (rsp == NULL) {
+    // Out of memory: close the client connection, which cleans up 'req'.
+    conn->err = ENOMEM;
+    return;
+  }
   rsp->peer = req;
   // TODO: Check if this is required in response
   rsp->dmsg = dmsg_get();
@@ -752,11 +757,9 @@ void req_forward_all_racks_for_dc(struct context *ctx, struct conn *c_conn,
   uint8_t rack_index;
 
   if (req->rspmgrs_inited == false) {
-    if (req->consistency == DC_EACH_SAFE_QUORUM) {
-      init_response_mgr_all_dcs(ctx, req, c_conn, dc);
-    } else {
-      init_response_mgr(req, &req->rspmgr, rack_cnt, c_conn);
-    }
+    // DC_EACH_SAFE_QUORUM response managers are set up in req_forward().
+    ASSERT(req->consistency != DC_EACH_SAFE_QUORUM);
+    init_response_mgr(req, &req->rspmgr, rack_cnt, c_conn);
   }
   log_info("%s %s same DC racks:%d expect replies %d", print_obj(c_conn),
            print_obj(req), rack_cnt, req->rspmgr.max_responses);
@@ -1020,6 +1023,20 @@ static void req_forward(struct context *ctx, struct conn *c_conn,
     return;
   }
 
+  // Under DC_EACH_SAFE_QUORUM, set up a response manager for every DC before
+  // forwarding anything, so that a failure leaves nothing in flight.
+  if (req->consistency == DC_EACH_SAFE_QUORUM &&
+      req->msg_routing == ROUTING_NORMAL) {
+    struct datacenter *local_dc = server_get_dc(pool, &pool->dc);
+    s = init_response_mgr_all_dcs(ctx, req, c_conn, local_dc);
+    if (s != DN_OK) {
+      log_error("%s %s failed to set up DC_EACH_SAFE_QUORUM response managers",
+                print_obj(c_conn), print_obj(req));
+      req_forward_error(ctx, c_conn, req, s, DYNOMITE_UNKNOWN_ERROR);
+      return;
+    }
+  }
+
   /* forward the request based on other 'msg_routing' policies. */
   uint32_t dc_cnt = array_n(&pool->datacenters);
   uint32_t dc_index;
@@ -1245,25 +1262,21 @@ static rstatus_t msg_quorum_rsp_handler(struct context *ctx, struct msg *req,
   return DN_OK;
 }
 
-static int find_rspmgr_idx(struct context *ctx, struct response_mgr **rspmgrs,
-    struct string *target_dc_name) {
-  int num_dcs = (int) array_n(&ctx->pool.datacenters);
-
-  int i = 0;
-  for (i = 0; i < num_dcs; ++i) {
-    struct response_mgr *rspmgr = rspmgrs[i];
+static int find_rspmgr_idx(struct msg *req, struct string *target_dc_name) {
+  uint32_t i;
+  for (i = 0; i < req->num_each_rspmgrs; ++i) {
+    struct response_mgr *rspmgr = req->additional_each_rspmgrs[i];
     if (string_compare(&rspmgr->dc_name, target_dc_name) == 0) {
-      return i;
+      return (int)i;
     }
   }
   return -1;
 }
 
-static bool all_rspmgrs_done(struct context *ctx, struct response_mgr **rspmgrs) {
-  int num_dcs = (int) array_n(&ctx->pool.datacenters);
-  int i = 0;
-  for (i = 0; i < num_dcs; ++i) {
-    struct response_mgr *rspmgr = rspmgrs[i];
+static bool all_rspmgrs_done(struct msg *req) {
+  uint32_t i;
+  for (i = 0; i < req->num_each_rspmgrs; ++i) {
+    struct response_mgr *rspmgr = req->additional_each_rspmgrs[i];
     if (!rspmgr->done) return false;
   }
 
@@ -1271,10 +1284,9 @@ static bool all_rspmgrs_done(struct context *ctx, struct response_mgr **rspmgrs)
 }
 
 static struct msg *all_rspmgrs_get_response(struct context *ctx, struct msg *req) {
-  int num_dcs = (int) array_n(&ctx->pool.datacenters);
   struct msg *rsp = NULL;
-  int i;
-  for (i = 0; i < num_dcs; ++i) {
+  uint32_t i;
+  for (i = 0; i < req->num_each_rspmgrs; ++i) {
     struct response_mgr *rspmgr = req->additional_each_rspmgrs[i];
     struct msg *dc_rsp = NULL;
     if (!rsp) {
@@ -1317,7 +1329,7 @@ static struct msg *all_rspmgrs_get_response(struct context *ctx, struct msg *req
 static rstatus_t msg_each_quorum_rsp_handler(struct context *ctx, struct msg *req,
     struct msg *rsp) {
 
-  if (all_rspmgrs_done(ctx, req->additional_each_rspmgrs)) {
+  if (all_rspmgrs_done(req)) {
     return swallow_extra_rsp(req, rsp);
   }
 
@@ -1329,9 +1341,10 @@ static rstatus_t msg_each_quorum_rsp_handler(struct context *ctx, struct msg *re
   } else if (rsp_conn->type == CONN_DNODE_PEER_SERVER) {
     struct node *peer_instance = (struct node*) rsp_conn->owner;
     struct string *peer_dc_name = &peer_instance->dc;
-    rspmgr_idx = find_rspmgr_idx(ctx, req->additional_each_rspmgrs, peer_dc_name);
+    rspmgr_idx = find_rspmgr_idx(req, peer_dc_name);
     if (rspmgr_idx == -1) {
       log_error("Could not find which DC response was from");
+      return swallow_extra_rsp(req, rsp);
     }
   } else if (rsp_conn->type == CONN_SERVER) {
     // If this is a 'CONN_SERVER' connection, then it is from the same DC.
@@ -1341,7 +1354,7 @@ static rstatus_t msg_each_quorum_rsp_handler(struct context *ctx, struct msg *re
   struct response_mgr *rspmgr = req->additional_each_rspmgrs[rspmgr_idx];
   rspmgr_submit_response(rspmgr, rsp);
   if (!rspmgr_check_is_done(rspmgr)) return DN_EAGAIN;
-  if (!all_rspmgrs_done(ctx, req->additional_each_rspmgrs)) return DN_EAGAIN;
+  if (!all_rspmgrs_done(req)) return DN_EAGAIN;
 
   rsp = all_rspmgrs_get_response(ctx, req);
   return DN_OK;
