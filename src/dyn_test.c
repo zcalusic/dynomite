@@ -28,22 +28,6 @@
 static int show_help;
 static int test_conf;
 
-static char *data =
-    "$2014$ 1 3 0 1 1 *1 d "
-    "*0\r\n*3\r\n$3\r\nset\r\n$4\r\nfoo1\r\n$4\r\nbar1\r\n"
-    "$2014$ 2 3 0 1 1 *1 d "
-    "*0\r\n*3\r\n$3\r\nset\r\n$4\r\nfoo2\r\n$"
-    "413\r\nbar0123456789012345678901234567890123456789012345678901234567890123"
-    "45678901234567890123456789012345678922222222222222222222222222222222222222"
-    "22222222222222222222222222222222222222222222222222222222222222222222222222"
-    "22222222222222222222222222222222222222222222222222222222222222222222222222"
-    "22222222222222222222222222222222222222222222222222222222222222222222222222"
-    "22222222222222222222222222222222222222222222222222\r\n"
-    "$2014$ 3 3 0 1 1 *1 d "
-    "*0\r\n*3\r\n$3\r\nset\r\n$4\r\nfoo3\r\n$4\r\nbar3\r\n";
-
-static size_t position = 0;
-
 static struct option long_options[] = {
     {"help", no_argument, NULL, 'h'},
     {"version", no_argument, NULL, 'V'},
@@ -211,7 +195,8 @@ static rstatus_t init_peer(struct node *s) {
   // TODO-need to init tokens
   // s->tokens = cseed->tokens;
 
-  struct sockinfo *info = malloc(sizeof(struct sockinfo));
+  static struct sockinfo info_buf;
+  struct sockinfo *info = &info_buf;
 
   memset(info, 0, sizeof(*info));
   dn_resolve(&name, s->endpoint.port, info);
@@ -231,106 +216,319 @@ static rstatus_t init_peer(struct node *s) {
   return DN_OK;
 }
 
-static size_t fill_buffer(struct mbuf *mbuf) {
-  loga("total data size: %d", dn_strlen(data));
-  loga("mbuf size: %d", mbuf_remaining_space(mbuf));
-  size_t data_size = dn_strlen(data) - position;
-
-  loga("data left-over size: %zu", data_size);
-  if (data_size <= 0) {
-    return 0;
-  }
-
-  size_t min_len = data_size > mbuf_remaining_space(mbuf) ? mbuf_remaining_space(mbuf) : data_size;
-  mbuf_copy(mbuf, &data[position], min_len);
-  position += min_len;
-
-  return min_len;
+static void deinit_peer(struct node *s) {
+  string_deinit(&s->endpoint.pname);
+  string_deinit(&s->name);
+  string_deinit(&s->rack);
+  string_deinit(&s->dc);
+  free(s);
 }
 
-static rstatus_t test_msg_recv_chain(struct conn *conn, struct msg *msg) {
-  struct msg *nmsg;
-  struct mbuf *mbuf, *nbuf;
-  print_banner("MSG_RECV_CHAIN");
+/* A request the parser should produce: its type and its keys. */
+struct parse_req {
+  msg_type_t type;
+  char keys[64]; /* space-separated */
+};
 
-  mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
+#define PARSE_DATA_MAX 8192
+#define PARSE_REQS_MAX 32
 
-  mbuf = mbuf_get();
-  mbuf_insert(&msg->mhdr, mbuf);
-  msg->pos = mbuf->pos;
+/* A stream of requests, and what the parser should make of it. */
+struct parse_case {
+  const char *name;
+  data_store_t data_store;
+  bool dyn_mode; /* sent by a dnode peer, each request with a dnode header */
+  char data[PARSE_DATA_MAX];
+  size_t len;
+  struct parse_req reqs[PARSE_REQS_MAX];
+  size_t nreqs;
+  bool reject; /* the stream ends in a request the parser must reject */
+};
 
-  ASSERT(mbuf->end - mbuf->last > 0);
+/*
+ * Append a request to the stream. For redis, words are space-separated and
+ * sent as a RESP array, unless raw; for memcache, they are always raw, sent as
+ * they are.
+ */
+static void parse_append(struct parse_case *tc, const char *words, bool raw) {
+  char *out = tc->data + tc->len;
+  size_t room = PARSE_DATA_MAX - tc->len;
+  int n;
 
-  uint32_t data_n = (uint32_t)fill_buffer(mbuf);
-  msg->mlen += data_n;
+  if (raw || tc->data_store == DATA_MEMCACHE) {
+    n = snprintf(out, room, "%s", words);
+  } else {
+    char buf[PARSE_DATA_MAX], *word, *save;
+    int nwords = 0;
 
-  loga("msg->mlen = %d", +msg->mlen);
-  loga("mbuf_length = %d", mbuf_length(mbuf));
+    dn_snprintf(buf, sizeof(buf), "%s", words);
+    for (const char *w = words; *w != '\0'; w++) {
+      if ((w == words || w[-1] == ' ') && *w != ' ') nwords++;
+    }
 
-  bool is_done = false;
-  struct string hash_tag;
-  string_init(&hash_tag);
-
-  for (; !is_done;) {
-    msg->parser(msg, ctx);
-
-    switch (msg->result) {
-      case MSG_PARSE_OK:
-        log_debug(LOG_VVERB, "Parsing MSG_PARSE_OK");
-        if (msg->pos == mbuf->last) {
-          log_debug(LOG_VVERB,
-                    "Parsing MSG_PARSE_OK - done - no more data to parse!");
-          is_done = true;
-        }
-
-        nbuf = mbuf_split(&msg->mhdr, msg->pos, NULL, NULL);
-        if (nbuf == NULL) {
-          log_debug(LOG_VVERB,
-                    "Parsing MSG_PARSE_OK - more data but can't split!");
-        }
-
-        nmsg = msg_get(msg->owner, msg->is_request, __FUNCTION__);
-        mbuf_insert(&nmsg->mhdr, nbuf);
-        nmsg->pos = nbuf->pos;
-
-        /* update length of current (msg) and new message (nmsg) */
-        nmsg->mlen = mbuf_length(nbuf);
-        msg->mlen -= nmsg->mlen;
-
-        data_n = (uint32_t)fill_buffer(nbuf);
-        nmsg->mlen += data_n;
-
-        msg = nmsg;
-        mbuf = nbuf;
-
-        break;
-
-      case MSG_PARSE_REPAIR:
-        // status = msg_repair(ctx, conn, msg);
-        log_debug(LOG_VVERB, "Parsing MSG_PARSE_REPAIR");
-        msg = NULL;
-        break;
-
-      case MSG_PARSE_AGAIN:
-        log_debug(LOG_VVERB, "Parsing MSG_PARSE_AGAIN");
-
-        nbuf = mbuf_split(&msg->mhdr, msg->pos, NULL, NULL);
-        mbuf_insert(&msg->mhdr, nbuf);
-        msg->pos = nbuf->pos;
-        data_n = (uint32_t)fill_buffer(nbuf);
-        msg->mlen += data_n;
-        mbuf = nbuf;
-
-        break;
-
-      default:
-        log_debug(LOG_VVERB, "Parsing error in dyn_mode");
-        msg = NULL;
-        break;
+    n = 0;
+    if (tc->dyn_mode) {
+      n += snprintf(out + n, room - (size_t)n, "$2014$ %zu 3 0 1 1 *1 d *0\r\n",
+                    tc->nreqs + 1);
+    }
+    n += snprintf(out + n, room - (size_t)n, "*%d\r\n", nwords);
+    for (word = strtok_r(buf, " ", &save); word != NULL;
+         word = strtok_r(NULL, " ", &save)) {
+      n += snprintf(out + n, room - (size_t)n, "$%zu\r\n%s\r\n", strlen(word),
+                    word);
     }
   }
 
-  loga("Done parsing .........!");
+  ASSERT(n > 0 && (size_t)n < room);
+  tc->len += (size_t)n;
+}
+
+/* Append a request the parser should accept, with its type and keys. */
+static void parse_add_req(struct parse_case *tc, msg_type_t type,
+                          const char *keys, const char *words, bool raw) {
+  ASSERT(tc->nreqs < PARSE_REQS_MAX && !tc->reject);
+  parse_append(tc, words, raw);
+  tc->reqs[tc->nreqs].type = type;
+  dn_snprintf(tc->reqs[tc->nreqs].keys, sizeof(tc->reqs[0].keys), "%s", keys);
+  tc->nreqs++;
+}
+
+static void parse_add(struct parse_case *tc, msg_type_t type, const char *keys,
+                      const char *words) {
+  parse_add_req(tc, type, keys, words, false);
+}
+
+/* End the stream with a request the parser must reject. */
+static void parse_reject(struct parse_case *tc, const char *words) {
+  parse_append(tc, words, false);
+  tc->reject = true;
+}
+
+/* Compare a parsed request with the one expected. */
+static rstatus_t parse_check(const struct parse_case *tc, size_t chunk,
+                             size_t i, struct msg *msg) {
+  char keys[sizeof(tc->reqs[0].keys)] = "";
+  size_t len = 0;
+
+  for (uint32_t k = 0; k < array_n(msg->keys); k++) {
+    struct keypos *kp = array_get(msg->keys, k);
+    len += (size_t)dn_snprintf(keys + len, sizeof(keys) - len, "%s%.*s",
+                               k == 0 ? "" : " ", (int)(kp->end - kp->start),
+                               kp->start);
+  }
+
+  if (i >= tc->nreqs) {
+    log_error("%s (mbuf %zu, chunk %zu): unexpected request %zu, %.*s [%s]",
+              tc->name, mbuf_data_size(), chunk, i + 1,
+              msg_type_string(msg->type)->len, msg_type_string(msg->type)->data,
+              keys);
+    return DN_ERROR;
+  }
+  if (msg->type != tc->reqs[i].type || strcmp(keys, tc->reqs[i].keys) != 0) {
+    log_error("%s (mbuf %zu, chunk %zu): request %zu is %.*s [%s], want "
+              "%.*s [%s]",
+              tc->name, mbuf_data_size(), chunk, i + 1,
+              msg_type_string(msg->type)->len, msg_type_string(msg->type)->data,
+              keys, msg_type_string(tc->reqs[i].type)->len,
+              msg_type_string(tc->reqs[i].type)->data, tc->reqs[i].keys);
+    return DN_ERROR;
+  }
+  return DN_OK;
+}
+
+/*
+ * Feed the stream to the parser at most chunk bytes at a time, the way
+ * msg_recv_chain() and msg_parse() do when data arrives in pieces: reads go
+ * into the last mbuf until it's full, a parsed request with data after it is
+ * split off with that data as the next message (msg_parsed()), and a request
+ * cut at the end of an mbuf is moved to a new one (msg_repair()).
+ */
+static rstatus_t parse_run(struct conn *conn, const struct parse_case *tc,
+                           size_t chunk) {
+  struct msg *msg, *nmsg;
+  struct mbuf *mbuf, *nbuf;
+  size_t fed = 0, nparsed = 0;
+  bool rejected = false;
+  rstatus_t status = DN_OK;
+
+  g_data_store = tc->data_store;
+  conn->dyn_mode = tc->dyn_mode ? 1 : 0;
+  msg = msg_get(conn, true, __FUNCTION__);
+
+  while (fed < tc->len && !rejected && status == DN_OK) {
+    mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
+    if (mbuf == NULL || mbuf_full(mbuf)) {
+      mbuf = mbuf_get();
+      mbuf_insert(&msg->mhdr, mbuf);
+      msg->pos = mbuf->pos;
+    }
+    size_t n = MIN(MIN(chunk, tc->len - fed), mbuf_remaining_space(mbuf));
+    mbuf_copy(mbuf, (uint8_t *)tc->data + fed, n);
+    fed += n;
+    msg->mlen += (uint32_t)n;
+
+    while (status == DN_OK && !msg_empty(msg)) {
+      msg->parser(msg, ctx);
+
+      if (msg->result == MSG_PARSE_AGAIN) {
+        break;
+      }
+      if (msg->result == MSG_PARSE_REPAIR) {
+        nbuf = mbuf_split(&msg->mhdr, msg->pos, NULL, NULL);
+        mbuf_insert(&msg->mhdr, nbuf);
+        msg->pos = nbuf->pos;
+        break;
+      }
+      if (msg->result != MSG_PARSE_OK) {
+        rejected = true;
+        break;
+      }
+
+      status = parse_check(tc, chunk, nparsed++, msg);
+
+      mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
+      if (msg->pos == mbuf->last) {
+        msg_put(msg);
+        msg = msg_get(conn, true, __FUNCTION__);
+        break;
+      }
+      nbuf = mbuf_split(&msg->mhdr, msg->pos, NULL, NULL);
+      nmsg = msg_get(conn, true, __FUNCTION__);
+      mbuf_insert(&nmsg->mhdr, nbuf);
+      nmsg->pos = nbuf->pos;
+      nmsg->mlen = mbuf_length(nbuf);
+      msg_put(msg);
+      msg = nmsg;
+    }
+  }
+
+  if (status == DN_OK && (nparsed != tc->nreqs || rejected != tc->reject)) {
+    log_error("%s (mbuf %zu, chunk %zu): parsed %zu of %zu requests, %s",
+              tc->name, mbuf_data_size(), chunk, nparsed, tc->nreqs,
+              rejected ? "then rejected the rest"
+                       : (msg_empty(msg) ? "no data left"
+                                         : "with unparsed data left"));
+    status = DN_ERROR;
+  }
+  msg_put(msg);
+  return status;
+}
+
+static struct parse_case parse_cases[16];
+static size_t nparse_cases;
+
+static struct parse_case *parse_case_new(const char *name,
+                                         data_store_t data_store,
+                                         bool dyn_mode) {
+  ASSERT(nparse_cases < NELEMS(parse_cases));
+  struct parse_case *tc = &parse_cases[nparse_cases++];
+  memset(tc, 0, sizeof(*tc));
+  tc->name = name;
+  tc->data_store = data_store;
+  tc->dyn_mode = dyn_mode;
+  return tc;
+}
+
+static void parse_cases_init(void) {
+  struct parse_case *tc;
+  char big[600 + 1], words[700];
+
+  /* a value larger than the smallest mbuf */
+  memset(big, 'x', sizeof(big) - 1);
+  big[sizeof(big) - 1] = '\0';
+
+  tc = parse_case_new("redis pipeline", DATA_REDIS, false);
+  parse_add(tc, MSG_REQ_REDIS_PING, "", "PING");
+  parse_add_req(tc, MSG_REQ_REDIS_PING, "", "PING\r\n", true); /* inline */
+  parse_add(tc, MSG_REQ_REDIS_PING, "", "ping hello");
+  parse_add(tc, MSG_REQ_REDIS_SET, "foo", "SET foo bar");
+  parse_add(tc, MSG_REQ_REDIS_GET, "foo", "get foo");
+  dn_snprintf(words, sizeof(words), "SET big %s", big);
+  parse_add(tc, MSG_REQ_REDIS_SET, "big", words);
+  parse_add(tc, MSG_REQ_REDIS_MSET, "k1 k2", "MSET k1 v1 k2 v2");
+  parse_add(tc, MSG_REQ_REDIS_MGET, "k1 k2 k3", "MGET k1 k2 k3");
+  parse_add(tc, MSG_REQ_REDIS_DEL, "k1 k2", "DEL k1 k2");
+  parse_add(tc, MSG_REQ_REDIS_EXISTS, "k1", "Exists k1");
+  parse_add(tc, MSG_REQ_REDIS_HSET, "h", "HSET h f v");
+  parse_add(tc, MSG_REQ_REDIS_ZADD, "z", "ZADD z 1 m");
+  parse_add(tc, MSG_REQ_REDIS_LPUSH, "l", "LPUSH l a b");
+  parse_add(tc, MSG_REQ_REDIS_EVAL, "ek", "EVAL return(1) 1 ek arg");
+  parse_add(tc, MSG_REQ_REDIS_SCRIPT_LOAD, "", "SCRIPT LOAD return(1)");
+  parse_add(tc, MSG_REQ_REDIS_SCRIPT_EXISTS, "",
+            "script exists e0e1f9fabfc9d4800c877a703b823ac0578ff8db");
+  parse_add(tc, MSG_REQ_REDIS_SCRIPT_FLUSH, "", "Script Flush");
+  parse_add(tc, MSG_REQ_REDIS_SCRIPT_KILL, "", "SCRIPT KILL");
+  parse_add(tc, MSG_REQ_REDIS_CLIENT_SETINFO, "",
+            "CLIENT SETINFO lib-name test");
+  parse_add(tc, MSG_REQ_REDIS_HELLO, "", "HELLO 3");
+  parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
+
+  /* requests sent by a dnode peer, each with a dnode header */
+  tc = parse_case_new("dnode", DATA_REDIS, true);
+  parse_add(tc, MSG_REQ_REDIS_SET, "foo1", "set foo1 bar1");
+  dn_snprintf(words, sizeof(words), "set foo2 %s", big);
+  parse_add(tc, MSG_REQ_REDIS_SET, "foo2", words);
+  parse_add(tc, MSG_REQ_REDIS_SET, "foo3", "set foo3 bar3");
+
+  tc = parse_case_new("memcache", DATA_MEMCACHE, false);
+  parse_add(tc, MSG_REQ_MC_GET, "k1 k2", "get k1 k2\r\n");
+  parse_add(tc, MSG_REQ_MC_GETS, "k3", "gets k3\r\n");
+  parse_add(tc, MSG_REQ_MC_SET, "k1", "set k1 0 0 5\r\nhello\r\n");
+  dn_snprintf(words, sizeof(words), "set big 0 0 %zu\r\n%s\r\n", strlen(big),
+              big);
+  parse_add(tc, MSG_REQ_MC_SET, "big", words);
+  parse_add(tc, MSG_REQ_MC_INCR, "n", "incr n 1\r\n");
+  parse_add(tc, MSG_REQ_MC_DELETE, "k1", "delete k1\r\n");
+
+  /* each in a stream of its own, after a valid request; the SCRIPT ones were
+   * accepted before fd14eb7 */
+  static const char *const rejects[] = {
+      "SCRIPT GET foo", "SCRIPT DEBUG yes", "SCRIPT",      "KILL",
+      "LOAD return(1)", "FLUSH",            "CLIENT LIST", "NOSUCHCOMMAND x",
+  };
+  for (size_t i = 0; i < NELEMS(rejects); i++) {
+    tc = parse_case_new(rejects[i], DATA_REDIS, false);
+    parse_add(tc, MSG_REQ_REDIS_GET, "foo", "GET foo");
+    parse_reject(tc, rejects[i]);
+  }
+}
+
+static rstatus_t test_parser(struct conn *conn) {
+  static const size_t mbuf_sizes[] = {MBUF_MIN_SIZE, TEST_MBUF_SIZE};
+  static const size_t chunks[] = {SIZE_MAX, 1, 2, 3, 7, 64, 509};
+  size_t nruns = 0, nfailed = 0;
+
+  print_banner("PARSER");
+  parse_cases_init();
+
+  /* the redis parser takes another path through the mbufs with read repairs */
+  for (int repairs = 0; repairs <= 1; repairs++) {
+    g_read_repairs_enabled = repairs;
+    g_read_consistency = g_write_consistency = repairs ? DC_QUORUM : DC_ONE;
+    for (size_t m = 0; m < NELEMS(mbuf_sizes); m++) {
+      mbuf_deinit();
+      mbuf_init(mbuf_sizes[m]);
+      for (size_t t = 0; t < nparse_cases; t++) {
+        for (size_t c = 0; c < NELEMS(chunks); c++) {
+          nruns++;
+          if (parse_run(conn, &parse_cases[t], chunks[c]) != DN_OK) {
+            nfailed++;
+          }
+        }
+      }
+    }
+  }
+  mbuf_deinit();
+  mbuf_init(TEST_MBUF_SIZE);
+  g_data_store = DATA_REDIS;
+  g_read_repairs_enabled = false;
+  g_read_consistency = g_write_consistency = DC_ONE;
+
+  if (nfailed != 0) {
+    log_error("%zu of %zu parser runs failed", nfailed, nruns);
+    return DN_ERROR;
+  }
+  loga("%zu parser runs passed", nruns);
   return DN_OK;
 }
 
@@ -448,6 +646,7 @@ static rstatus_t test_tailq(void) {
   // REMOVE HEAD
   struct test *test = TAILQ_FIRST(&test_q1);
   TAILQ_REMOVE(&test_q1, test, test_tqe);
+  dn_free(test);
   if (9 != TAILQ_COUNT(&test_q1)) {
     log_error("Count mismatch expected 9, got %lu", TAILQ_COUNT(&test_q1));
     return DN_ERROR;
@@ -455,6 +654,7 @@ static rstatus_t test_tailq(void) {
   // REMOVE TAIL
   test = TAILQ_LAST(&test_q1, test_tqh);
   TAILQ_REMOVE(&test_q1, test, test_tqe);
+  dn_free(test);
   if (8 != TAILQ_COUNT(&test_q1)) {
     log_error("Count mismatch expected 8, got %lu", TAILQ_COUNT(&test_q1));
     return DN_ERROR;
@@ -486,6 +686,7 @@ static rstatus_t test_tailq(void) {
       return DN_ERROR;
     }
     TAILQ_REMOVE(&test_q1, test, test_tqe);
+    dn_free(test);
     i--;
   }
   loga(".....SUCCESS...");
@@ -554,7 +755,6 @@ static void init_test(int argc, char **argv) {
   test_pre_run(&nci);
 
   test_core_ctx_create(&nci);
-  position = 0;
   conn_init();
 
   test_server_pool(&nci);
@@ -575,13 +775,10 @@ int main(int argc, char **argv) {
   init_peer(peer);
 
   struct conn *conn = conn_get(peer, init_peer_conn);
-  struct msg *msg = msg_get(conn, true, __FUNCTION__);
 
-  // test payload larger than mbuf_size
-  rstatus_t ret = DN_OK;
-  ret = test_msg_recv_chain(conn, msg);
+  rstatus_t ret = test_parser(conn);
   if (ret != DN_OK) {
-    loga("Error in testing msg_recv_chain!!!");
+    loga("Error in testing the parser!!!");
     goto err_out;
   }
 
@@ -599,5 +796,6 @@ int main(int argc, char **argv) {
 
   loga("Testing is done!!!");
 err_out:
+  deinit_peer(peer);
   return ret;
 }
