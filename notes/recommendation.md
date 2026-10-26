@@ -2,26 +2,19 @@ If you are deploying dynomite in your production environment, here are a few rec
 
 ## Log Level
 
-By default debug logging is disabled in dynomite. However, it is worthwhile running dynomite with debug logging enabled and verbosity level set to LOG_INFO (-v 6 or --verbosity=6). This in reality does not add much overhead as you only pay the cost of checking an if condition for every log line encountered during the run time.
+A plain build (`./configure`, as the Docker image and CI use) only logs warnings, errors and a few startup lines, whatever the verbosity. For more, build dynomite with `--enable-debug=log` (or `--enable-debug=full`, which also turns on assertions) and run it with verbosity LOG_INFO (`-v 6` or `--verbosity=6`). The cost is small: every log line below the chosen level only costs an if condition.
 
-At LOG_INFO level, dynomite logs the life cycle of every client and server connection and other important events. Eg.
+At LOG_INFO, dynomite logs the life cycle of every client and server connection and other important events, for example a client request that times out on the datastore:
 
-    [Thu Aug  2 00:03:09 2012] dn_proxy.c:336 accepted c 7 on p 6 from '127.0.0.1:54009'
-    [Thu Aug  2 00:03:09 2012] dn_server.c:528 connected on s 8 to server '127.0.0.1:11211:1'
-    [Thu Aug  2 00:03:09 2012] dn_core.c:270 req 1 on s 8 timedout
-    [Thu Aug  2 00:03:09 2012] dn_core.c:207 close s 8 '127.0.0.1:11211' on event 0004 eof 0 done 0 rb 0 sb 20: Connection timed out
-    [Thu Aug  2 00:03:09 2012] dn_server.c:406 close s 8 schedule error for req 1 len 20 type 5 from c 7: Connection timed out
-    [Thu Aug  2 00:03:09 2012] dn_server.c:281 update pool 0 'alpha' to delete server '127.0.0.1:11211:1' for next 2 secs
-    [Thu Aug  2 00:03:10 2012] dn_connection.c:314 recv on sd 7 eof rb 20 sb 35
-    [Thu Aug  2 00:03:10 2012] dn_request.c:334 c 7 is done
-    [Thu Aug  2 00:03:10 2012] dn_core.c:207 close c 7 '127.0.0.1:54009' on event 0001 eof 1 done 1 rb 20 sb 35
-    [Thu Aug  2 00:03:11 2012] dn_proxy.c:336 accepted c 7 on p 6 from '127.0.0.1:54011'
-    [Thu Aug  2 00:03:11 2012] dn_server.c:528 connected on s 8 to server '127.0.0.1:11212:1'
-    [Thu Aug  2 00:03:12 2012] dn_connection.c:314 recv on sd 7 eof rb 20 sb 8
-    [Thu Aug  2 00:03:12 2012] dn_request.c:334 c 7 is done
-    [Thu Aug  2 00:03:12 2012] dn_core.c:207 close c 7 '127.0.0.1:54011' on event 0001 eof 1 done 1 rb 20 sb 8
+    [2026-10-26 16:48:32.410] proxy_accept:203 <CONN_PROXY 0x55cab1af8ef0 8 listening on '0.0.0.0:8102'> accepted <CONN_CLIENT 0x55cab1b00540 10 from '127.0.0.1:58120'>
+    [2026-10-26 16:48:32.811] core_timeout:460 <REQ 0x55cab1b007f0 4:0::0 REQ_REDIS_GET, len:22> on <CONN_SERVER 0x55cab1aeec10 7 to '127.0.0.1:22122:1'> timedout, timeout was 400
+    [2026-10-26 16:48:32.811] core_close:396 close <CONN_SERVER 0x55cab1aeec10 7 to '127.0.0.1:22122:1'> on event FF00 eof 0 done 0 rb 5 sb 53: Connection timed out
+    [2026-10-26 16:48:32.811] server_close:255 close <CONN_SERVER 0x55cab1aeec10 7 to '127.0.0.1:22122:1'> Dropped 1 outqueue & 0 inqueue requests
+    [2026-10-26 16:48:32.811] core_close:396 close <CONN_CLIENT 0x55cab1b00540 10 from '127.0.0.1:58120'> on event 00FF eof 1 done 1 rb 22 sb 44
+    [2026-10-26 16:48:33.813] conn_connect:283 <CONN_SERVER 0x55cab1b00540 7 to '127.0.0.1:22122:1'> connecting.....
+    [2026-10-26 16:48:33.813] server_connected:297 <CONN_SERVER 0x55cab1b00540 7 to '127.0.0.1:22122:1'> connected
 
-To enable debug logging, you have to compile dynomite with logging enabled using --enable-debug=log configure option.
+Use `-o <file>` to log to a file instead of stderr.
 
 ## Liveness
 
@@ -31,84 +24,47 @@ Dynomite does not eject failing servers from the hash ring. The keys `auto_eject
 
 ## Timeout
 
-It is always a good idea to configure dynomite `timeout:` for every server pool, rather than purely relying on client-side timeouts. Eg:
+`timeout:` (default 5000 msec, at least 1) limits how long dynomite waits for the datastore to answer a request. It is a good idea to set it, rather than relying only on client-side timeouts: a request that timed out on the client would otherwise still be pending between dynomite and the datastore, and a client retry adds to the load.
 
-    resilient_pool_with_timeout:
-      timeout: 400
-
-Relying only on client-side timeouts has the adverse effect of the original request having timedout on the client to proxy connection, but still pending and outstanding on the proxy to server connection. This further gets exacerbated when client retries the original request.
-
-By default, `timeout:` is 5000 msec. A request for which no response is received from the server in `timeout:` msec is timed out and an error response `SERVER_ERROR Connection timed out\r\n` is sent back to the client.
+When a request times out, dynomite answers it with an error and closes the connection to the datastore, so the other requests queued on that connection fail as well. Requests then fail until the connection is back (see [Liveness](#liveness)), which can take a few seconds. Choose a `timeout:` well above the datastore's normal response times, so that a single slow command doesn't cut off everything else.
 
 ## Error Response
 
-Whenever a request encounters failure on a server we usually send to the client a response with the general form - `SERVER_ERROR <errno description>\r\n` (memcached) or `-ERR <errno description>` (redis).
+When dynomite can't serve a request, it answers with an error of the form `-ERR <source> <description>` (redis) or `SERVER_ERROR <source> <description>` (memcache), where the source is `Storage:` (the local datastore), `Peer:` (another dynomite node) or `Dynomite:` (dynomite itself). For example:
 
-For example, when a memcache server is down, this error response is usually:
++ `-ERR Storage: Datastore refused connection` when the datastore is down, and also when a request to it timed out,
++ `-ERR Peer: Peer Node is down` when the node that owns the key can't be reached,
++ `-ERR Dynomite: Failed to achieve Quorum` when a quorum read or write didn't get enough replies.
 
-+ `SERVER_ERROR Connection refused\r\n` or,
-+ `SERVER_ERROR Connection reset by peer\r\n`
+Clients should treat these as transient failures and retry the request.
 
-When the request timedout, the response is usually:
+## mbuf Size
 
-+ `SERVER_ERROR Connection timed out\r\n`
-
-Seeing a `SERVER_ERROR` or `-ERR` response should be considered as a transient failure by a client which makes the original request an ideal candidate for a retry.
-
-## read, writev and mbuf
-
-All memory for incoming requests and outgoing responses is allocated in mbuf. Mbuf enables zero copy for requests and responses flowing through the proxy. By default an mbuf is 16K bytes in size and this value can be tuned between 512 and 65K bytes using the `mbuf_size` property in the configuration file. Every connection has at least one mbuf allocated to it. This means that the number of concurrent connections dynomite can support is dependent on the mbuf size. A small mbuf allows us to handle more connections, while a large mbuf allows us to read and write more data to and from kernel socket buffers.
-
-If dynomite is meant to handle a large number of concurrent client connections, you should set the mbuf size to 512 or 1K bytes.
+Dynomite keeps requests and responses in mbufs, buffers of `mbuf_size:` bytes (default 16384; 512 to 512000, a multiple of 16). Connections take mbufs as they need them, so smaller mbufs use less memory when there are many concurrent client connections, while larger mbufs read and write more data per system call.
 
 ## Maximum Key Length
-The memcache ascii protocol [specification](notes/memcache.txt) limits the maximum length of the key to 250 characters. The key should not include whitespace, or '\r' or '\n' character. For redis, we have no such limitation. However, dynomite requires the key to be stored in a contiguous memory region. Since all requests and responses in dynomite are stored in mbuf, the maximum length of the redis key is limited by the size of the maximum available space for data in mbuf (mbuf_data_size()). This means that if you want your redis instances to handle large keys, you might want to choose larger mbuf size, for example 
 
-    mbuf_size: 16384
-
-## Node Names for Consistent Hashing
-
-The server cluster in dynomite can either be specified as list strings in format 'host:port:weight' or 'host:port:weight name'.
-
-    servers:
-     - 127.0.0.1:6379:1
-     - 127.0.0.1:6380:1
-     - 127.0.0.1:6381:1
-     - 127.0.0.1:6382:1
-
-Or,
-
-    servers:
-     - 127.0.0.1:6379:1 server1
-     - 127.0.0.1:6380:1 server2
-     - 127.0.0.1:6381:1 server3
-     - 127.0.0.1:6382:1 server4
-
-
-In the former configuration, keys are mapped **directly** to **'host:port:weight'** triplet and in the latter they are mapped to **node names** which are then mapped to nodes i.e. host:port pair. The latter configuration gives us the freedom to relocate nodes to a different server without disturbing the hash ring. See [issue 25](https://github.com/twitter/dynomite/issues/25) for details.
-
-Note that when using node names for consistent hashing, dynomite ignores the weight value in the 'host:port:weight name' format string.
+The memcache protocol limits keys to 250 characters. Redis has no such limit, but dynomite needs every key to fit in one mbuf. In both cases a request with a longer key gets its client connection closed, without an error reply. If your redis keys can be long, choose a larger `mbuf_size:`.
 
 ## Hash Tags
 
-[Hash Tags](http://antirez.com/post/redis-presharding.html) enables you to use part of the key for calculating the hash. When the hash tag is present, we use part of the key within the tag as the key to be used for consistent hashing. Otherwise, we use the full key as is. Hash tags enable you to map different keys to the same server as long as the part of the key within the tag is the same.
+[Hash Tags](http://antirez.com/post/redis-presharding.html) enable you to use part of the key for calculating the hash. When the hash tag is present, we use the part of the key within the tag as the key to be used for consistent hashing. Otherwise, we use the full key as is. Hash tags enable you to map different keys to the same node as long as the part of the key within the tag is the same.
 
-For example, the configuration of server pool _beta_, aslo shown below, specifies a two character hash_tag string - "{}". This means that keys "user:{user1}:ids" and "user:{user1}:tweets" map to the same server because we compute the hash on "user1". For a key like "user:user1:ids", we use the entire string "user:user1:ids" to compute the hash and it may map to a different server.
+For example, the configuration below specifies a two character hash_tag string - "{}". This means that keys "user:{user1}:ids" and "user:{user1}:tweets" map to the same node because we compute the hash on "user1". For a key like "user:user1:ids", we use the entire string "user:user1:ids" to compute the hash and it may map to a different node.
 
-    beta:
-      listen: 127.0.0.1:22122
+    dyn_o_mite:
+      listen: 127.0.0.1:8102
+      dyn_listen: 127.0.0.1:8101
+      stats_listen: 127.0.0.1:22222
       hash: fnv1a_64
       hash_tag: "{}"
-      distribution: ketama
       timeout: 400
-      redis: true
       servers:
-       - 127.0.0.1:6380:1 server1
-       - 127.0.0.1:6381:1 server2
-       - 127.0.0.1:6382:1 server3
-       - 127.0.0.1:6383:1 server4
-       
-       
+      - 127.0.0.1:22122:1
+      tokens: 437425602
+
+Commands with several keys, such as MGET, MSET and DEL, are split by key and sent to the nodes that own each key. Commands that must run on one node, such as EVAL with several keys or SUNIONSTORE, need all their keys to hash to the same node, which a common hash tag ensures (see [redis.md](redis.md)).
+
 ## Graphing Datastore Failures
 
 To follow the health of the datastore over time, graph these stats exposed by dynomite:
@@ -118,8 +74,6 @@ To follow the health of the datastore over time, graph these stats exposed by dy
 - **server_err** is incremented for any other kinds of errors.
 - **server_ejects** is incremented on every failure of a datastore connection, and **server_ejected_at** holds the time of the last one. Despite their names, no server is ejected.
 
-## server_connections: > 1
+## Several Datastore Connections
 
-By design, dynomite multiplexes several client connections over few server connections. It is important to note that **"read my last write"** constraint doesn't necessarily hold true when dynomite is configured with `server_connections: > 1`. 
-
-To illustrate this, consider a scenario where dynomite is configured with `server_connections: 2`. If a client makes pipelined requests with the first request in pipeline being `set foo 0 0 3\r\nbar\r\n` (write) and the second request being `get foo\r\n` (read), the expectation is that the read of key `foo` would return the value `bar`. However, with configuration of two server connections it is possible that write and read request are sent on different server connections which would mean that their completion could race with one another. In summary, if the client expects "read my last write" constraint, you either configure dynomite to use `server_connections:1` or use clients that only make synchronous requests to dynomite.
+With `datastore_connections:` above 1, dynomite opens several connections to the local datastore, but each client connection always uses the same one, so pipelined requests from one client reach the local datastore in order.
