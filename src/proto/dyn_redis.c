@@ -555,7 +555,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
       // receive the entire payload yet), skip all the mbufs already parsed.
       int mbuf_idx = -1;
       while (r->latest_parsed_mbuf_idx > mbuf_idx) {
-        loga("Skipping previously parsed mbuf");
+        log_debug(LOG_VVERB, "Skipping previously parsed mbuf");
         b = STAILQ_NEXT(b, next);
         ++mbuf_idx;
       }
