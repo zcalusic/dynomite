@@ -602,7 +602,6 @@ uint8_t *msg_get_tagged_key(struct msg *req, uint32_t key_index,
 uint8_t *msg_get_full_key(struct msg *req, uint32_t key_index,
                           uint32_t *keylen);
 uint8_t *msg_get_full_key_copy(struct msg *msg, int idx, uint32_t *keylen);
-uint8_t *msg_get_arg_copy(struct msg *msg, int idx, uint32_t *arglen);
 
 struct msg *req_get(struct conn *conn);
 void req_put(struct msg *msg);

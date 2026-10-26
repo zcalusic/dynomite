@@ -814,43 +814,6 @@ uint8_t *msg_get_full_key_copy(struct msg *msg, int idx, uint32_t *keylen) {
   return copied_key;
 }
 
-static uint8_t *msg_get_arg(struct msg *req, uint32_t arg_index,
-                            uint32_t *arglen) {
-  *arglen = 0;
-  if (array_n(req->args) == 0) return NULL;
-  ASSERT_LOG(arg_index < array_n(req->args), "%s has %u keys", print_obj(req),
-             array_n(req->args));
-
-  struct argpos *argpos = array_get(req->args, arg_index);
-  uint8_t *arg_start = argpos->start;
-  uint8_t *arg_end = argpos->end;
-  *arglen = (uint32_t)(arg_end - arg_start);
-  return arg_start;
-}
-
-/*
- * Returns the 'idx' arg in 'msg'.
- *
- * Transfers ownership of returned buffer to the caller, so the caller must
- * take the responsibility of freeing it.
- *
- * Returns NULL if key does not exist or if we're unable to allocate memory.
- */
-uint8_t *msg_get_arg_copy(struct msg *msg, int idx, uint32_t *arglen) {
-  // Get a pointer to the required arg in 'msg'.
-  uint8_t *arg_ptr = msg_get_arg(msg, idx, arglen);
-
-  // Allocate a new buffer for the key.
-  uint8_t *copied_arg = dn_alloc((size_t)(*arglen + 1));
-  if (copied_arg == NULL) return NULL;
-
-  // Copy contents of the key from 'msg' to our new buffer.
-  dn_memcpy(copied_arg, arg_ptr, *arglen);
-  copied_arg[*arglen] = '\0';
-
-  return copied_arg;
-}
-
 uint32_t msg_payload_crc32(struct msg *rsp) {
   ASSERT(rsp != NULL);
   // take a continuous buffer crc
