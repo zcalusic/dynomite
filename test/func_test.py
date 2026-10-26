@@ -137,6 +137,8 @@ def run_hash_tests(c, max_keys=10, max_fields=1000):
         kv_pairs[field] = value
     c.run_verify("hmset", key, kv_pairs)
 
+    run_multi_field_hset_tests(c, create_key(test_name, "_multi"))
+
     # hmget
     keyid = random.randint(0, max_keys-1)
     key, _ = create_key_field(keyid)
@@ -176,6 +178,20 @@ def run_hash_tests(c, max_keys=10, max_fields=1000):
         #print next_index
         #if next_index == 0:
             #break
+
+def run_multi_field_hset_tests(c, key):
+    # HSET takes several fields since Redis 4.0. With read repairs it is
+    # rewritten as a script like HMSET: its reply must still be the number of
+    # fields added.
+    print("\t-Running HSET with several fields on key '%s'" % key)
+    c.run_verify("execute_command", "HSET", key, "f1", "v1")
+    c.run_verify("execute_command", "HSET", key, "f1", "v2", "f2", "v2", "f3", "v3")
+    c.run_verify("execute_command", "HSET", key, "f2", "x", "f3", "x")
+    c.run_verify("execute_command", "HMSET", key, "f3", "y", "f4", "y")
+    c.run_verify("execute_command", "HMSET", key, "f5", "z")
+    c.set_sort_before_compare(True)
+    c.run_verify("hgetall", key)
+    c.set_sort_before_compare(False)
 
 def run_zadd_tests(c, key):
     # ZADD is rewritten as a script with read repairs: its options, several
@@ -227,6 +243,7 @@ def run_read_repair_test(c, num_keys=10, min_size=1, max_size=1024):
     assert value == str(c.run_verify("get", key), 'utf-8')
 
     run_zadd_tests(c, create_key(test_name, "_zadd_%d" % max_size))
+    run_multi_field_hset_tests(c, create_key(test_name, "_hset_%d" % max_size))
 
     print("\t-Simulating partial update to key '%s'" % key)
     # Below, we simulate a partial write by updating the value of 'key' on only

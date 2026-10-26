@@ -170,7 +170,6 @@ static bool redis_arg2(struct msg *r) {
 
     case MSG_REQ_REDIS_HINCRBY:
     case MSG_REQ_REDIS_HINCRBYFLOAT:
-    case MSG_REQ_REDIS_HSET:
     case MSG_REQ_REDIS_HSETNX:
 
     case MSG_REQ_REDIS_LRANGE:
@@ -231,6 +230,7 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_HDEL:
     case MSG_REQ_REDIS_HMGET:
     case MSG_REQ_REDIS_HMSET:
+    case MSG_REQ_REDIS_HSET:
     case MSG_REQ_REDIS_HSCAN:
 
     case MSG_REQ_REDIS_LPUSH:

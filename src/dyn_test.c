@@ -598,6 +598,11 @@ static void parse_cases_init(void) {
   parse_add(tc, MSG_REQ_REDIS_DEL, "k1 k2", "DEL k1 k2");
   parse_add(tc, MSG_REQ_REDIS_EXISTS, "k1", "Exists k1");
   parse_add_args(tc, MSG_REQ_REDIS_HSET, "h", "f v", "HSET h f v");
+  parse_add_args(tc, MSG_REQ_REDIS_HSET, "h", "f1 v1 f2 v2",
+                 "HSET h f1 v1 f2 v2");
+  /* Redis rejects these: passed on for it to answer */
+  parse_add_args(tc, MSG_REQ_REDIS_HSET, "h", "f1 v1 f2", "HSET h f1 v1 f2");
+  parse_add(tc, MSG_REQ_REDIS_HSET, "h", "HSET h");
   parse_add_args(tc, MSG_REQ_REDIS_ZADD, "z", "1 m", "ZADD z 1 m");
   parse_add_args(tc, MSG_REQ_REDIS_LPUSH, "l", "a b", "LPUSH l a b");
   parse_add_args(tc, MSG_REQ_REDIS_EVAL, "ek", "return(1) 1 arg",
@@ -1193,6 +1198,22 @@ static rstatus_t test_read_repair(struct conn *conn) {
       {"ZADD z NX GT 1 m", {NULL, NULL}},
       {"ZADD z NX", {NULL, NULL}},
       {"ZADD z 1 m 2", {NULL, NULL}},
+      /*
+       * HSET and HMSET: the script gets the number of fields and the
+       * timestamp, then each field and its value.
+       */
+      {"HSET h f v",
+       {"$4\r\nHSET\r\n$1\r\n1\r\n$", "\r\n$1\r\nf\r\n$1\r\nv\r\n"}},
+      {"HSET h f1 v1 f2 v2",
+       {"$4\r\nHSET\r\n$1\r\n2\r\n$",
+        "\r\n$2\r\nf1\r\n$2\r\nv1\r\n$2\r\nf2\r\n$2\r\nv2\r\n"}},
+      {"HMSET h f1 v1 f2 v2",
+       {"$5\r\nHMSET\r\n$1\r\n2\r\n$",
+        "\r\n$2\r\nf1\r\n$2\r\nv1\r\n$2\r\nf2\r\n$2\r\nv2\r\n"}},
+      /* rejected by Redis, so sent to it as they are */
+      {"HSET h f1 v1 f2", {NULL, NULL}},
+      {"HSET h", {NULL, NULL}},
+      {"HMSET h f1", {NULL, NULL}},
   };
   /* keys with and without a hash tag in them, with and without one configured */
   static const struct {

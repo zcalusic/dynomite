@@ -155,7 +155,7 @@
   "end\n"\
   "return 0\n\r\n"
 
-#define HSET_SCRIPT "$4\r\nEVAL\r\n$1613\r\n"\
+#define HSET_SCRIPT "$4\r\nEVAL\r\n$1692\r\n"\
   "local key = KEYS[1]\n"\
   "local top_level_add_set = KEYS[2]\n"\
   "local top_level_rem_set = KEYS[3]\n"\
@@ -182,7 +182,7 @@
   "  redis.call('ZADD', top_level_add_set, cur_ts, key)\n"\
   "end\n\n"\
   "local skiploop\n"\
-  "local ret\n"\
+  "local added = 0\n"\
   "for i=start_loop,end_loop,2\n"\
   "do\n"\
   "  skiploop = false\n"\
@@ -202,14 +202,16 @@
   "  end\n\n"\
   "  if (skiploop == false) then\n"\
   "    redis.call('ZADD', add_set, cur_ts, field)\n"\
-  "    ret = redis.call(orig_cmd, key, field, value)\n"\
+  "    local ret = redis.call(orig_cmd, key, field, value)\n"\
+  "    if (type(ret) == 'number') then\n"\
+  "      added = added + ret\n"\
+  "    end\n"\
   "  end\n"\
   "end\n\n"\
-  "if tonumber(num_fields) > 1 then\n"\
-  "  return \"OK\"\n"\
-  "else\n"\
-  "  return ret\n"\
-  "end\n\r\n"
+  "if (orig_cmd == 'HMSET') then\n"\
+  "  return {ok='OK'}\n"\
+  "end\n"\
+  "return added\n\r\n"
 
 #define HDEL_SCRIPT "$4\r\nEVAL\r\n$1122\r\n"\
   "local key = KEYS[1]\n"\

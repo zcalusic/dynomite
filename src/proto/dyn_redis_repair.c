@@ -92,7 +92,7 @@ struct cmd_info proto_cmd_info[] = {
  {"HLEN", 0, 0, 0, 0, 0, false, false, false, -1, -1, -1, -1, -1, -1, NULL, 0, 0},
  {"HMGET", 0, 0, 0, 0, 0, false, false, false, -1, -1, -1, -1, -1, -1, NULL, 0, 0},
  {"HMSET", 2, 1, 1, 1, 0, true, false, false, 0, 0, 1, 2, 2, 2, HSET_SCRIPT, 0, 0}, // idx 70
- {"HSET", 2, 1, 1, 1, 0, true, false, false, 0, 0, 1, 0, 2, 0, HSET_SCRIPT, 0, 0}, // idx 71
+ {"HSET", 2, 1, 1, 1, 0, true, false, false, 0, 0, 1, 2, 2, 2, HSET_SCRIPT, 0, 0}, // idx 71
  {"HSETNX", 0, 0, 0, 0, 0, false, false, false, -1, -1, -1, -1, -1, -1, NULL, 0, 0},
  {"HSCAN", 0, 0, 0, 0, 0, false, false, false, -1, -1, -1, -1, -1, -1, NULL, 0, 0},
  {"HVALS", 0, 0, 0, 0, 0, false, false, false, -1, -1, -1, -1, -1, -1, NULL, 0, 0},
@@ -393,6 +393,15 @@ rstatus_t post_parse_msg(struct msg *orig_msg) {
       + out_struct->num_optionals;
   int first_value_pos = orig_cmd_info->first_value_pos
       + out_struct->num_optionals;
+
+  // Field and value pairs (HSET, HMSET; ZADD's are score and member): Redis
+  // rejects none or an odd number of args, so leave those for it to reject.
+  if (orig_cmd_info->variadic_field_jump == 2 &&
+      orig_cmd_info->variadic_value_jump == 2) {
+    int first_pair_pos = MIN(first_field_pos, first_value_pos);
+    int num_pair_args = (int)array_n(orig_msg->args) - (first_pair_pos - 1);
+    if (num_pair_args < 2 || num_pair_args % 2 != 0) goto error;
+  }
 
   out_struct->num_fields = total_tokens_of_type(
       orig_cmd_info->variadic_field_jump,
