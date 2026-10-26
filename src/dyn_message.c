@@ -825,11 +825,6 @@ uint32_t msg_payload_crc32(struct msg *rsp) {
      the beginning of the first mbuf */
   bool start_found = rsp->dmsg ? false : true;
 
-  // If the message was encrypted, the mbufs will have the decrypted payload
-  // without the Dynomite header, so we do have the start.
-  // rsp->dmsg->payload for encrypted msgs will have the encrypted payload.
-  if (rsp->dmsg && (rsp->dmsg->flags & 0x1)) start_found = true;
-
   STAILQ_FOREACH(mbuf, &rsp->mhdr, next) {
     uint8_t *start = mbuf->start;
     uint8_t *end = mbuf->last;
@@ -1024,44 +1019,9 @@ static rstatus_t msg_recv_chain(struct context *ctx, struct conn *conn,
   struct mbuf *mbuf;
   size_t msize;
   ssize_t n;
-  bool encryption_detected = (msg->dyn_parse_state == DYN_DONE ||
-                              msg->dyn_parse_state == DYN_POST_DONE) &&
-                             (msg->dmsg->flags & 0x1);
 
   mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
-  /* This logic is unncessarily complicated. Ideally a connection should read
-   * the entire payload of an encrypted message before it starts decrypting.
-   * However the code tries to check if a buffer is full and decrypts it before
-   * moving to the next buffer. So at any given point, a message large enough
-   * can have some buffers decrypted and the last one either decrypted or
-   * encrypted. We start decrypting a buffer if we finish reading the payload
-   * (dmsg->plen) or we reach till mbuf->end_extra. If a buffer is encrypted, it
-   * can span till mbuf->end_extra. If this buffer gets decrypted, it can span
-   * till mbuf_full() i.e mbuf->end. which is 16 bytes (one cypher block) less
-   * than mbuf->end_extra
-   *
-   * However there is no way to tell if a buffer that is filled till mbuf->end
-   * is encrypted or decrypted so we cannot know if we should continue writing
-   * to that buffer from mbuf->end till mbuf->end_extra (which is 16 bytes) or
-   * whether we just decrypted a buffer and now it spans till mbuf->end and we
-   * should create a new buffer to start receiving new encrypted data. Hence,
-   * I created a new flag MBUF_FLAG_JUST_DECRYPTED which is solely for this
-   * purpose. One should not write a code like this. We should receive the
-   * entire payload first and then decrypt it. Its slightly slow but worth the
-   * simplicity
-   *
-   * Create a new buffer if:
-   * 1) mbuf is NULL
-   * 2) unencrypted case and mbuf is full
-   * 3) encrypted case and
-   *      a) mbuf is full till end_extra
-   *      b) mbuf is full till mbuf->end (mbuf_full) and we just decrypted that
-   * buffer.
-   */
-  if (mbuf == NULL || ((!encryption_detected) && mbuf_full(mbuf)) ||
-      (encryption_detected && mbuf->last == mbuf->end_extra) ||
-      (encryption_detected && mbuf_full(mbuf) &&
-       (mbuf->flags & MBUF_FLAGS_JUST_DECRYPTED))) {
+  if (mbuf == NULL || mbuf_full(mbuf)) {
     mbuf = mbuf_get();
     if (mbuf == NULL) {
       return DN_ENOMEM;
@@ -1071,13 +1031,7 @@ static rstatus_t msg_recv_chain(struct context *ctx, struct conn *conn,
     msg->pos = mbuf->pos;
   }
 
-  ASSERT(mbuf->end_extra - mbuf->last > 0);
-
-  if (!encryption_detected) {
-    msize = mbuf_remaining_space(mbuf);
-  } else {
-    msize = (size_t)MIN(msg->dmsg->plen, mbuf->end_extra - mbuf->last);
-  }
+  msize = mbuf_remaining_space(mbuf);
 
   if (msize != 0) {
     n = conn_recv_data(conn, mbuf->last, msize);
@@ -1094,66 +1048,9 @@ static rstatus_t msg_recv_chain(struct context *ctx, struct conn *conn,
     return DN_ERROR;
   }
 
-  ASSERT((mbuf->last + n) <= mbuf->end_extra);
+  ASSERT((mbuf->last + n) <= mbuf->end);
   mbuf->last += n;
   msg->mlen += (uint32_t)n;
-
-  // Only used in encryption case
-  if (encryption_detected) {
-    if ((n >= msg->dmsg->plen && n != 0) || mbuf->end_extra == mbuf->last) {
-      // log_debug(LOG_VERB, "About to decrypt this mbuf as it is full or
-      // eligible!");
-      struct mbuf *nbuf = NULL;
-
-      if (n >= msg->dmsg->plen) {
-        nbuf = mbuf_get();
-
-        if (nbuf == NULL) {
-          loga("Not enough memory error!!!");
-          return DN_ENOMEM;
-        }
-
-        status =
-            dyn_aes_decrypt(mbuf->start, (size_t)(mbuf->last - mbuf->start),
-                            nbuf, msg->owner->aes_key);
-        if (status >= DN_OK) {
-          int remain = n - msg->dmsg->plen;
-          uint8_t *pos = mbuf->last - remain;
-          mbuf_copy(nbuf, pos, remain);
-        }
-
-      } else if (mbuf->end_extra == mbuf->last) {
-        nbuf = mbuf_get();
-
-        if (nbuf == NULL) {
-          loga("Not enough memory error!!!");
-          return DN_ENOMEM;
-        }
-
-        status = dyn_aes_decrypt(mbuf->start, mbuf->last - mbuf->start, nbuf,
-                                 msg->owner->aes_key);
-      }
-
-      if (status >= 0 && nbuf != NULL) {
-        nbuf->flags |= MBUF_FLAGS_JUST_DECRYPTED;
-        nbuf->flags |= MBUF_FLAGS_READ_FLIP;
-        mbuf_remove(&msg->mhdr, mbuf);
-        mbuf_insert(&msg->mhdr, nbuf);
-        msg->pos = nbuf->start;
-
-        msg->mlen -= mbuf->last - mbuf->start;
-        msg->mlen += nbuf->last - nbuf->start;
-
-        mbuf_put(mbuf);
-      } else {  // clean up the mess and recover it
-        mbuf_insert(&msg->mhdr, nbuf);
-        msg->pos = nbuf->last;
-        msg->dyn_error_code = BAD_FORMAT;
-      }
-    }
-
-    msg->dmsg->plen -= n;
-  }
 
   for (;;) {
     status = msg_parse(ctx, conn, msg);

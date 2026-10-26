@@ -367,8 +367,6 @@ static void dnode_req_client_dequeue_omsgq(struct context *ctx,
 
 /* dnode sends a response back to a peer  */
 static struct msg *dnode_rsp_send_next(struct context *ctx, struct conn *conn) {
-  rstatus_t status;
-
   // SMB: There is some non trivial thing happening here. And I think it is very
   // important to read this before anything is changed in here. There is also a
   // bug that exists which I will mention briefly:
@@ -406,17 +404,13 @@ static struct msg *dnode_rsp_send_next(struct context *ctx, struct conn *conn) {
   // to local token owner DC2N2. Now DC2N1 receives a response from DC2N2 which
   // has to be relayed back to DC1N1. This response from DC2N2 already has a
   // dnode header but for the link between DC2N1 and DC2N2. DC2N1 should strip
-  // this header and prepend its own header for sending it back to DC1N1. This
-  // gets handled in encryption case since we overwrite all mbufs in the
-  // response However if the encryption is off, the message length sent to
-  // dmsg_write consists of the header from DC2N2 also which is wrong. So this
-  // relaying of responses will not work for the case where encryption is
-  // disabled.
+  // this header and prepend its own header for sending it back to DC1N1.
+  // However the message length sent to dmsg_write consists of the header from
+  // DC2N2 also which is wrong. So this relaying of responses will not work.
   //
   // So msg_length should really be from mbuf->pos and not mbuf->start. This
   // is a problem only with remote region replication since that is the only
-  // case where we CAN have 2 hops to send the request/response. This is also
-  // not a problem if encryption is ON.
+  // case where we CAN have 2 hops to send the request/response.
   ASSERT(conn->type == CONN_DNODE_PEER_CLIENT);
 
   struct msg *rsp = rsp_send_next(ctx, conn);
@@ -436,49 +430,9 @@ static struct msg *dnode_rsp_send_next(struct context *ctx, struct conn *conn) {
       return NULL;  // need to address error here properly
     }
     dmsg_type_t msg_type = DMSG_RES;
-    // TODOs: need to set the outcoming conn to be secured too if the incoming
-    // conn is secured
-    if (req->owner->dnode_secured || conn->dnode_secured) {
-      if (log_loggable(LOG_VVERB)) {
-        log_debug(LOG_VVERB, "Encrypting response ...");
-        SCOPED_CHARPTR(encoded_aes_key) =
-            base64_encode(conn->aes_key, AES_KEYLEN);
-        if (encoded_aes_key)
-          loga("AES encryption key: %s\n", (char *)encoded_aes_key);
-      }
-
-      if (ENCRYPTION) {
-        size_t encrypted_bytes;
-        status = dyn_aes_encrypt_msg(rsp, conn->aes_key, &encrypted_bytes);
-        if (status != DN_OK) {
-          if (status == DN_ENOMEM) {
-            loga("OOM to obtain an mbuf for encryption!");
-          } else if (status == DN_ERROR) {
-            loga("Encryption failed: Empty message");
-          }
-          mbuf_put(header_buf);
-          rsp_put(rsp);
-          return NULL;
-        }
-
-        if (log_loggable(LOG_VVERB)) {
-          log_debug(LOG_VERB, "#encrypted bytes : %zu", encrypted_bytes);
-        }
-
-        dmsg_write(header_buf, msg_id, msg_type, conn, msg_length(rsp));
-      } else {
-        if (log_loggable(LOG_VVERB)) {
-          log_debug(LOG_VERB, "no encryption on the rsp payload");
-        }
-        dmsg_write(header_buf, msg_id, msg_type, conn, msg_length(rsp));
-      }
-
-    } else {
-      // write dnode header
-      log_debug(LOG_VERB, "sending dnode response with msg_id %" PRIu64,
-                msg_id);
-      dmsg_write(header_buf, msg_id, msg_type, conn, msg_length(rsp));
-    }
+    // write dnode header
+    log_debug(LOG_VERB, "sending dnode response with msg_id %" PRIu64, msg_id);
+    dmsg_write(header_buf, msg_id, msg_type, conn, msg_length(rsp));
 
     rsp->dnode_header_prepended = 1;
     mbuf_insert_head(&rsp->mhdr, header_buf);

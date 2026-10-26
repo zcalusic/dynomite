@@ -81,8 +81,6 @@ def setup_temp_dir():
     confdir = (tempdir / 'conf')
     confdir.mkdir()
 
-    LocalPath('../../conf/dynomite.pem').symlink(confdir / 'dynomite.pem')
-
     return tempdir
 
 def sum_racks(dcs):

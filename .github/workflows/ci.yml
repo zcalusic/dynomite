@@ -19,7 +19,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            automake gcc git libc6-dev libssl-dev libyaml-dev make
+            automake gcc git libc6-dev libyaml-dev make
 
       - uses: actions/checkout@v7
         with:
@@ -53,7 +53,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            automake gcc git libc6-dev libssl-dev libyaml-dev make \
+            automake gcc git libc6-dev libyaml-dev make \
             redis-server python3 python3-plumbum python3-redis \
             python3-requests python3-yaml
 

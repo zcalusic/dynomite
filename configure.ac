@@ -70,8 +70,6 @@ AC_CHECK_HEADERS([sys/event.h], [], [])
 # Checks for libraries
 AC_CHECK_LIB([m], [pow])
 AC_CHECK_LIB([pthread], [pthread_create])
-AC_CHECK_LIB([ssl], [SSL_read])
-AC_CHECK_LIB([crypto], [OPENSSL_init])
 AC_CHECK_HEADER([yaml.h], [],
   [AC_MSG_ERROR([libyaml headers not found (Debian: libyaml-dev)])])
 AC_CHECK_LIB([yaml], [yaml_parser_initialize], [],

@@ -14,8 +14,6 @@ from utils import *
 # TODO: Make this path absolute based on param instead of relative.
 CLUSTER_DESC_FILEPATH='../running_cluster.yaml'
 DYN_O_MITE_DEFAULTS = dict(
-    secure_server_option='datacenter',
-    pem_key_file='conf/dynomite.pem',
     data_store=0,
     datastore_connections=1,
 )

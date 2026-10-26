@@ -414,10 +414,6 @@ rstatus_t server_pool_init(struct server_pool *sp, struct conf_pool *cp,
   sp->alloc_msgs_max =
       cp->alloc_msgs_max == CONF_UNSET_NUM ? 0 : (size_t)cp->alloc_msgs_max;
 
-  sp->secure_server_option =
-      get_secure_server_option(&cp->secure_server_option);
-  sp->pem_key_file = cp->pem_key_file;
-
   array_null(&sp->peers);
   array_init(&sp->datacenters, 1, sizeof(struct datacenter));
   sp->conf_pool = cp;

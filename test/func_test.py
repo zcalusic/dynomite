@@ -1,5 +1,6 @@
 import redis
 import random
+import socket
 import string
 import time
 from utils import string_generator, number_generator
@@ -289,6 +290,47 @@ def run_read_repair_test(c, num_keys=10, min_size=1, max_size=1024):
     dyno_cluster.disable_read_repairs()
 
 
+def send_peer_request(node, key, flags):
+    """Sends 'SET key value' to node's peer port as a peer in the same DC
+    would, with the given dnode header flags. Returns what came back before
+    the node closed the connection or a 2 s timeout."""
+    payload = '*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n$5\r\nvalue\r\n'.format(
+        len(key), key).encode()
+    header = '   $2014$ 4242 3 {} 1 1 *1 d *{}\r\n'.format(
+        flags, len(payload)).encode()
+    received = b''
+    with socket.create_connection((node.ip, node.dnode_port), timeout=2) as s:
+        s.sendall(header + payload)
+        try:
+            while True:
+                data = s.recv(4096)
+                if not data:
+                    break
+                received += data
+        except socket.timeout:
+            pass
+        except ConnectionResetError:
+            pass
+    return received
+
+def run_encrypted_peer_msg_test(c):
+    print("Running ENCRYPTED_PEER_MSG test")
+    node = c.get_dynomite_cluster().nodes[0]
+    store = node.get_data_store_connection()
+    # Built-in peer encryption was removed: a message with the encryption bit
+    # gets the connection closed, without a reply or a write.
+    key = create_key('ENCRYPTED_PEER_MSG', 'encrypted')
+    received = send_peer_request(node, key, 1)
+    assert received == b'', received
+    assert not store.exists(key)
+    # The same message without the bit is executed, so the test above checks
+    # the bit and not a malformed message.
+    key = create_key('ENCRYPTED_PEER_MSG', 'plain')
+    received = send_peer_request(node, key, 0)
+    assert received.endswith(b'+OK\r\n'), received
+    assert store.get(key) == b'value'
+    print("\t-Encrypted peer message rejected, plaintext one accepted")
+
 def comparison_test(redis, dynomite, debug):
     c = dual_run(redis, dynomite, debug)
     run_key_value_tests(c)
@@ -300,6 +342,7 @@ def comparison_test(redis, dynomite, debug):
     run_large_multikey_test(c)
     run_hash_tests(c, max_keys=10, max_fields=100)
     run_script_tests(c)
+    run_encrypted_peer_msg_test(c)
 
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM

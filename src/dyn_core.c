@@ -153,17 +153,6 @@ static rstatus_t core_stats_create(struct context *ctx) {
 }
 
 /**
- * Initialize crypto and create the Dynomite server performance statistics.
- * @param[in,out] ctx Dynomite server context.
- * @return rstatus_t Return status code.
- */
-static rstatus_t core_crypto_init(struct context *ctx) {
-  /* crypto init */
-  THROW_STATUS(crypto_init(&ctx->pool));
-  return DN_OK;
-}
-
-/**
  * Initialize the server pool.
  * @param[in,out] ctx Context.
  * @return rstatus_t Return status code.
@@ -243,11 +232,6 @@ rstatus_t core_start(struct instance *nci) {
   ASSERT(ctx != NULL);
 
   status = core_server_pool_init(ctx);
-  if (status != DN_OK) {
-    goto error;
-  }
-
-  status = core_crypto_init(ctx);
   if (status != DN_OK) {
     goto error;
   }
@@ -335,7 +319,6 @@ error:
     server_pool_disconnect(ctx);
     if (ctx->evb) event_base_destroy(ctx->evb);
     if (ctx->stats) stats_destroy(ctx->stats);
-    crypto_deinit();
     server_pool_deinit(&ctx->pool);
     if (ctx->cf) conf_destroy(ctx->cf);
     dn_free(ctx);

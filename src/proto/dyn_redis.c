@@ -3038,11 +3038,7 @@ error:
  * if dst == NULL, we just eat the bulk
  *
  * The bulk, including its "$<len>\r\n" header, can span several mbufs of
- * src. It is copied into dst filling each mbuf before starting the next one,
- * because of the way our encryption/decryption works: we encrypt each mbuf
- * separately, but the receiving side fills its mbufs as full as it can, so
- * multiple partially filled mbufs would fail to decrypt there.
- * TODO: Change this when the whole broken crypto scheme is changed.
+ * src. It is copied into dst filling each mbuf before starting the next one.
  *
  * */
 static rstatus_t redis_copy_bulk(struct msg *dst, struct msg *src, bool log) {
@@ -3472,8 +3468,6 @@ static rstatus_t redis_fragment_argx(struct msg *r, struct server_pool *pool,
   // We need to know the total number of tokens before proceeding with
   // crafting each peer's command since we're trying to fit as much as
   // possible into one MBUF and not split them for convenience.
-  // TODO: This is the case because of our broken crypto scheme. Change once
-  // that is fixed.
   for (i = 0; i < array_n(r->keys); i++) {
     struct keypos *kpos = array_get(r->keys, i);
     // use hash-tagged start and end for forwarding.

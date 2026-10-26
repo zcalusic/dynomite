@@ -53,10 +53,6 @@ STAILQ_HEAD(mhdr, mbuf);
 #define MBUF_HSIZE sizeof(struct mbuf)
 #define MBUF_ESIZE 16
 
-// FLAGS
-#define MBUF_FLAGS_READ_FLIP 0x00000001
-#define MBUF_FLAGS_JUST_DECRYPTED 0x00000002
-
 static inline bool mbuf_empty(struct mbuf *mbuf) {
   return mbuf->pos == mbuf->last ? true : false;
 }

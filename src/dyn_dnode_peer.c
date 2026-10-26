@@ -31,8 +31,6 @@ static void dnode_peer_ref(struct conn *conn, void *owner) {
 
   conn->owner = peer;
 
-  conn->dnode_secured = peer->is_secure;
-  conn->crypto_key_sent = 0;
   conn->same_dc = peer->is_same_dc;
 
   if (log_loggable(LOG_VVERB)) {
@@ -111,9 +109,8 @@ static char *_print_node(struct object *obj) {
   ASSERT(obj->type == OBJ_NODE);
   struct node *node = (struct node *)obj;
   snprintf(obj->print_buff, PRINT_BUF_SIZE,
-           "<NODE %p %.*s %.*s %.*s secured:%d>", node, node->name.len,
-           node->name.data, node->dc.len, node->dc.data, node->rack.len,
-           node->rack.data, node->is_secure);
+           "<NODE %p %.*s %.*s %.*s>", node, node->name.len, node->name.data,
+           node->dc.len, node->dc.data, node->rack.len, node->rack.data);
   return obj->print_buff;
 }
 
@@ -149,7 +146,6 @@ static rstatus_t dnode_peer_add_local(struct server_pool *pool,
   self->is_local = true;
   self->is_same_dc = true;
   self->processed = 0;
-  self->is_secure = false;
   self->state = JOINING;
 
   log_notice("Initialized local peer: %s", print_obj(self));
@@ -226,8 +222,6 @@ static rstatus_t dnode_initialize_peer_each(void *elem, void *data1,
   s->is_same_dc = (string_compare(&sp->dc, &s->dc) == 0);
   s->processed = 0;
 
-  s->is_secure =
-      is_secure(sp->secure_server_option, &sp->dc, &sp->rack, &s->dc, &s->rack);
   s->state = DOWN;  // assume peers are down initially
   dnode_create_connection_pool(sp, s);
   log_notice("added peer %s", print_obj(s));
@@ -638,8 +632,6 @@ static rstatus_t dnode_peer_add_node(struct server_pool *sp,
   s->is_same_dc = (string_compare(&sp->dc, &s->dc) == 0);
   s->processed = 0;
 
-  s->is_secure =
-      is_secure(sp->secure_server_option, &sp->dc, &sp->rack, &s->dc, &s->rack);
   s->state = node->state;
 
   dnode_create_connection_pool(sp, s);

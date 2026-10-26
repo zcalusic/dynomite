@@ -67,22 +67,14 @@
 #define CONF_DEFAULT_MIN_ALLOC_MSGS MIN_ALLOC_MSGS
 #define CONF_DEFAULT_MAX_ALLOC_MSGS MAX_ALLOC_MSGS
 
-#define CONF_SECURE_OPTION_NONE "none"
-#define CONF_SECURE_OPTION_DC "datacenter"
-#define CONF_SECURE_OPTION_RACK "rack"
-#define CONF_SECURE_OPTION_ALL "all"
-
 #define CONF_DEFAULT_RACK "localrack"
 #define CONF_DEFAULT_DC "localdc"
-#define CONF_DEFAULT_SECURE_SERVER_OPTION CONF_SECURE_OPTION_NONE
 
 #define CONF_DEFAULT_SEED_PROVIDER "simple_provider"
 
 #define CONF_DEFAULT_STATS_PNAME "0.0.0.0:22222"  // default stats port
 #define CONF_DEFAULT_STATS_PORT 22222
 #define CONF_DEFAULT_STATS_INTERVAL_MS (30 * 1000) /* in msec */
-
-#define PEM_KEY_FILE "conf/dynomite.pem"
 
 data_store_t g_data_store = CONF_DEFAULT_DATASTORE;
 struct command {
@@ -197,10 +189,8 @@ static rstatus_t conf_pool_init(struct conf_pool *cp, struct string *name) {
   string_init(&cp->dyn_seed_provider);
   string_init(&cp->dyn_listen.pname);
   string_init(&cp->dyn_listen.name);
-  string_init(&cp->secure_server_option);
   string_init(&cp->read_consistency);
   string_init(&cp->write_consistency);
-  string_init(&cp->pem_key_file);
   string_init(&cp->stats_listen.pname);
   string_init(&cp->stats_listen.name);
   string_init(&cp->dc);
@@ -275,10 +265,8 @@ static void conf_pool_deinit(struct conf_pool *cp) {
   string_deinit(&cp->dyn_seed_provider);
   string_deinit(&cp->dyn_listen.pname);
   string_deinit(&cp->dyn_listen.name);
-  string_deinit(&cp->secure_server_option);
   string_deinit(&cp->read_consistency);
   string_deinit(&cp->write_consistency);
-  string_deinit(&cp->pem_key_file);
   string_deinit(&cp->stats_listen.pname);
   string_deinit(&cp->stats_listen.name);
   string_deinit(&cp->rack);
@@ -293,22 +281,6 @@ static void conf_pool_deinit(struct conf_pool *cp) {
   array_deinit(&cp->tokens);
 
   log_debug(LOG_VVERB, "deinit conf pool %p", cp);
-}
-
-secure_server_option_t get_secure_server_option(struct string *option) {
-  if (dn_strcmp(option->data, CONF_SECURE_OPTION_NONE) == 0) {
-    return SECURE_OPTION_NONE;
-  }
-  if (dn_strcmp(option->data, CONF_SECURE_OPTION_RACK) == 0) {
-    return SECURE_OPTION_RACK;
-  }
-  if (dn_strcmp(option->data, CONF_SECURE_OPTION_DC) == 0) {
-    return SECURE_OPTION_DC;
-  }
-  if (dn_strcmp(option->data, CONF_SECURE_OPTION_ALL) == 0) {
-    return SECURE_OPTION_ALL;
-  }
-  return SECURE_OPTION_NONE;
 }
 
 /**
@@ -365,8 +337,6 @@ static void conf_dump(struct conf *cf) {
   log_debug(LOG_VVERB, "  gos_interval: %d", cp->gos_interval);
   log_debug(LOG_VVERB, "  conn_msg_rate: %d", cp->conn_msg_rate);
 
-  log_debug(LOG_VVERB, "  secure_server_option: \"%.*s\"",
-            cp->secure_server_option.len, cp->secure_server_option.data);
 
   log_debug(LOG_VVERB, "  read_consistency: \"%.*s\"", cp->read_consistency.len,
             cp->read_consistency.data);
@@ -1008,6 +978,22 @@ static char *conf_set_deprecated(struct conf *cf, struct command *cmd,
   return CONF_OK;
 }
 
+/*
+ * The built-in peer encryption was removed. "none" is accepted like the
+ * other deprecated keys; anything else refuses to start, so that a config
+ * that asked for encryption doesn't silently run without it.
+ */
+static char *conf_set_secure_server_option(struct conf *cf,
+                                           struct command *cmd, void *conf) {
+  struct string *value = array_top(&cf->arg);
+
+  if (value->len != 4 || dn_strncmp(value->data, "none", 4) != 0) {
+    return "is no longer supported: the built-in peer encryption was "
+           "removed, set it to none or remove it, on every node";
+  }
+  return conf_set_deprecated(cf, cmd, conf);
+}
+
 static char *conf_set_hashtag(struct conf *cf, struct command *cmd,
                               void *conf) {
   rstatus_t status;
@@ -1101,11 +1087,11 @@ static struct command conf_commands[] = {
     {string("gos_interval"), conf_set_num,
      offsetof(struct conf_pool, gos_interval)},
 
-    {string("secure_server_option"), conf_set_string,
-     offsetof(struct conf_pool, secure_server_option)},
+    {string("secure_server_option"), conf_set_secure_server_option,
+     offsetof(struct conf_pool, deprecated)},
 
-    {string("pem_key_file"), conf_set_string,
-     offsetof(struct conf_pool, pem_key_file)},
+    {string("pem_key_file"), conf_set_deprecated,
+     offsetof(struct conf_pool, deprecated)},
 
     {string("recon_key_file"), conf_set_deprecated,
      offsetof(struct conf_pool, deprecated)},
@@ -1887,13 +1873,6 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
     log_debug(LOG_INFO, "setting dc to default value:%s", CONF_DEFAULT_DC);
   }
 
-  if (string_empty(&cp->secure_server_option)) {
-    string_copy_c(&cp->secure_server_option,
-                  (const uint8_t *)CONF_DEFAULT_SECURE_SERVER_OPTION);
-    log_debug(LOG_INFO, "setting secure_server_option to default value:%s",
-              CONF_DEFAULT_SECURE_SERVER_OPTION);
-  }
-
   if (string_empty(&cp->read_consistency)) {
     string_copy_c(&cp->read_consistency, (const uint8_t *)CONF_STR_DC_ONE);
     log_debug(LOG_INFO, "setting read_consistency to default value:%s",
@@ -1921,17 +1900,6 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
     cp->stats_listen.port = CONF_DEFAULT_STATS_PORT;
     string_copy_c(&cp->stats_listen.pname,
                   (const uint8_t *)CONF_DEFAULT_STATS_PNAME);
-  }
-
-  if (dn_strcmp(cp->secure_server_option.data, CONF_SECURE_OPTION_NONE) &&
-      dn_strcmp(cp->secure_server_option.data, CONF_SECURE_OPTION_RACK) &&
-      dn_strcmp(cp->secure_server_option.data, CONF_SECURE_OPTION_DC) &&
-      dn_strcmp(cp->secure_server_option.data, CONF_SECURE_OPTION_ALL)) {
-    log_error(
-        "conf: directive \"secure_server_option:\" is \"%.*s\", must be one "
-        "of 'none' 'rack' 'datacenter' 'all'",
-        cp->secure_server_option.len, cp->secure_server_option.data);
-    return DN_ERROR;
   }
 
   if (!dn_strcasecmp(cp->read_consistency.data, CONF_STR_DC_ONE))
@@ -1969,12 +1937,6 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
     log_debug(LOG_INFO, "setting env to default value:%s", CONF_DEFAULT_ENV);
   }
 
-  if (string_empty(&cp->pem_key_file)) {
-    string_copy_c(&cp->pem_key_file, (const uint8_t *)PEM_KEY_FILE);
-    log_debug(LOG_INFO, "setting pem key file to default value:%s",
-              PEM_KEY_FILE);
-  }
-
 
   if (cp->datastore_connections == CONF_UNSET_NUM) {
     cp->datastore_connections = CONF_DEFAULT_CONNECTIONS;
@@ -2002,32 +1964,6 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
   cp->valid = 1;
 
   return DN_OK;
-}
-
-bool is_secure(secure_server_option_t option, struct string *this_dc,
-               struct string *this_rack, struct string *that_dc,
-               struct string *that_rack) {
-  // if dc then communication only between nodes in different dc is secured
-  if (option == SECURE_OPTION_DC) {
-    if (string_compare(this_dc, that_dc)) {
-      return true;
-    }
-  }
-  // if rack then communication only between nodes in different rack is secured.
-  // communication secured between nodes if they are in rack with same name
-  // across dcs.
-  else if (option == SECURE_OPTION_RACK) {
-    // if not same rack or dc
-    if (string_compare(this_rack, that_rack) ||
-        string_compare(this_dc, that_dc)) {
-      return true;
-    }
-  }
-  // if all then all communication between nodes will be secured.
-  else if (option == SECURE_OPTION_ALL) {
-    return true;
-  }
-  return false;
 }
 
 static rstatus_t conf_post_validate(struct conf *cf) {

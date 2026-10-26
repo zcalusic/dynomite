@@ -12,4 +12,3 @@ cluster_desc:
 conf:
   read_consistency: "DC_EACH_SAFE_QUORUM"
   write_consistency: "DC_EACH_SAFE_QUORUM"
-  secure_server_option: "none"

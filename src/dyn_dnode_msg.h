@@ -28,7 +28,6 @@ typedef enum {
   DYN_PAYLOAD_LEN,
   DYN_CRLF_BEFORE_DONE,
   DYN_DONE,
-  DYN_POST_DONE,
   DYN_UNKNOWN
 } dyn_parse_state_t;
 
@@ -61,9 +60,8 @@ struct dmsg {
 
   uint64_t id;      /* message id */
   dmsg_type_t type; /* message type */
-  uint8_t flags;    /* bits to indicate encryption or decryption. Right most bit
-                       indicates encryption.    2nd right most bit indicates
-                       compression */
+  uint8_t flags;    /* bit field; the right most bit meant encrypted: never
+                       sent, and rejected when received */
   dmsg_version_t version; /* version of the message sender */
   uint8_t same_dc;        /* indicate it is an inter_dc */
 

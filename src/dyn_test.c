@@ -209,7 +209,6 @@ static rstatus_t init_peer(struct node *s) {
   s->endpoint.addr = (struct sockaddr *)&info->addr;
 
   s->processed = 0;
-  s->is_secure = 0;
 
   log_debug(LOG_NOTICE, "Filling up server data");
 
@@ -1305,8 +1304,15 @@ static const struct conf_case conf_cases[] = {
     CONF_INVALID("  read_repairs_enabled: maybe\n"),
     /* deprecated directives are accepted and ignored */
     CONF_VALID("  auto_eject_hosts: true\n  server_failure_limit: 3\n"
-               "  preconnect: false\n",
+               "  preconnect: false\n  secure_server_option: none\n"
+               "  pem_key_file: /nonexistent.pem\n",
                timeout, 5000),
+    /* peer encryption was removed: refuse configs that ask for it */
+    CONF_INVALID("  secure_server_option: datacenter\n"),
+    CONF_INVALID("  secure_server_option: rack\n"),
+    CONF_INVALID("  secure_server_option: all\n"),
+    CONF_INVALID("  secure_server_option: nonesuch\n"),
+    CONF_INVALID("  secure_server_option: None\n"),
     /* duplicates are caught for false and 0 too */
     CONF_INVALID("  enable_gossip: false\n  enable_gossip: true\n"),
     CONF_INVALID("  server_retry_timeout: 0\n  server_retry_timeout: 5\n"),
@@ -1385,74 +1391,6 @@ static rstatus_t test_config(void) {
   return DN_OK;
 }
 
-static void gen_random(unsigned char *s, const int len) {
-  static const unsigned char possible_data[] =
-      "0123456789"
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-      "abcdefghijklmnopqrstuvwxyz\r\n";
-  int i;
-  for (i = 0; i < len; ++i) {
-    s[i] = possible_data[rand() % (sizeof(possible_data) - 1)];
-  }
-
-  s[len] = 0;
-}
-
-#define MAX_MSG_LEN 512
-static rstatus_t aes_test(void) {
-  unsigned char msg[MAX_MSG_LEN + 1];
-  print_banner("AES");
-  unsigned char *aes_key = generate_aes_key();
-  SCOPED_CHARPTR(aes_key_print) = base64_encode(aes_key, AES_KEYLEN);
-  loga("aesKey is '%s'", aes_key_print);
-
-  size_t i = 0;
-  size_t count = 1000000;
-  loga("Running %lu encryption/decryption messages", count);
-  for (; i < count; i++) {
-    gen_random(msg, rand() % MAX_MSG_LEN);
-    unsigned int msg_len = strlen(msg) + 1;  // Also encrypt the \0 at the end
-
-    // Encrypt the message with AES
-    unsigned char *enc_msg = NULL;
-    rstatus_t ret =
-        aes_encrypt((const unsigned char *)msg, msg_len, &enc_msg, aes_key);
-    if (ret == DN_ERROR) {
-      log_panic("msg:'%s'\nencryption failed aes_key '%s'\n", msg,
-                aes_key_print);
-      return ret;
-    }
-    size_t enc_msg_len = (size_t)ret; /* if success, aes_encrypt returns len */
-
-    size_t expected_output_len = 16 * (msg_len / 16 + 1);
-    if (enc_msg_len != expected_output_len) {
-      log_panic("msg:'%s'\nexpected encrypted len: %lu encrypted len %lu\n\n",
-                msg, expected_output_len, enc_msg_len);
-      return DN_ERROR;
-    }
-
-    // Decrypt the message
-    char *dec_msg = NULL;
-    ret = aes_decrypt((unsigned char *)enc_msg, enc_msg_len,
-                      (unsigned char **)&dec_msg, aes_key);
-    ASSERT_LOG(ret != DN_ERROR,
-               "msg '%s'\nencrypted msg:'%.*s'\ndecryption failed aes_key %s",
-               msg, enc_msg_len, enc_msg, aes_key_print);
-
-    if (strcmp(msg, dec_msg) != 0) {
-      loga_hexdump(msg, strlen(msg), "Original Message:");
-      loga_hexdump(dec_msg, strlen(dec_msg), "Decrypted Message:");
-      log_panic("encryption/Decryption mismatch");
-    }
-
-    free(enc_msg);
-    free(dec_msg);
-    if ((i + 1) % 1000000 == 0) {
-      loga("Completed Running %lu messages", i + 1);
-    }
-  }
-  return DN_OK;
-}
 /**
  * I recently added a counter to the tailQ in dyn_queue.h
  * This is a function to test the counter.
@@ -1582,12 +1520,6 @@ static void test_server_pool(struct instance *nci) {
   struct server_pool *sp = &ctx->pool;
   sp->mbuf_size = TEST_MBUF_SIZE;
   sp->alloc_msgs_max = TEST_ALLOC_MSGS_MAX;
-  char *filename = getenv("DYNOMITE_TEST_PEM");
-  if (filename == NULL) {
-    filename = "conf/dynomite.pem";
-  }
-  string_copy(&sp->pem_key_file, filename, strlen(filename));
-  sp->secure_server_option = SECURE_OPTION_DC;
 
   mbuf_init(sp->mbuf_size);
   msg_init(sp->alloc_msgs_max);
@@ -1611,12 +1543,6 @@ static void init_test(int argc, char **argv) {
   conn_init();
 
   test_server_pool(&nci);
-
-  status = crypto_init(&(nci.ctx->pool));
-  if (status != DN_OK) {
-    loga("Failed to initialize crypto!!!");
-    exit(1);
-  }
 }
 
 int main(int argc, char **argv) {
@@ -1650,12 +1576,6 @@ int main(int argc, char **argv) {
   ret = test_tailq();
   if (ret != DN_OK) {
     loga("Error in testing TAILQ counter!!!");
-    goto err_out;
-  }
-
-  ret = aes_test();
-  if (ret != DN_OK) {
-    loga("Error in testing AES !!!");
     goto err_out;
   }
 

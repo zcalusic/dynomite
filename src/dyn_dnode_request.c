@@ -91,46 +91,8 @@ rstatus_t dnode_peer_req_forward(struct context *ctx, struct conn *c_conn,
     // TODO: Prefer a 2 hop mechanism for cross-DC traffic.
     msg_type = DMSG_REQ;
   }
-  // SMB: THere is some non trivial business happening here. Better refer to the
-  // comment in dnode_rsp_send_next to understand the stuff here.
-  // Note: THere MIGHT BE A NEED TO PORT THE dnode_header_prepended FIX FROM
-  // THERE TO HERE. especially when a message is being sent in parts
-  if (p_conn->dnode_secured) {
-    // Encrypting and adding header for a request
-    if (log_loggable(LOG_VVERB)) {
-      SCOPED_CHARPTR(encoded_aes_key) =
-          base64_encode(p_conn->aes_key, AES_KEYLEN);
-      if (encoded_aes_key)
-        log_debug(LOG_VVERB, "AES encryption key: %s\n", encoded_aes_key);
-    }
-
-    // write dnode header
-    if (ENCRYPTION) {
-      size_t encrypted_bytes;
-      status = dyn_aes_encrypt_msg(req, p_conn->aes_key, &encrypted_bytes);
-      if (status != DN_OK) {
-        if (status == DN_ENOMEM) {
-          loga("OOM to obtain an mbuf for encryption!");
-        } else if (status == DN_ERROR) {
-          loga("Encryption failed: Empty message");
-        }
-        *dyn_error_code = status;
-        mbuf_put(header_buf);
-        return status;
-      }
-
-      log_debug(LOG_VVERB, "#encrypted bytes : %zu", encrypted_bytes);
-
-      dmsg_write(header_buf, req->id, msg_type, p_conn, msg_length(req));
-    } else {
-      log_debug(LOG_VVERB, "no encryption on the msg payload");
-      dmsg_write(header_buf, req->id, msg_type, p_conn, msg_length(req));
-    }
-
-  } else {
-    // write dnode header
-    dmsg_write(header_buf, req->id, msg_type, p_conn, msg_length(req));
-  }
+  // write dnode header
+  dmsg_write(header_buf, req->id, msg_type, p_conn, msg_length(req));
 
   mbuf_insert_head(&req->mhdr, header_buf);
 
@@ -219,65 +181,8 @@ void dnode_peer_gossip_forward(struct context *ctx, struct conn *conn,
 
   uint64_t msg_id = peer_msg_id++;
 
-  if (conn->dnode_secured) {
-    if (log_loggable(LOG_VERB)) {
-      log_debug(LOG_VERB, "Assemble a secured msg to send");
-      SCOPED_CHARPTR(encoded_aes_key) =
-          base64_encode(conn->aes_key, AES_KEYLEN);
-      if (encoded_aes_key)
-        log_debug(LOG_VERB, "AES encryption key: %s\n", encoded_aes_key);
-    }
-
-    if (ENCRYPTION) {
-      struct mbuf *encrypted_buf = mbuf_get();
-      if (encrypted_buf == NULL) {
-        loga("Unable to obtain an encrypted_buf for encryption!");
-        rsp_put(msg);
-        mbuf_put(data_buf);
-        mbuf_put(header_buf);
-        return; 
-      }
-
-      status = dyn_aes_encrypt(data_buf->pos, mbuf_length(data_buf),
-                               encrypted_buf, conn->aes_key);
-      if (log_loggable(LOG_VERB)) {
-        log_debug(LOG_VERB, "#encrypted bytes : %d", status);
-      }
-
-      // write dnode header
-      dmsg_write(header_buf, msg_id, GOSSIP_SYN, conn,
-                 mbuf_length(encrypted_buf));
-
-      if (log_loggable(LOG_VVERB)) {
-        log_hexdump(LOG_VVERB, data_buf->pos, mbuf_length(data_buf),
-                    "dyn message original payload: ");
-        log_hexdump(LOG_VVERB, encrypted_buf->pos, mbuf_length(encrypted_buf),
-                    "dyn message encrypted payload: ");
-      }
-
-      //mbuf_remove(&msg->mhdr, data_buf);
-      mbuf_insert(&msg->mhdr, encrypted_buf);
-      // free data_buf as no one will need it again
-      mbuf_put(data_buf);  // TODOS: need to remove this from the msg->mhdr as
-                           // in the other method
-
-    } else {
-      if (log_loggable(LOG_VVERB)) {
-        log_debug(LOG_VVERB, "No encryption");
-      }
-      dmsg_write_mbuf(header_buf, msg_id, GOSSIP_SYN, conn,
-                      mbuf_length(data_buf));
-      mbuf_insert(&msg->mhdr, data_buf);
-    }
-
-  } else {
-    if (log_loggable(LOG_VVERB)) {
-      log_debug(LOG_VVERB, "Assemble a non-secured msg to send");
-    }
-    dmsg_write_mbuf(header_buf, msg_id, GOSSIP_SYN, conn,
-                    mbuf_length(data_buf));
-    mbuf_insert(&msg->mhdr, data_buf);
-  }
+  dmsg_write_mbuf(header_buf, msg_id, GOSSIP_SYN, conn, mbuf_length(data_buf));
+  mbuf_insert(&msg->mhdr, data_buf);
 
   mbuf_insert_head(&msg->mhdr, header_buf);
 

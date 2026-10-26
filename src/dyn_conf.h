@@ -100,12 +100,8 @@ struct conf_pool {
   struct array tokens; /* this node's token: dyn_token array */
   int gos_interval;    /* wake up interval in ms */
 
-  /* none | datacenter | rack | all in order of increasing number of
-   * connections. (default is datacenter) */
-  struct string secure_server_option;
   struct string read_consistency;
   struct string write_consistency;
-  struct string pem_key_file;
   struct string dc;       /* this node's dc */
   struct string env;      /* AWS, Google, network, ... */
   int conn_msg_rate;      /* conn msg per sec */
@@ -151,9 +147,5 @@ struct conf *conf_create(char *filename);
 void conf_destroy(struct conf *cf);
 rstatus_t conf_datastore_transform(struct datastore *s, struct conf_pool *cp,
                                    struct conf_server *cs);
-secure_server_option_t get_secure_server_option(struct string *option);
-bool is_secure(secure_server_option_t option, struct string *this_dc,
-               struct string *this_rack, struct string *that_dc,
-               struct string *that_rack);
 
 #endif

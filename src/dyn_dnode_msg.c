@@ -8,7 +8,6 @@
 #include "dyn_dnode_msg.h"
 
 #include "dyn_core.h"
-#include "dyn_crypto.h"
 #include "dyn_server.h"
 #include "proto/dyn_proto.h"
 
@@ -19,9 +18,6 @@ static struct dmsg_tqh free_dmsgq; /* free msg q */
 
 static const struct string MAGIC_STR = string("   $2014$ ");
 static const struct string CRLF_STR = string(CRLF);
-
-static unsigned char aes_encrypted_buf[130];
-static unsigned char aes_decrypted_buf[34];
 
 static rstatus_t dmsg_to_gossip(struct ring_msg *rmsg);
 
@@ -35,7 +31,7 @@ static bool dyn_parse_core(struct msg *r) {
   dyn_parse_state_t dyn_state = r->dyn_parse_state;
   log_debug(LOG_VVERB, "dyn_parse_state:  %d", r->dyn_parse_state);
 
-  if (r->dyn_parse_state == DYN_DONE || r->dyn_parse_state == DYN_POST_DONE)
+  if (r->dyn_parse_state == DYN_DONE)
     return true;
 
   b = STAILQ_LAST(&r->mhdr, mbuf, next);
@@ -402,6 +398,24 @@ error:
   return false;
 }
 
+/*
+ * The built-in peer encryption was removed. A message with the encryption
+ * bit comes from a node that still has it on; its payload can't be read, so
+ * fail the parse, which closes the connection.
+ */
+static bool dmsg_encrypted(struct msg *r) {
+  if (!(r->dmsg->flags & 0x1)) {
+    return false;
+  }
+
+  log_warn("%s sent an encrypted message, closing it: peer encryption is no "
+           "longer supported, set secure_server_option to none on every node",
+           print_obj(r->owner));
+  r->result = MSG_PARSE_ERROR;
+  errno = EPROTO;
+  return true;
+}
+
 static void data_store_parse_req(struct msg *r, struct context *ctx) {
   if (g_data_store == DATA_REDIS) {
     return redis_parse_req(r, ctx);
@@ -422,66 +436,13 @@ void dyn_parse_req(struct msg *r, struct context *ctx) {
     struct conn *conn = r->owner;
     conn->same_dc = !!dmsg->same_dc;
 
+    if (dmsg_encrypted(r)) return;
+
     if (dmsg->type != DMSG_UNKNOWN && dmsg->type != DMSG_REQ &&
         dmsg->type != DMSG_REQ_FORWARD && dmsg->type != GOSSIP_SYN) {
       r->state = 0;
       r->result = MSG_PARSE_OK;
       r->dyn_parse_state = DYN_DONE;
-      return;
-    }
-
-    if (r->dyn_parse_state == DYN_DONE && dmsg->flags == 1) {
-      dmsg->owner->owner->dnode_secured = 1;
-      r->owner->crypto_key_sent = 1;
-      r->dyn_parse_state = DYN_POST_DONE;
-      r->result = MSG_PARSE_REPAIR;
-
-      if (dmsg->mlen > 1) {
-        // Decrypt AES key
-        dyn_rsa_decrypt(dmsg->data, aes_decrypted_buf);
-        memcpy(r->owner->aes_key, aes_decrypted_buf, AES_KEYLEN);
-        SCOPED_CHARPTR(encoded_aes_key) =
-            base64_encode(r->owner->aes_key, AES_KEYLEN);
-        if (encoded_aes_key)
-          loga("AES decryption key: %s\n", (char *)encoded_aes_key);
-      }
-
-      if (dmsg->plen + b->pos <= b->last) {
-        struct mbuf *decrypted_buf = mbuf_get();
-        if (decrypted_buf == NULL) {
-          loga("Unable to obtain an mbuf for dnode msg's header!");
-          r->result = MSG_OOM_ERROR;
-          return;
-        }
-
-        dyn_aes_decrypt(b->pos, dmsg->plen, decrypted_buf, r->owner->aes_key);
-        decrypted_buf->flags |= MBUF_FLAGS_JUST_DECRYPTED;
-
-        b->pos = b->pos + dmsg->plen;
-        r->pos = decrypted_buf->start;
-        mbuf_copy(decrypted_buf, b->pos, mbuf_length(b));
-
-        mbuf_insert(&r->mhdr, decrypted_buf);
-        mbuf_remove(&r->mhdr, b);
-        mbuf_put(b);
-
-        r->mlen = mbuf_length(decrypted_buf);
-
-        data_store_parse_req(r, ctx);
-        return;
-      }
-
-      // substract already received bytes
-      dmsg->plen -= (uint32_t)(b->last - b->pos);
-
-      return;
-    } else if (r->dyn_parse_state == DYN_POST_DONE) {
-      struct mbuf *last_buf = STAILQ_LAST(&r->mhdr, mbuf, next);
-      if (last_buf->flags & MBUF_FLAGS_READ_FLIP) {
-        data_store_parse_req(r, ctx);
-      } else {
-        r->result = MSG_PARSE_AGAIN;
-      }
       return;
     }
 
@@ -527,12 +488,12 @@ void dyn_parse_rsp(struct msg *r, struct context *ctx) {
     msg_dump(LOG_VVERB, r);
   }
 
-  bool done_parsing = false;
-  struct mbuf *b = STAILQ_LAST(&r->mhdr, mbuf, next);
   if (dyn_parse_core(r)) {
     struct dmsg *dmsg = r->dmsg;
     struct conn *conn = r->owner;
     conn->same_dc = !!dmsg->same_dc;
+
+    if (dmsg_encrypted(r)) return;
 
     if (dmsg->type != DMSG_UNKNOWN && dmsg->type != DMSG_RES) {
       log_debug(LOG_DEBUG, "Resp parser: I got a dnode msg of type %d",
@@ -542,59 +503,6 @@ void dyn_parse_rsp(struct msg *r, struct context *ctx) {
       r->dyn_parse_state = DYN_DONE;
       return;
     }
-
-    if (r->dyn_parse_state == DYN_DONE && dmsg->flags == 1) {
-      dmsg->owner->owner->dnode_secured = 1;
-      r->owner->crypto_key_sent = 1;
-      r->dyn_parse_state = DYN_POST_DONE;
-      r->result = MSG_PARSE_REPAIR;
-
-      if (dmsg->mlen > 1) {
-        // Decrypt AES key
-        dyn_rsa_decrypt(dmsg->data, aes_decrypted_buf);
-        memcpy(r->owner->aes_key, aes_decrypted_buf, AES_KEYLEN);
-      }
-
-      // we have received all the remaining ecrypted data
-      if (dmsg->plen + b->pos <= b->last) {
-        struct mbuf *decrypted_buf = mbuf_get();
-        if (decrypted_buf == NULL) {
-          loga("Unable to obtain an mbuf for dnode msg's header!");
-          r->result = MSG_OOM_ERROR;
-          return;
-        }
-
-        dyn_aes_decrypt(b->pos, dmsg->plen, decrypted_buf, r->owner->aes_key);
-        decrypted_buf->flags |= MBUF_FLAGS_JUST_DECRYPTED;
-
-        b->pos = b->pos + dmsg->plen;
-        r->pos = decrypted_buf->start;
-        mbuf_copy(decrypted_buf, b->pos, mbuf_length(b));
-
-        mbuf_insert(&r->mhdr, decrypted_buf);
-        mbuf_remove(&r->mhdr, b);
-        mbuf_put(b);
-
-        r->mlen = mbuf_length(decrypted_buf);
-
-        return data_store_parse_rsp(r, ctx);
-      }
-
-      // Subtract already received bytes
-      dmsg->plen -= (uint32_t)(b->last - b->pos);
-      return;
-
-    } else if (r->dyn_parse_state == DYN_POST_DONE) {
-      struct mbuf *last_buf = STAILQ_LAST(&r->mhdr, mbuf, next);
-      if (last_buf->flags & MBUF_FLAGS_READ_FLIP) {
-        data_store_parse_rsp(r, ctx);
-      } else {
-        r->result = MSG_PARSE_AGAIN;
-      }
-      return;
-    }
-
-    if (done_parsing) return;
 
     return data_store_parse_rsp(r, ctx);
   }
@@ -695,13 +603,8 @@ rstatus_t dmsg_write(struct mbuf *mbuf, uint64_t msg_id, uint8_t type,
 
   // bit field
   mbuf_write_char(mbuf, ' ');
-  // encryption bit
-  uint8_t flags = 0;
-
-  if (conn->dnode_secured) {
-    flags |= 0x1;
-  }
-  mbuf_write_uint8(mbuf, flags);
+  // flags: the encryption bit is never set
+  mbuf_write_uint8(mbuf, 0);
 
   // version
   mbuf_write_char(mbuf, ' ');
@@ -718,22 +621,10 @@ rstatus_t dmsg_write(struct mbuf *mbuf, uint64_t msg_id, uint8_t type,
   mbuf_write_char(mbuf, ' ');
   mbuf_write_char(mbuf, '*');
 
-  // write aes key
-  unsigned char *aes_key = conn->aes_key;
-
-  if (conn->dnode_secured && !conn->crypto_key_sent) {
-    mbuf_write_uint32(mbuf, (uint32_t)dyn_rsa_size());
-    // payload
-    mbuf_write_char(mbuf, ' ');
-    dyn_rsa_encrypt(aes_key, aes_encrypted_buf);
-    mbuf_write_bytes(mbuf, aes_encrypted_buf, dyn_rsa_size());
-    conn->crypto_key_sent = 1;
-  } else {
-    mbuf_write_uint32(mbuf, 1);
-    // payload
-    mbuf_write_char(mbuf, ' ');
-    mbuf_write_char(mbuf, 'd');  // TODOs: replace with another string
-  }
+  // data: unused since the encryption key went away
+  mbuf_write_uint32(mbuf, 1);
+  mbuf_write_char(mbuf, ' ');
+  mbuf_write_char(mbuf, 'd');
 
   mbuf_write_char(mbuf, ' ');
   mbuf_write_char(mbuf, '*');
@@ -752,12 +643,8 @@ rstatus_t dmsg_write_mbuf(struct mbuf *mbuf, uint64_t msg_id, uint8_t type,
   mbuf_write_uint8(mbuf, type);
   mbuf_write_char(mbuf, ' ');
 
-  // encryption bit
-  if (conn->dnode_secured) {
-    mbuf_write_uint8(mbuf, 1);
-  } else {
-    mbuf_write_uint8(mbuf, 0);
-  }
+  // flags: the encryption bit is never set
+  mbuf_write_uint8(mbuf, 0);
 
   mbuf_write_char(mbuf, ' ');
   mbuf_write_uint8(mbuf, version);
@@ -773,22 +660,10 @@ rstatus_t dmsg_write_mbuf(struct mbuf *mbuf, uint64_t msg_id, uint8_t type,
   mbuf_write_char(mbuf, ' ');
   mbuf_write_char(mbuf, '*');
 
-  // write aes key
-  unsigned char *aes_key = conn->aes_key;
-  if (conn->dnode_secured) {
-    mbuf_write_uint32(mbuf, (uint32_t)dyn_rsa_size());
-  } else {
-    mbuf_write_uint32(mbuf, 1);
-  }
-
+  // data: unused since the encryption key went away
+  mbuf_write_uint32(mbuf, 1);
   mbuf_write_char(mbuf, ' ');
-  // mbuf_write_mbuf(mbuf, data);
-  if (conn->dnode_secured) {
-    dyn_rsa_encrypt(aes_key, aes_encrypted_buf);
-    mbuf_write_bytes(mbuf, aes_encrypted_buf, dyn_rsa_size());
-  } else {
-    mbuf_write_char(mbuf, 'a');  // TODOs: replace with another string
-  }
+  mbuf_write_char(mbuf, 'a');
 
   // mbuf_write_string(mbuf, &CRLF_STR);
   mbuf_write_char(mbuf, ' ');

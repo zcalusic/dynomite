@@ -27,7 +27,6 @@
 #include "dyn_cbuf.h"
 #include "dyn_connection.h"
 #include "dyn_connection_pool.h"
-#include "dyn_crypto.h"
 #include "dyn_dict.h"
 #include "dyn_log.h"
 #include "dyn_mbuf.h"
@@ -41,8 +40,6 @@
 #include "dyn_types.h"
 #include "dyn_util.h"
 #include "hashkit/dyn_hashkit.h"
-
-#define ENCRYPTION 1
 
 typedef enum dyn_state {
   INIT = 0,
@@ -179,7 +176,6 @@ struct node {
   bool is_local;          /* is this peer the current running node?  */
   bool is_same_dc;        /* is this peer the current running node?  */
   unsigned processed : 1; /* flag to indicate whether this has been processed */
-  unsigned is_secure : 1; /* is the connection to the server secure? */
   dyn_state_t state;      /* state of the server - used mainly in peers  */
 };
 
@@ -230,10 +226,6 @@ struct server_pool {
   msec_t g_interval; /* gossip interval */
   struct string dc;  /* server's dc */
   struct string env; /* aws, network, etc */
-  /* none | datacenter | rack | all in order of increasing number of
-   * connections. (default is datacenter) */
-  secure_server_option_t secure_server_option;
-  struct string pem_key_file;
   struct endpoint stats_endpoint; /* stats_listen: socket info for stats */
   msec_t stats_interval;          /* stats aggregation interval */
   bool enable_gossip;             /* enable/disable gossip */

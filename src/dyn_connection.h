@@ -134,10 +134,6 @@ struct conn {
   unsigned waiting_to_unref : 1; /* eof? aka passive close? */
   unsigned done : 1;             /* done? aka close? */
   unsigned dyn_mode : 1;         /* is a dyn connection? */
-  unsigned dnode_secured : 1;    /* is a secured connection? */
-  unsigned crypto_key_sent : 1;  /* crypto state */
-  unsigned char aes_key[50];  // aes_key[34];              /* a place holder for
-                              // AES key */
   unsigned same_dc : 1;  /* bit to indicate whether a peer conn is same DC */
   uint32_t avail_tokens; /* used to throttle the traffics */
   uint32_t last_sent;    /* ts in sec used to determine the last sent time */

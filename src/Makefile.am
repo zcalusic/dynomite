@@ -20,7 +20,6 @@ AM_CFLAGS += -Wstrict-prototypes -Wmissing-prototypes -Wredundant-decls -Wmissin
 
 AM_LDFLAGS =
 AM_LDFLAGS += -lm -lpthread -rdynamic
-AM_LDFLAGS += -lssl -lcrypto
 
 if OS_SOLARIS
 AM_LDFLAGS += -lnsl -lsocket
@@ -32,8 +31,6 @@ sbin_PROGRAMS = dynomite
 
 check_PROGRAMS = dynomite-test
 TESTS = dynomite-test
-AM_TESTS_ENVIRONMENT = DYNOMITE_TEST_PEM='$(abs_top_srcdir)/conf/dynomite.pem'; \
-	export DYNOMITE_TEST_PEM;
 
 dynomite_SOURCES =			                          \
         dyn_array.c dyn_array.h		                          \
@@ -45,7 +42,6 @@ dynomite_SOURCES =			                          \
         dyn_connection_internal.c dyn_connection_internal.h       \
         dyn_connection_pool.c dyn_connection_pool.h               \
         dyn_core.c dyn_core.h                                     \
-        dyn_crypto.c dyn_crypto.h                                 \
         dyn_dict_msg_id.h dyn_dict_msg_id.c                       \
         dyn_dnode_client.h dyn_dnode_client.c                     \
         dyn_dnode_msg.c dyn_dnode_msg.h                           \
@@ -86,7 +82,6 @@ dynomite_LDADD +=  $(top_builddir)/src/seedsprovider/libseedsprovider.a -lresolv
 
 dynomite_test_SOURCES =                                           \
         dyn_cbuf.h                                                \
-        dyn_crypto.c dyn_crypto.h                                 \
         dyn_core.c dyn_core.h                                     \
         dyn_connection.c dyn_connection.h                         \
         dyn_connection_internal.c dyn_connection_internal.h		  \

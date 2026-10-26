@@ -27,7 +27,7 @@ All development happens on the `master` branch, the only branch in this fork. Re
 
 Install the build dependencies (Debian package names):
 
-    $ sudo apt-get install automake gcc git libc6-dev libssl-dev libyaml-dev make
+    $ sudo apt-get install automake gcc git libc6-dev libyaml-dev make
 
 Build from a git clone: the version is taken from `git describe`, which needs the history and tags.
 
@@ -109,8 +109,6 @@ Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible)
 + **data_store**: An integer value that controls if a server pool speaks redis (0) or memcached (1). Defaults to redis (0).
 + **server_retry_timeout**: The longest wait in msec between attempts to reconnect to the server: the wait starts at 1 second and doubles after each failure, up to this limit in whole seconds (rounded down), so values below 2000, including 0, reconnect every second. Defaults to 10000 msec.
 + **servers**: A list of local server address, port and weight (name:port:weight or ip:port:weight) for this server pool. Exactly one is supported; a second entry is a configuration error.
-+ **secure_server_option**: Encrypted communication. Must be one of 'none', 'rack', 'datacenter', or 'all'. ```datacenter``` means all communication between datacenters is encrypted but within a datacenter it is not. ```rack``` means all communication between racks and regions is encrypted however communication between nodes within the same rack is not encrypted. ```all``` means all communication between all nodes is encrypted. And ```none``` means none of the communication is encrypted. 
-+ **pem_key_file**: The RSA private key file used for encrypted communication between nodes. Defaults to conf/dynomite.pem, relative to the working directory.
 + **read_consistency**, **write_consistency**: The consistency level for reads and writes: DC_ONE, DC_QUORUM, DC_SAFE_QUORUM or DC_EACH_SAFE_QUORUM (case-insensitive). Default to DC_ONE. Please refer to [consistency document](https://github.com/Netflix/dynomite/wiki/Consistency). Both can also be changed at runtime through the stats_listen REST endpoint (`/set_consistency/read/<level>` and `/set_consistency/write/<level>`); the new level applies to client connections opened after the change.
 + **read_repairs_enabled**: A boolean value that enables read repairs, which update replicas found with stale data during a read; they don't run with DC_ONE. Defaults to false. Please refer to [read repair document](https://github.com/Netflix/dynomite/wiki/Read-Repair). Can also be changed at runtime through the stats_listen REST endpoint (`/read_repairs/enable` and `/read_repairs/disable`).
 + **stats_listen**: The address and port number for the REST endpoint and for accessing statistics.
@@ -122,7 +120,9 @@ Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible)
 + **remote_peer_connections**: Maximum number of connections to a remote DC peer. Defaults to 1; 1 to 255.
 + **conn_msg_rate**: The maximum number of messages per second sent on each connection to a node in a remote datacenter. Defaults to 50000; must be at least 1.
 
-The keys **client_connections**, **distribution**, **server_connections**, **dyn_port**, **dyn_connections**, **dyn_read_timeout**, **dyn_write_timeout**, **recon_key_file**, **recon_iv_file**, **auto_eject_hosts**, **server_failure_limit** and **preconnect** are still accepted for compatibility, but are ignored. The inter-node port comes from **dyn_listen**. Dynomite always connects to the datastore and to its peers at startup.
+The keys **client_connections**, **distribution**, **server_connections**, **dyn_port**, **dyn_connections**, **dyn_read_timeout**, **dyn_write_timeout**, **recon_key_file**, **recon_iv_file**, **auto_eject_hosts**, **server_failure_limit**, **preconnect** and **pem_key_file** are still accepted for compatibility, but are ignored. The inter-node port comes from **dyn_listen**. Dynomite always connects to the datastore and to its peers at startup.
+
+The built-in encryption of traffic between nodes was removed: it crashed with RSA keys over 1024 bits, lost writes with `all`, still accepted unencrypted messages, and gave no integrity or forward secrecy. Traffic between nodes is now always unencrypted, so keep it on a trusted network or in a VPN. **secure_server_option** is still accepted with the value `none` and ignored; any other value is a configuration error, so that a node doesn't quietly run unencrypted when its configuration asks for encryption. All nodes of a cluster that used encryption have to switch to `none` together: a node closes peer connections that send encrypted messages. Mutual TLS between nodes is planned as a replacement.
 
 See [conf/dynomite.yml](conf/dynomite.yml) for an example; [conf/](conf/) has more, such as [conf/redis_single.yml](conf/redis_single.yml).
 

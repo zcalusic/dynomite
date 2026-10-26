@@ -85,13 +85,6 @@ typedef uint64_t sec_t;
 typedef int rstatus_t; /* return type */
 typedef int err_t;     /* error type */
 
-typedef enum {
-  SECURE_OPTION_NONE,
-  SECURE_OPTION_RACK,
-  SECURE_OPTION_DC,
-  SECURE_OPTION_ALL,
-} secure_server_option_t;
-
 struct array;
 struct string;
 struct context;
