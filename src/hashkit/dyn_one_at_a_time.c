@@ -39,7 +39,13 @@
 
 rstatus_t hash_one_at_a_time(const unsigned char *key, size_t key_length,
                              struct dyn_token *token) {
-  const char *ptr = key;
+  /*
+   * Bytes are added as signed chars, as they always were on x86, whose char is
+   * signed. Where char is unsigned, as on arm64, keys with bytes from 0x80 up
+   * used to hash differently; this keeps the x86 values, so existing keys stay
+   * where they are.
+   */
+  const signed char *ptr = (const signed char *)key;
   uint32_t value = 0;
 
   while (key_length--) {

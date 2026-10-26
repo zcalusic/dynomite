@@ -1703,6 +1703,29 @@ static rstatus_t test_hash(void) {
     nfailed++;
   }
 
+  /*
+   * one_at_a_time adds bytes from 0x80 up as negative, as x86's signed char
+   * did, on every architecture
+   */
+  static const struct {
+    const char *key;
+    uint32_t token;
+  } oaat[] = {{"dynomite", 3540839119U},
+              {"\x80", 3273477671U},
+              {"\xff", 2925896852U},
+              {"klju\xc4\x8d", 335938375U},
+              {"a\xe9\xffz", 7397652U}};
+  for (size_t k = 0; k < NELEMS(oaat); k++) {
+    nruns++;
+    if (hash_one_at_a_time((const unsigned char *)oaat[k].key,
+                           strlen(oaat[k].key), &t) != DN_OK ||
+        t.len != 1 || t.mag[0] != oaat[k].token) {
+      log_error("hash one_at_a_time of key %zu: token %u, want %u", k, t.mag[0],
+                oaat[k].token);
+      nfailed++;
+    }
+  }
+
   if (nfailed != 0) {
     log_error("%zu of %zu hash runs failed", nfailed, nruns);
     return DN_ERROR;
