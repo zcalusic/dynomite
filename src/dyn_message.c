@@ -700,14 +700,15 @@ uint32_t msg_mbuf_size(struct msg *msg) {
   return count;
 }
 
+/*
+ * Return the number of bytes left to send, from each mbuf's pos. A message
+ * received from a peer still has that peer's dnode header before pos.
+ */
 uint32_t msg_length(struct msg *msg) {
   uint32_t count = 0;
   struct mbuf *mbuf;
 
-  STAILQ_FOREACH(mbuf, &msg->mhdr, next) {
-    ASSERT(mbuf->last >= mbuf->start);
-    count += (uint32_t)(mbuf->last - mbuf->start);
-  }
+  STAILQ_FOREACH(mbuf, &msg->mhdr, next) { count += mbuf_length(mbuf); }
 
   return count;
 }

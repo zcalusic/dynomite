@@ -367,50 +367,10 @@ static void dnode_req_client_dequeue_omsgq(struct context *ctx,
 
 /* dnode sends a response back to a peer  */
 static struct msg *dnode_rsp_send_next(struct context *ctx, struct conn *conn) {
-  // SMB: There is some non trivial thing happening here. And I think it is very
-  // important to read this before anything is changed in here. There is also a
-  // bug that exists which I will mention briefly:
-  // A message is a structure that has a list of mbufs which hold the actual
-  // data. Each mbuf has start, pos, last as pointers (amongst others) which
-  // indicate start of the buffer, current read position and end of the buffer
-  // respectively.
-  //
-  // Every time a message is sent to a peer within dynomite, a DNODE header is
-  // prepended which is created using dmsg_write. A message remembers this case
-  // in dnode_header_prepended, so that if the message is sent in parts, the
-  // header is not prepended again for the subsequent parts.
-  //
-  // Like I said earlier there is a pos pointer in mbuf. If a message is sent
-  // partially (or it is parsed partially too I think) the pos reflects that
-  // case such that things can be resumed where it left off.
-  //
-  // dmsg_write has a parameter which reflects the payload length following the
-  // dnode header calculated by msg_length. msg_length is a summation of all
-  // mbuf sizes (last - start). Which I think is wrong.
-  //
-  // +------------+           +---------------+
-  // |    DC1N1   +---------> |     DC2N1     |
-  // +------------+           +-------+-------+
-  //                                  |
-  //                                  |
-  //                                  |
-  //                                  |
-  //                          +-------v-------+
-  //                          |    DC2N2      |
-  //                          +---------------+
-  //
-  // Consider the case where
-  // a node DC1N1 in region DC1 sends a request to DC2N1 which forwards it to
-  // to local token owner DC2N2. Now DC2N1 receives a response from DC2N2 which
-  // has to be relayed back to DC1N1. This response from DC2N2 already has a
-  // dnode header but for the link between DC2N1 and DC2N2. DC2N1 should strip
-  // this header and prepend its own header for sending it back to DC1N1.
-  // However the message length sent to dmsg_write consists of the header from
-  // DC2N2 also which is wrong. So this relaying of responses will not work.
-  //
-  // So msg_length should really be from mbuf->pos and not mbuf->start. This
-  // is a problem only with remote region replication since that is the only
-  // case where we CAN have 2 hops to send the request/response.
+  // A response relayed from another peer (DC1N1 -> DC2N1 -> DC2N2 and back,
+  // when DC2N1 doesn't own the key in its own rack) still has DC2N2's dnode
+  // header before mbuf->pos. It isn't sent on, and msg_length() counts from
+  // pos, so the payload length in our header covers only what is sent.
   ASSERT(conn->type == CONN_DNODE_PEER_CLIENT);
 
   struct msg *rsp = rsp_send_next(ctx, conn);
