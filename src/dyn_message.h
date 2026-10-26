@@ -597,7 +597,8 @@ uint32_t msg_payload_crc32(struct msg *msg);
 struct msg *msg_get_rsp_integer(struct conn *conn);
 struct mbuf *msg_ensure_mbuf(struct msg *msg, size_t len);
 rstatus_t msg_append(struct msg *msg, uint8_t *pos, size_t n);
-rstatus_t msg_append_format(struct msg *msg, const char *fmt, int num_args, ...);
+rstatus_t msg_append_format(struct msg *msg, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
 rstatus_t msg_append_bulk(struct msg *msg, const uint8_t *pos, uint32_t n);
 rstatus_t msg_append_arg(struct msg *msg, const struct argpos *arg);
 uint32_t argpos_copy(const struct argpos *arg, uint8_t *dst, uint32_t size);

@@ -1446,232 +1446,30 @@ rstatus_t msg_prepend_format(struct msg *msg, const char *fmt, ...) {
   return DN_OK;
 }
 
-static rstatus_t parse_int_arg_for_formatting(int arg, struct msg *msg, struct mbuf **mbuf_ptr,
-    char* current_fmt_string, uint32_t *required_space_ptr,
-    uint32_t *remaining_space_ptr) {
-  struct mbuf *mbuf = *mbuf_ptr;
-
-  *required_space_ptr = *required_space_ptr + (size_t) count_digits(arg);
-  int n = snprintf(mbuf->last, *required_space_ptr + 1, current_fmt_string, arg);
-  if (n < 0) return DN_ERROR;
-  mbuf->last += n;
-  msg->mlen += (uint32_t)n;
-  *remaining_space_ptr = *remaining_space_ptr - n;
-  return DN_OK;
-}
-
-static rstatus_t parse_llu_arg_for_formatting(uint64_t arg, struct msg *msg,
-    struct mbuf **mbuf_ptr, char* current_fmt_string, uint32_t *required_space_ptr,
-    uint32_t *remaining_space_ptr) {
-  struct mbuf *mbuf = *mbuf_ptr;
-
-  *required_space_ptr = *required_space_ptr + (size_t) count_digits(arg);
-  int n = snprintf(mbuf->last, *required_space_ptr + 1, current_fmt_string, arg);
-  if (n < 0) return DN_ERROR;
-  mbuf->last += n;
-  msg->mlen += (uint32_t)n;
-  *remaining_space_ptr = *remaining_space_ptr - n;
-  return DN_OK;
-}
-
-static rstatus_t parse_string_arg_for_formatting(char* arg, struct msg *msg,
-    struct mbuf **mbuf_ptr, int given_fixed_len, char* current_fmt_string,
-    int *cur_fmt_str_len_ptr, uint32_t *required_space_ptr,
-    uint32_t *remaining_space_ptr) {
-
-  struct mbuf *mbuf = *mbuf_ptr;
-
-  *required_space_ptr += (given_fixed_len > 0) ? given_fixed_len : strlen(arg);
-  int arg_offset = 0;
-  if (*required_space_ptr > *remaining_space_ptr) {
-    while (*required_space_ptr > *remaining_space_ptr) {
-
-      // If we're already using a fixed len format specifier, skip this bit.
-      if (given_fixed_len == 0) {
-        // First fill in the remaining space in the existing mbuf by converting the
-        // format string to a string that takes a string length.
-        memcpy(current_fmt_string + (*cur_fmt_str_len_ptr) - 1, ".*s", 3);
-        *cur_fmt_str_len_ptr += 2;
-        current_fmt_string[*cur_fmt_str_len_ptr] = '\0';
-      }
-
-      // This is the arg length to print without the rest of the format string.
-      int arglen = *remaining_space_ptr - (*cur_fmt_str_len_ptr - 4);
-
-      // Write 'remaining_space' bytes to the mbuf.
-      int n = snprintf(mbuf->last, *remaining_space_ptr + 1, current_fmt_string,
-          arglen + 1, arg + arg_offset);
-      if (n < 0) return DN_ERROR;
-
-      // Subtract 1 from 'n' to un-account for the '\0' put by snprintf().
-      // (see 'man snprintf').
-      *required_space_ptr -= n - 1;
-      mbuf->last += n - 1;
-      msg->mlen += (uint32_t)n - 1;
-      arg_offset += arglen;
-      if (given_fixed_len > 0) {
-        given_fixed_len -= n - 1;
-      }
-
-      // Get a new mbuf.
-      mbuf = mbuf_get();
-      if (mbuf == NULL) {
-        return DN_ENOMEM;
-      }
-      // Insert it into the 'msg' struct.
-      STAILQ_INSERT_TAIL(&msg->mhdr, mbuf, next);
-
-      *mbuf_ptr = mbuf;
-      *remaining_space_ptr = mbuf_remaining_space(mbuf);
-
-      // Adjust the format string for the rest of the arg.
-      const char *remaining_fmt_specifier = (given_fixed_len > 0) ? "%.*s" : "%s";
-      strcpy(current_fmt_string, remaining_fmt_specifier);
-      *cur_fmt_str_len_ptr = strlen(remaining_fmt_specifier);
-    }
-  }
-
-  int n;
-  // Copy the remaining part of the argument into the mbuf.
-  if (given_fixed_len > 0) {
-    n = snprintf(mbuf->last, *required_space_ptr + 1, current_fmt_string, given_fixed_len,
-        arg + arg_offset);
-  } else {
-    n = snprintf(mbuf->last, *required_space_ptr + 1, current_fmt_string,
-        arg + arg_offset);
-  }
-  if (n < 0) return DN_ERROR;
-  mbuf->last += n;
-  msg->mlen += (uint32_t)n;
-  *remaining_space_ptr -= n;
-
-  return DN_OK;
-}
-
 /*
- * Prepend a formatted string into msg.
- *
- * This currently only supports the %d and %s format specifiers.
- * The complicated logic is due to supporting prepending multi-mbuf payloads to
- * 'msg'.
- *
+ * Append a printf-style formatted string to msg, in as many mbufs as it needs.
  */
-rstatus_t msg_append_format(struct msg *msg, const char *fmt, int num_args, ...) {
-  struct mbuf *mbuf;
-  uint32_t remaining_space;
+rstatus_t msg_append_format(struct msg *msg, const char *fmt, ...) {
+  char stack_buf[512], *buf = stack_buf;
   va_list args;
+  int n;
 
-  // Check if an mbuf with free space already exists in this 'msg'.
-  mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
-  if (mbuf == NULL || mbuf_full(mbuf)) {
-    mbuf = mbuf_get();
-    if (mbuf == NULL) {
-      return DN_ENOMEM;
-    }
-    STAILQ_INSERT_TAIL(&msg->mhdr, mbuf, next);
-  }
-
-  remaining_space = mbuf_remaining_space(mbuf);
-
-  va_start(args, num_args);
-  uint32_t required_space = 0;
-  const char* start_from = fmt;
-  char current_fmt_string[512];
-  int i;
-
-  // Iterate through the arguments and map them onto the format specifiers in the
-  // format string.
-  for (i = 0; i < num_args; ++i) {
-    const char *percent = strchr(start_from, '%');
-    if (percent == NULL) {
-      log_error("Number of arguments do not match format string.");
-      return DN_ERROR;
-    }
-    const char *fmt_specifier = percent + 1;
-
-    // Calculate the space required for all the non replaceable chars in the format
-    // string (i.e. chars not prepended with a '%').
-    required_space = fmt_specifier - start_from - 1;
-
-    switch ((char) *fmt_specifier) {
-      case 'd':
-        {
-          int cur_fmt_str_len = fmt_specifier - start_from + 1;
-          strncpy(current_fmt_string, start_from, cur_fmt_str_len);
-          current_fmt_string[cur_fmt_str_len] = '\0';
-          int arg = va_arg(args, int);
-          if (parse_int_arg_for_formatting(arg, msg, &mbuf, current_fmt_string,
-              &required_space, &remaining_space) != DN_OK) {
-            return DN_ERROR;
-          }
-          // Start from right after the format specifier we just processed.
-          start_from = fmt_specifier + 1;
-          break;
-        }
-      // Case assumes '%llu'
-      case 'l':
-        {
-          int cur_fmt_str_len = fmt_specifier - start_from + 3; // 3 because 'llu'
-          strncpy(current_fmt_string, start_from, cur_fmt_str_len);
-          current_fmt_string[cur_fmt_str_len] = '\0';
-          uint64_t arg = va_arg(args, uint64_t);
-          if (parse_llu_arg_for_formatting(arg, msg, &mbuf, current_fmt_string,
-              &required_space, &remaining_space) != DN_OK) {
-            return DN_ERROR;
-          }
-          // Start from right after the format specifier we just processed.
-          start_from = fmt_specifier + 3;
-          break;
-        }
-      case 's':
-        {
-          int cur_fmt_str_len = fmt_specifier - start_from + 1;
-          strncpy(current_fmt_string, start_from, cur_fmt_str_len);
-          current_fmt_string[cur_fmt_str_len] = '\0';
-          char* arg = va_arg(args, char*);
-          if (parse_string_arg_for_formatting(arg, msg, &mbuf, 0, current_fmt_string,
-              &cur_fmt_str_len, &required_space, &remaining_space) != DN_OK) {
-            return DN_ERROR;
-          }
-          // Start from right after the format specifier we just processed.
-          start_from = fmt_specifier + 1;
-          break;
-        }
-      // Case assumes '%.*s'
-      case '.':
-        {
-          int cur_fmt_str_len = fmt_specifier - start_from + 3; // 3 because '.*s'
-          strncpy(current_fmt_string, start_from, cur_fmt_str_len);
-          current_fmt_string[cur_fmt_str_len] = '\0';
-          int arg_fixed_len = va_arg(args, int);
-          char* arg = va_arg(args, char*);
-          ++i; // Skip one index since we parsed 2 args here.
-          if (parse_string_arg_for_formatting(arg, msg, &mbuf, arg_fixed_len,
-              current_fmt_string, &cur_fmt_str_len, &required_space,
-              &remaining_space) != DN_OK) {
-            return DN_ERROR;
-          }
-
-          // Start from right after the format specifier we just processed.
-          start_from = fmt_specifier + 3;
-          break;
-        }
-      default:
-        log_error("Unsupported format string");
-        return DN_ERROR;
-    }
-  }
+  va_start(args, fmt);
+  n = vsnprintf(stack_buf, sizeof(stack_buf), fmt, args);
   va_end(args);
+  if (n < 0) return DN_ERROR;
 
-  // Copy the remaining part of the format string.
-  int string_epilogue_len = (fmt + strlen(fmt)) - start_from;
-  if (string_epilogue_len != 0) {
-    strcpy(mbuf->last, start_from);
-    mbuf->last += string_epilogue_len;
-    msg->mlen += string_epilogue_len;
+  if ((size_t)n >= sizeof(stack_buf)) {
+    buf = dn_alloc((size_t)n + 1);
+    if (buf == NULL) return DN_ENOMEM;
+    va_start(args, fmt);
+    vsnprintf(buf, (size_t)n + 1, fmt, args);
+    va_end(args);
   }
 
-  return DN_OK;
+  rstatus_t status = msg_append_bytes(msg, (uint8_t *)buf, (size_t)n);
+  if (buf != stack_buf) dn_free(buf);
+  return status;
 }
 
 bool is_msg_type_dyno_config(msg_type_t msg_type) {

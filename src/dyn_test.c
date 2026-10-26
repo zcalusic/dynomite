@@ -1265,6 +1265,116 @@ static rstatus_t test_read_repair(struct conn *conn) {
 }
 
 /*
+ * msg_append_format() with each kind of specifier the read repair scripts use,
+ * after filler that makes the formatted string end just before, exactly at or
+ * just past the end of an mbuf. The text must come out whole, and no mbuf may
+ * be written past its end: the struct mbuf there starts with its magic.
+ */
+static rstatus_t test_append_format(struct conn *conn) {
+  static char filler[MBUF_MIN_SIZE], big[1000 + 1], want[2048], got[2048];
+  size_t nruns = 0, nfailed = 0;
+
+  print_banner("APPEND FORMAT");
+
+  memset(filler, 'x', sizeof(filler));
+  for (size_t i = 0; i < sizeof(big) - 1; i++) {
+    big[i] = (char)('a' + i % 26);
+  }
+  big[sizeof(big) - 1] = '\0';
+
+  mbuf_deinit();
+  mbuf_init(MBUF_MIN_SIZE);
+  int data_size = (int)mbuf_data_size();
+  for (int c = 0; c < 5; c++) {
+    for (int delta = -2; delta <= 2; delta++) {
+      int n;
+      switch (c) {
+        case 0:
+          n = dn_snprintf(want, sizeof(want), "*%d\r\n", 12345);
+          break;
+        case 1:
+          n = dn_snprintf(want, sizeof(want), "$%d\r\n%llu\r\n", 13,
+                          1700000000000ULL);
+          break;
+        case 2:
+          n = dn_snprintf(want, sizeof(want), "$%d\r\n%.*s\r\n", 5, 5,
+                          "HMSET");
+          break;
+        case 3:
+          n = dn_snprintf(want, sizeof(want), "%s", "local key = KEYS[1]\n");
+          break;
+        default: /* longer than an mbuf */
+          n = dn_snprintf(want, sizeof(want), "%s", big);
+          break;
+      }
+      int fill = (data_size - n % data_size + delta + data_size) % data_size;
+      struct msg *msg = msg_get(conn, true, __FUNCTION__);
+      rstatus_t status = DN_ERROR;
+
+      nruns++;
+      if (msg == NULL) {
+        nfailed++;
+        continue;
+      }
+      if (fill > 0 && msg_append_format(msg, "%.*s", fill, filler) != DN_OK) {
+        goto out;
+      }
+      switch (c) {
+        case 0:
+          status = msg_append_format(msg, "*%d\r\n", 12345);
+          break;
+        case 1:
+          status = msg_append_format(msg, "$%d\r\n%llu\r\n", 13,
+                                     1700000000000ULL);
+          break;
+        case 2:
+          status = msg_append_format(msg, "$%d\r\n%.*s\r\n", 5, 5, "HMSET");
+          break;
+        case 3:
+          status = msg_append_format(msg, "%s", "local key = KEYS[1]\n");
+          break;
+        default:
+          status = msg_append_format(msg, "%s", big);
+          break;
+      }
+      if (status != DN_OK) goto out;
+      status = DN_ERROR;
+
+      struct mbuf *mbuf;
+      STAILQ_FOREACH(mbuf, &msg->mhdr, next) {
+        if (mbuf->magic != MBUF_MAGIC || mbuf->last > mbuf->end) {
+          log_error("case %d, fill %d: mbuf magic %#x, %td bytes past its end",
+                    c, fill, mbuf->magic, mbuf->last - mbuf->end);
+          goto out;
+        }
+      }
+      repair_data(msg, got, sizeof(got));
+      if (strncmp(got, filler, (size_t)fill) != 0 ||
+          strcmp(got + fill, want) != 0 ||
+          msg->mlen != (uint32_t)(fill + n)) {
+        log_error("case %d, fill %d: got '%.40s...' (mlen %u), want '%.40s...'",
+                  c, fill, got + fill, msg->mlen, want);
+        goto out;
+      }
+      status = DN_OK;
+
+    out:
+      if (status != DN_OK) nfailed++;
+      msg_put(msg);
+    }
+  }
+  mbuf_deinit();
+  mbuf_init(TEST_MBUF_SIZE);
+
+  if (nfailed != 0) {
+    log_error("%zu of %zu append format runs failed", nfailed, nruns);
+    return DN_ERROR;
+  }
+  loga("%zu append format runs passed", nruns);
+  return DN_OK;
+}
+
+/*
  * A configuration test case: conf/redis_single.yml plus extra pool lines.
  * A valid case also checks one int field of the parsed conf_pool.
  */
@@ -1585,6 +1695,12 @@ int main(int argc, char **argv) {
   ret = test_read_repair(conn);
   if (ret != DN_OK) {
     loga("Error in testing read repairs!!!");
+    goto err_out;
+  }
+
+  ret = test_append_format(conn);
+  if (ret != DN_OK) {
+    loga("Error in testing msg_append_format()!!!");
     goto err_out;
   }
 

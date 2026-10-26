@@ -613,14 +613,14 @@ static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
   struct msg *msg = *msg_ptr;
 
   // Add the total number of tokens.
-  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_BEGIN_TOTAL_TOKENS, 1,
+  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_BEGIN_TOTAL_TOKENS,
       src->total_num_tokens));
 
   // Append the rewrite script.
-  THROW_STATUS(msg_append_format(msg, "%s", 1, src->rewrite_script));
+  THROW_STATUS(msg_append_format(msg, "%s", src->rewrite_script));
 
   // Add the total number of keys in the command. We add 2 for the add and remove sets.
-  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_INT_ARG_FMT, 2,
+  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_INT_ARG_FMT,
       count_digits(num_keys + 2), num_keys + 2));
 
   // Add all the keys touched in the query, whole: the script works on them, and
@@ -633,31 +633,32 @@ static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
   // Add the add-set and rem-set keys.
   int add_set_len = strlen(src->add_set);
   int rem_set_len = strlen(src->rem_set);
-  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, 3, add_set_len,
+  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, add_set_len,
       add_set_len, src->add_set));
-  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, 3, rem_set_len,
+  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, rem_set_len,
       rem_set_len, src->rem_set));
 
   // Add the command string. (Eg: SET, HSET, etc.)
   char *orig_cmd_str = proto_cmd_info[src->cmd_type].cmd_str;
-  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, 3, strlen(orig_cmd_str),
-      strlen(orig_cmd_str), orig_cmd_str));
+  int orig_cmd_len = (int)strlen(orig_cmd_str);
+  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_VARCHAR_ARG_FMT, orig_cmd_len,
+      orig_cmd_len, orig_cmd_str));
 
   struct cmd_info *orig_cmd_info = &proto_cmd_info[src->cmd_type];
   // Add number of optionals if the command supports any. If the command does, the script will
   // expect a number of 0 or more.
   if (orig_cmd_info->num_optionals > 0) {
-    THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_INT_ARG_FMT, 2,
+    THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_INT_ARG_FMT,
         count_digits(num_optionals), num_optionals));
   }
 
   // Add the number of fields.
-  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_INT_ARG_FMT, 2,
+  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_INT_ARG_FMT,
       count_digits(num_fields), num_fields));
 
   // Add the timestamp.
-  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_LLU_ARG_FMT, 2,
-      count_digits(src->ts), src->ts));
+  THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_LLU_ARG_FMT,
+      count_digits(src->ts), (unsigned long long)src->ts));
 
   // Add the optional elements.
   if (num_optionals > 0) {
