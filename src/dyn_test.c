@@ -930,25 +930,68 @@ struct repair_case {
   const char *client;        /* what the client gets */
 };
 
-static rstatus_t repair_run(struct conn *conn, const struct repair_case *rc) {
-  static char buf[4096];
-  struct msg *req, *wreq = NULL, *repair = NULL;
-  struct response_mgr rspmgr;
-  bool did_rewrite = false;
-  rstatus_t status = DN_ERROR;
+/* For the error messages: the key, and the pool's hash tag if it has one. */
+static const char *repair_mode(const char *key) {
+  static char mode[128];
+  dn_snprintf(mode, sizeof(mode), "mbuf %zu, key %s%s%.*s", mbuf_data_size(),
+              key, ctx->pool.hash_tag.len > 0 ? ", hash tag " : "",
+              (int)ctx->pool.hash_tag.len, ctx->pool.hash_tag.data);
+  return mode;
+}
 
-  memset(&rspmgr, 0, sizeof(rspmgr));
-  req = repair_parse(conn, true, "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n");
-  if (req == NULL ||
-      redis_rewrite_query_with_timestamp_md(req, ctx, &did_rewrite, &wreq) !=
+/*
+ * Parse a request and rewrite it as a read repair script, as
+ * rewrite_query_with_timestamp_md() does. Returns NULL if it isn't rewritten.
+ */
+static struct msg *repair_rewrite(struct conn *conn, const char *data) {
+  struct msg *req = repair_parse(conn, true, data), *wreq = NULL;
+  bool did_rewrite = false;
+
+  if (req == NULL) return NULL;
+  if (redis_rewrite_query_with_timestamp_md(req, ctx, &did_rewrite, &wreq) !=
           DN_OK ||
       !did_rewrite) {
-    log_error("%s (mbuf %zu): GET not rewritten", rc->name, mbuf_data_size());
-    if (req != NULL) msg_put(req);
-    return DN_ERROR;
+    msg_put(req);
+    return NULL;
   }
   wreq->orig_msg = req;
   wreq->orig_type = req->type;
+  return wreq;
+}
+
+/* Whether msg has s in it, and if not, say so. */
+static bool repair_has(struct msg *msg, const char *s, const char *what,
+                       const char *name, const char *key) {
+  static char buf[4096];
+
+  if (strstr(repair_data(msg, buf, sizeof(buf)), s) != NULL) return true;
+  log_error("%s (%s): %s '%.60s...' lacks '%.60s...'", name, repair_mode(key),
+            what, buf, s);
+  return false;
+}
+
+static rstatus_t repair_run(struct conn *conn, const struct repair_case *rc,
+                            const char *key) {
+  static char buf[4096];
+  char get[256], has_key[256];
+  struct msg *wreq, *repair = NULL;
+  struct response_mgr rspmgr;
+  rstatus_t status = DN_ERROR;
+
+  memset(&rspmgr, 0, sizeof(rspmgr));
+  dn_snprintf(get, sizeof(get), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+              strlen(key), key);
+  dn_snprintf(has_key, sizeof(has_key), "\r\n$%zu\r\n%s\r\n", strlen(key),
+              key);
+  wreq = repair_rewrite(conn, get);
+  if (wreq == NULL) {
+    log_error("%s (%s): GET not rewritten", rc->name, repair_mode(key));
+    return DN_ERROR;
+  }
+  if (!repair_has(wreq, has_key, "script", rc->name, key)) {
+    msg_put(wreq);
+    return DN_ERROR;
+  }
 
   rspmgr.msg = wreq;
   for (int i = 0; i < 2; i++) {
@@ -961,25 +1004,25 @@ static rstatus_t repair_run(struct conn *conn, const struct repair_case *rc) {
       (repair != NULL) != rc->repair ||
       rspmgr.responses[0]->needs_repair != rc->repair ||
       rspmgr.responses[1]->needs_repair) {
-    log_error("%s (mbuf %zu): repair %s, replies needing it %d %d", rc->name,
-              mbuf_data_size(), repair != NULL ? "made" : "not made",
+    log_error("%s (%s): repair %s, replies needing it %d %d", rc->name,
+              repair_mode(key), repair != NULL ? "made" : "not made",
               rspmgr.responses[0]->needs_repair,
               rspmgr.responses[1]->needs_repair);
     goto out;
   }
+  if (repair != NULL && !repair_has(repair, has_key, "repair", rc->name, key)) {
+    goto out;
+  }
   for (int i = 0; repair != NULL && i < 2; i++) {
     if (rc->repair_has[i] != NULL &&
-        strstr(repair_data(repair, buf, sizeof(buf)), rc->repair_has[i]) ==
-            NULL) {
-      log_error("%s (mbuf %zu): repair '%.60s...' lacks '%.60s...'", rc->name,
-                mbuf_data_size(), buf, rc->repair_has[i]);
+        !repair_has(repair, rc->repair_has[i], "repair", rc->name, key)) {
       goto out;
     }
   }
   if (strcmp(repair_data(rspmgr.responses[1], buf, sizeof(buf)), rc->client) !=
       0) {
-    log_error("%s (mbuf %zu): client gets '%.60s...', want '%.60s...'",
-              rc->name, mbuf_data_size(), buf, rc->client);
+    log_error("%s (%s): client gets '%.60s...', want '%.60s...'", rc->name,
+              repair_mode(key), buf, rc->client);
     goto out;
   }
   status = DN_OK;
@@ -997,37 +1040,35 @@ out:
  * The script that clears the metadata of a field once all replicas deleted it,
  * for an HDEL of a field larger than the mbufs.
  */
-static rstatus_t cleanup_run(struct conn *conn, const char *field) {
-  static char buf[4096], hdel[1100], has_field[1100];
-  struct msg *req, *wreq = NULL, *cleanup = NULL;
-  bool did_rewrite = false;
+static rstatus_t cleanup_run(struct conn *conn, const char *key,
+                             const char *field) {
+  static char hdel[1300], has_key[256], has_field[1100];
+  struct msg *wreq, *cleanup = NULL;
   rstatus_t status = DN_ERROR;
 
-  dn_snprintf(hdel, sizeof(hdel), "*3\r\n$4\r\nHDEL\r\n$1\r\nh\r\n$%zu\r\n%s\r\n",
-              strlen(field), field);
+  dn_snprintf(hdel, sizeof(hdel),
+              "*3\r\n$4\r\nHDEL\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n", strlen(key),
+              key, strlen(field), field);
+  dn_snprintf(has_key, sizeof(has_key), "\r\n$%zu\r\n%s\r\n", strlen(key),
+              key);
   dn_snprintf(has_field, sizeof(has_field), "\r\n$%zu\r\n%s\r\n",
               strlen(field), field);
-  req = repair_parse(conn, true, hdel);
-  if (req == NULL ||
-      redis_rewrite_query_with_timestamp_md(req, ctx, &did_rewrite, &wreq) !=
-          DN_OK ||
-      !did_rewrite) {
-    log_error("cleanup (mbuf %zu): HDEL not rewritten", mbuf_data_size());
-    if (req != NULL) msg_put(req);
+  wreq = repair_rewrite(conn, hdel);
+  if (wreq == NULL) {
+    log_error("cleanup (%s): HDEL not rewritten", repair_mode(key));
     return DN_ERROR;
   }
-  wreq->orig_msg = req;
-  wreq->orig_type = req->type;
   memset(&wreq->rspmgr, 0, sizeof(wreq->rspmgr));
   wreq->rspmgr.max_responses = 1;
 
-  if (redis_clear_repair_md_for_key(ctx, wreq, &cleanup) != DN_OK ||
-      strstr(repair_data(cleanup, buf, sizeof(buf)), has_field) == NULL) {
-    log_error("cleanup (mbuf %zu): script '%.60s...' lacks the field",
-              mbuf_data_size(), cleanup != NULL ? buf : "");
+  if (redis_clear_repair_md_for_key(ctx, wreq, &cleanup) != DN_OK) {
+    log_error("cleanup (%s): no script", repair_mode(key));
     goto out;
   }
-  status = DN_OK;
+  if (repair_has(cleanup, has_key, "script", "cleanup", key) &&
+      repair_has(cleanup, has_field, "script", "cleanup", key)) {
+    status = DN_OK;
+  }
 
 out:
   if (cleanup != NULL) msg_put(cleanup);
@@ -1074,6 +1115,11 @@ static rstatus_t test_read_repair(struct conn *conn) {
        "-ERR x\r\n"},
   };
 
+  /* keys with and without a hash tag in them, with and without one configured */
+  static const struct {
+    const char *hash_tag, *key;
+  } keys[] = {{NULL, "k"}, {"{}", "k"}, {"{}", "user:{42}:name"}};
+
   g_data_store = DATA_REDIS;
   conn->dyn_mode = 0;
   g_read_repairs_enabled = true;
@@ -1081,16 +1127,23 @@ static rstatus_t test_read_repair(struct conn *conn) {
   for (size_t m = 0; m < NELEMS(mbuf_sizes); m++) {
     mbuf_deinit();
     mbuf_init(mbuf_sizes[m]);
-    for (size_t c = 0; c < NELEMS(cases); c++) {
+    for (size_t k = 0; k < NELEMS(keys); k++) {
+      string_init(&ctx->pool.hash_tag);
+      if (keys[k].hash_tag != NULL) {
+        string_set_raw(&ctx->pool.hash_tag, keys[k].hash_tag);
+      }
+      for (size_t c = 0; c < NELEMS(cases); c++) {
+        nruns++;
+        if (repair_run(conn, &cases[c], keys[k].key) != DN_OK) {
+          nfailed++;
+        }
+      }
       nruns++;
-      if (repair_run(conn, &cases[c]) != DN_OK) {
+      if (cleanup_run(conn, keys[k].key, big) != DN_OK) {
         nfailed++;
       }
     }
-    nruns++;
-    if (cleanup_run(conn, big) != DN_OK) {
-      nfailed++;
-    }
+    string_init(&ctx->pool.hash_tag);
   }
   mbuf_deinit();
   mbuf_init(TEST_MBUF_SIZE);

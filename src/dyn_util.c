@@ -605,11 +605,6 @@ uint64_t current_timestamp_in_millis() {
   return millis;
 }
 
-uint32_t keypos_elem_len(struct keypos* elem) {
-  if (elem == NULL) return 0;
-  return elem->tag_end - elem->tag_start;
-}
-
 uint32_t argpos_elem_len(struct argpos* elem) {
   if (elem == NULL) return 0;
   return elem->len;

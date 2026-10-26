@@ -93,7 +93,6 @@
 #define dn_atoui(_line, _n) _dn_atoui((uint8_t *)_line, (size_t)_n)
 
 // Forward declarations.
-struct keypos;
 struct argpos;
 
 int dn_set_blocking(int sd);
@@ -402,7 +401,6 @@ int count_digits(uint64_t arg);
  */
 uint64_t current_timestamp_in_millis(void);
 
-uint32_t keypos_elem_len(struct keypos* elem);
 uint32_t argpos_elem_len(struct argpos* elem);
 
 #endif

@@ -580,10 +580,12 @@ static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
   THROW_STATUS(msg_append_format(msg, REDIS_PRTCL_INT_ARG_FMT, 2,
       count_digits(num_keys + 2), num_keys + 2));
 
-  // Add all the keys touched in the query.
+  // Add all the keys touched in the query, whole: the script works on them, and
+  // routing finds their hash tags again.
   for (i = 0; i < src->num_keys; ++i) {
     struct keypos *elem = array_get(src->keys, i);
-    THROW_STATUS(msg_append_bulk(msg, elem->tag_start, keypos_elem_len(elem)));
+    THROW_STATUS(msg_append_bulk(msg, elem->start,
+        (uint32_t)(elem->end - elem->start)));
   }
   // Add the add-set and rem-set keys.
   int add_set_len = strlen(src->add_set);
