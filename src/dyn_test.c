@@ -3,6 +3,7 @@
  * storages. Copyright (C) 2015 Netflix, Inc.
  */
 
+#include <ctype.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <signal.h>
@@ -227,11 +228,13 @@ static void deinit_peer(struct node *s) {
 /*
  * A message the parser should produce: its type and, for a request, its keys
  * (each followed by its hash tag in parentheses, when it has one that isn't
- * the whole key), or for a response, its args.
+ * the whole key), or for a response, its args. A redis request can also have
+ * the args read repairs record for it.
  */
 struct parse_req {
   msg_type_t type;
-  char keys[1024]; /* space-separated */
+  char keys[1024];  /* space-separated */
+  const char *args; /* space-separated, NULL if not checked */
 };
 
 #define PARSE_DATA_MAX 8192
@@ -295,12 +298,21 @@ static void parse_add_req(struct parse_case *tc, msg_type_t type,
   parse_append(tc, words, raw);
   tc->reqs[tc->nreqs].type = type;
   dn_snprintf(tc->reqs[tc->nreqs].keys, sizeof(tc->reqs[0].keys), "%s", keys);
+  tc->reqs[tc->nreqs].args = NULL;
   tc->nreqs++;
 }
 
 static void parse_add(struct parse_case *tc, msg_type_t type, const char *keys,
                       const char *words) {
   parse_add_req(tc, type, keys, words, false);
+}
+
+/* Append a redis request, also with the args read repairs record for it. */
+static void parse_add_args(struct parse_case *tc, msg_type_t type,
+                           const char *keys, const char *args,
+                           const char *words) {
+  parse_add(tc, type, keys, words);
+  tc->reqs[tc->nreqs - 1].args = args;
 }
 
 /* Append a response the parser should accept, with its type and args. */
@@ -319,6 +331,67 @@ static void parse_reject(struct parse_case *tc, const char *words) {
 /* For the error messages: the parsers take other paths with read repairs. */
 static const char *parse_mode(void) {
   return g_read_repairs_enabled ? ", read repairs" : "";
+}
+
+/*
+ * Check the args read repairs recorded for a redis request: each must be a
+ * whole bulk string, in one mbuf, recorded once. When the request can be
+ * rewritten with timestamps, the only time they're used, they must also be the
+ * ones expected, if given.
+ */
+static rstatus_t parse_check_args(const struct parse_case *tc, size_t chunk,
+                                  size_t i, struct msg *msg) {
+  char args[1024] = "";
+  size_t len = 0;
+
+  for (uint32_t k = 0; k < array_n(msg->args); k++) {
+    struct argpos *ap = array_get(msg->args, k);
+    struct mbuf *b;
+    uint8_t *q;
+    size_t n = 0, scale = 1;
+
+    STAILQ_FOREACH(b, &msg->mhdr, next) {
+      if (ap->start >= b->pos && ap->start <= ap->end && ap->end <= b->last) {
+        break;
+      }
+    }
+    /* CRLF after it and "$<len>\r\n" before it, as far as they're in b */
+    bool whole = b != NULL && (ap->end == b->last || ap->end[0] == CR) &&
+                 (ap->end + 1 >= b->last || ap->end[1] == LF);
+    for (q = ap->start - 1; whole && q >= b->pos; q--) {
+      if (q >= ap->start - 2) {
+        whole = *q == (q == ap->start - 1 ? LF : CR);
+      } else if (isdigit(*q)) {
+        n += (size_t)(*q - '0') * scale;
+        scale *= 10;
+      } else {
+        whole = *q == '$' && n == (size_t)(ap->end - ap->start);
+        break;
+      }
+    }
+    if (!whole) {
+      log_error("%s (mbuf %zu, chunk %zu%s): request %zu has arg %u of "
+                "length %td, not a whole bulk string in one mbuf",
+                tc->name, mbuf_data_size(), chunk, parse_mode(), i + 1, k + 1,
+                ap->end - ap->start);
+      return DN_ERROR;
+    }
+    if (len < sizeof(args)) {
+      len += (size_t)dn_snprintf(args + len, sizeof(args) - len, "%s%.*s",
+                                 k == 0 ? "" : " ", (int)(ap->end - ap->start),
+                                 ap->start);
+    }
+  }
+
+  if (tc->reqs[i].args != NULL && msg->rewrite_with_ts_possible &&
+      strcmp(args, tc->reqs[i].args) != 0) {
+    log_error("%s (mbuf %zu, chunk %zu%s): request %zu has args [%s], want "
+              "[%s]",
+              tc->name, mbuf_data_size(), chunk, parse_mode(), i + 1, args,
+              tc->reqs[i].args);
+    return DN_ERROR;
+  }
+  return DN_OK;
 }
 
 /* Compare a parsed message with the one expected. */
@@ -370,6 +443,10 @@ static rstatus_t parse_check(const struct parse_case *tc, size_t chunk,
               keys, msg_type_string(tc->reqs[i].type)->len,
               msg_type_string(tc->reqs[i].type)->data, tc->reqs[i].keys);
     return DN_ERROR;
+  }
+  if (g_read_repairs_enabled && !tc->response &&
+      tc->data_store == DATA_REDIS) {
+    return parse_check_args(tc, chunk, i, msg);
   }
   return DN_OK;
 }
@@ -484,19 +561,20 @@ static void parse_cases_init(void) {
   tc = parse_case_new("redis pipeline", DATA_REDIS, false);
   parse_add(tc, MSG_REQ_REDIS_PING, "", "PING");
   parse_add_req(tc, MSG_REQ_REDIS_PING, "", "PING\r\n", true); /* inline */
-  parse_add(tc, MSG_REQ_REDIS_PING, "", "ping hello");
-  parse_add(tc, MSG_REQ_REDIS_SET, "foo", "SET foo bar");
+  parse_add_args(tc, MSG_REQ_REDIS_PING, "", "hello", "ping hello");
+  parse_add_args(tc, MSG_REQ_REDIS_SET, "foo", "bar", "SET foo bar");
   parse_add(tc, MSG_REQ_REDIS_GET, "foo", "get foo");
   dn_snprintf(words, sizeof(words), "SET big %s", big);
   parse_add(tc, MSG_REQ_REDIS_SET, "big", words);
-  parse_add(tc, MSG_REQ_REDIS_MSET, "k1 k2", "MSET k1 v1 k2 v2");
+  parse_add_args(tc, MSG_REQ_REDIS_MSET, "k1 k2", "v1 v2", "MSET k1 v1 k2 v2");
   parse_add(tc, MSG_REQ_REDIS_MGET, "k1 k2 k3", "MGET k1 k2 k3");
   parse_add(tc, MSG_REQ_REDIS_DEL, "k1 k2", "DEL k1 k2");
   parse_add(tc, MSG_REQ_REDIS_EXISTS, "k1", "Exists k1");
-  parse_add(tc, MSG_REQ_REDIS_HSET, "h", "HSET h f v");
-  parse_add(tc, MSG_REQ_REDIS_ZADD, "z", "ZADD z 1 m");
-  parse_add(tc, MSG_REQ_REDIS_LPUSH, "l", "LPUSH l a b");
-  parse_add(tc, MSG_REQ_REDIS_EVAL, "ek", "EVAL return(1) 1 ek arg");
+  parse_add_args(tc, MSG_REQ_REDIS_HSET, "h", "f v", "HSET h f v");
+  parse_add_args(tc, MSG_REQ_REDIS_ZADD, "z", "1 m", "ZADD z 1 m");
+  parse_add_args(tc, MSG_REQ_REDIS_LPUSH, "l", "a b", "LPUSH l a b");
+  parse_add_args(tc, MSG_REQ_REDIS_EVAL, "ek", "return(1) 1 arg",
+                 "EVAL return(1) 1 ek arg");
   parse_add(tc, MSG_REQ_REDIS_SCRIPT_LOAD, "", "SCRIPT LOAD return(1)");
   parse_add(tc, MSG_REQ_REDIS_SCRIPT_EXISTS, "",
             "script exists e0e1f9fabfc9d4800c877a703b823ac0578ff8db");
