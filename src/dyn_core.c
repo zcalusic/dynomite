@@ -134,7 +134,7 @@ static rstatus_t core_event_base_create(struct context *ctx) {
 
 /**
  * Create the Dynomite server performance statistics and assign it to the
- * context, plus initialize anti-entropy.
+ * context.
  * @param[in,out] ctx Context.
  * @return rstatus_t Return status code.
  */
@@ -334,7 +334,6 @@ error:
     proxy_deinit(ctx);
     server_pool_disconnect(ctx);
     if (ctx->evb) event_base_destroy(ctx->evb);
-    if (ctx->entropy) entropy_conn_destroy(ctx->entropy);
     if (ctx->stats) stats_destroy(ctx->stats);
     crypto_deinit();
     server_pool_deinit(&ctx->pool);

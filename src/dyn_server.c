@@ -459,8 +459,6 @@ rstatus_t server_pool_init(struct server_pool *sp, struct conf_pool *cp,
   sp->secure_server_option =
       get_secure_server_option(&cp->secure_server_option);
   sp->pem_key_file = cp->pem_key_file;
-  sp->recon_key_file = cp->recon_key_file;
-  sp->recon_iv_file = cp->recon_iv_file;
 
   array_null(&sp->peers);
   array_init(&sp->datacenters, 1, sizeof(struct datacenter));

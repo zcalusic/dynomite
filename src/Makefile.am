@@ -8,7 +8,6 @@ AM_CPPFLAGS += -DSYSCONFDIR="\"$(sysconfdir)\""
 AM_CPPFLAGS += -I $(top_srcdir)/src/hashkit
 AM_CPPFLAGS += -I $(top_srcdir)/src/proto
 AM_CPPFLAGS += -I $(top_srcdir)/src/event
-AM_CPPFLAGS += -I $(top_srcdir)/src/entropy
 AM_CPPFLAGS += -I $(top_srcdir)/src/seedsprovider
 
 AM_CFLAGS = -Wall -Wshadow
@@ -27,7 +26,7 @@ if OS_SOLARIS
 AM_LDFLAGS += -lnsl -lsocket
 endif
 
-SUBDIRS = hashkit proto event seedsprovider tools entropy
+SUBDIRS = hashkit proto event seedsprovider tools
 
 sbin_PROGRAMS = dynomite
 
@@ -81,7 +80,6 @@ dynomite_SOURCES =			                          \
 dynomite_LDADD = $(top_builddir)/src/hashkit/libhashkit.a
 dynomite_LDADD += $(top_builddir)/src/proto/libproto.a
 dynomite_LDADD += $(top_builddir)/src/event/libevent.a
-dynomite_LDADD += $(top_builddir)/src/entropy/libentropy.a
 dynomite_LDADD +=  $(top_builddir)/src/seedsprovider/libseedsprovider.a -lresolv
 
 
@@ -132,5 +130,4 @@ dynomite_test_SOURCES =                                           \
 dynomite_test_LDADD = $(top_builddir)/src/hashkit/libhashkit.a
 dynomite_test_LDADD += $(top_builddir)/src/proto/libproto.a
 dynomite_test_LDADD += $(top_builddir)/src/event/libevent.a
-dynomite_test_LDADD += $(top_builddir)/src/entropy/libentropy.a
 dynomite_test_LDADD +=  $(top_builddir)/src/seedsprovider/libseedsprovider.a -lresolv

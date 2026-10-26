@@ -105,7 +105,6 @@ struct mbuf;
 struct mhdr;
 struct conf;
 struct stats;
-struct entropy_conn;
 struct instance;
 struct event_base;
 struct datacenter;

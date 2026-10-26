@@ -42,8 +42,6 @@
 #include "dyn_util.h"
 #include "hashkit/dyn_hashkit.h"
 
-#include "entropy/dyn_entropy.h"
-
 #define ENCRYPTION 1
 
 typedef enum dyn_state {
@@ -115,8 +113,6 @@ struct instance {
   char *log_filename;               /* log filename */
   char *conf_filename;              /* configuration filename */
   char hostname[DN_MAXHOSTNAMELEN]; /* hostname */
-  uint16_t entropy_port;            /* send reconciliation port */
-  char *entropy_addr;               /* send reconciliation addr */
   size_t mbuf_chunk_size;           /* mbuf chunk size */
   size_t alloc_msgs_max;            /* allocated messages buffer size */
   pid_t pid;                        /* process id */
@@ -248,10 +244,6 @@ struct server_pool {
    * connections. (default is datacenter) */
   secure_server_option_t secure_server_option;
   struct string pem_key_file;
-  struct string recon_key_file; /* file with Key encryption in reconciliation */
-  struct string
-      recon_iv_file; /* file with Initialization Vector encryption in
-                        reconciliation */
   struct endpoint stats_endpoint; /* stats_listen: socket info for stats */
   msec_t stats_interval;          /* stats aggregation interval */
   bool enable_gossip;             /* enable/disable gossip */
@@ -263,7 +255,7 @@ struct server_pool {
  * @brief Context of the Dynomite process.
  *
  * Context of the Dynomite process including it's configuration including
- * dynomite itself plus statistics, entropy, the server pool (i.e. connections),
+ * dynomite itself plus statistics, the server pool (i.e. connections),
  * the event base, timeout, dynomite state, gossip and whether or not the admin
  * functionality is enabled/disabled.
  */
@@ -271,7 +263,6 @@ struct context {
   struct instance *instance; /* back pointer to instance */
   struct conf *cf;           /* configuration */
   struct stats *stats;       /* stats */
-  struct entropy *entropy;   /* reconciliation connection */
   struct server_pool pool;   /* server_pool[] */
   struct event_base *evb;    /* event base */
   msec_t max_timeout;        /* max timeout in msec */

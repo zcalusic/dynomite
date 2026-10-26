@@ -88,8 +88,6 @@
 #define CONF_DEFAULT_STATS_INTERVAL_MS (30 * 1000) /* in msec */
 
 #define PEM_KEY_FILE "conf/dynomite.pem"
-#define RECON_KEY_FILE "conf/recon_key.pem"
-#define RECON_IV_FILE "conf/recon_iv.pem"
 
 data_store_t g_data_store = CONF_DEFAULT_DATASTORE;
 struct command {
@@ -213,8 +211,6 @@ static rstatus_t conf_pool_init(struct conf_pool *cp, struct string *name) {
   string_init(&cp->read_consistency);
   string_init(&cp->write_consistency);
   string_init(&cp->pem_key_file);
-  string_init(&cp->recon_key_file);
-  string_init(&cp->recon_iv_file);
   string_init(&cp->stats_listen.pname);
   string_init(&cp->stats_listen.name);
   string_init(&cp->dc);
@@ -293,8 +289,6 @@ static void conf_pool_deinit(struct conf_pool *cp) {
   string_deinit(&cp->read_consistency);
   string_deinit(&cp->write_consistency);
   string_deinit(&cp->pem_key_file);
-  string_deinit(&cp->recon_key_file);
-  string_deinit(&cp->recon_iv_file);
   string_deinit(&cp->stats_listen.pname);
   string_deinit(&cp->stats_listen.name);
   string_deinit(&cp->rack);
@@ -1147,11 +1141,11 @@ static struct command conf_commands[] = {
     {string("pem_key_file"), conf_set_string,
      offsetof(struct conf_pool, pem_key_file)},
 
-    {string("recon_key_file"), conf_set_string,
-     offsetof(struct conf_pool, recon_key_file)},
+    {string("recon_key_file"), conf_set_deprecated,
+     offsetof(struct conf_pool, deprecated)},
 
-    {string("recon_iv_file"), conf_set_string,
-     offsetof(struct conf_pool, recon_iv_file)},
+    {string("recon_iv_file"), conf_set_deprecated,
+     offsetof(struct conf_pool, deprecated)},
 
     {string("datacenter"), conf_set_string, offsetof(struct conf_pool, dc)},
 
@@ -2023,17 +2017,6 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
               PEM_KEY_FILE);
   }
 
-  if (string_empty(&cp->recon_key_file)) {
-    string_copy_c(&cp->recon_key_file, (const uint8_t *)RECON_KEY_FILE);
-    log_debug(LOG_INFO, "setting reconciliation key file to default value:%s",
-              RECON_KEY_FILE);
-  }
-
-  if (string_empty(&cp->recon_iv_file)) {
-    string_copy_c(&cp->recon_iv_file, (const uint8_t *)RECON_IV_FILE);
-    log_debug(LOG_INFO, "setting reconciliation IV file to default value:%s",
-              RECON_IV_FILE);
-  }
 
   if (cp->datastore_connections == CONF_UNSET_NUM) {
     cp->datastore_connections = CONF_DEFAULT_CONNECTIONS;

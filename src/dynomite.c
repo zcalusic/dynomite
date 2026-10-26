@@ -48,9 +48,6 @@
 #define DN_LOG_MAX LOG_PVERB
 #define DN_LOG_PATH NULL
 
-#define DN_ENTROPY_PORT ENTROPY_PORT
-#define DN_ENTROPY_ADDR ENTROPY_ADDR
-
 #define DN_PID_FILE NULL
 
 #define DN_MBUF_SIZE MBUF_SIZE
@@ -295,9 +292,6 @@ static void dn_set_default_options(struct instance *nci) {
   nci->log_filename = DN_LOG_PATH;
 
   nci->conf_filename = DN_CONF_PATH;
-
-  nci->entropy_port = DN_ENTROPY_PORT;
-  nci->entropy_addr = DN_ENTROPY_ADDR;
 
   status = dn_gethostname(nci->hostname, DN_MAXHOSTNAMELEN);
   if (status < 0) {
