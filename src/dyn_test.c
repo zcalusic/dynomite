@@ -993,6 +993,48 @@ out:
   return status;
 }
 
+/*
+ * The script that clears the metadata of a field once all replicas deleted it,
+ * for an HDEL of a field larger than the mbufs.
+ */
+static rstatus_t cleanup_run(struct conn *conn, const char *field) {
+  static char buf[4096], hdel[1100], has_field[1100];
+  struct msg *req, *wreq = NULL, *cleanup = NULL;
+  bool did_rewrite = false;
+  rstatus_t status = DN_ERROR;
+
+  dn_snprintf(hdel, sizeof(hdel), "*3\r\n$4\r\nHDEL\r\n$1\r\nh\r\n$%zu\r\n%s\r\n",
+              strlen(field), field);
+  dn_snprintf(has_field, sizeof(has_field), "\r\n$%zu\r\n%s\r\n",
+              strlen(field), field);
+  req = repair_parse(conn, true, hdel);
+  if (req == NULL ||
+      redis_rewrite_query_with_timestamp_md(req, ctx, &did_rewrite, &wreq) !=
+          DN_OK ||
+      !did_rewrite) {
+    log_error("cleanup (mbuf %zu): HDEL not rewritten", mbuf_data_size());
+    if (req != NULL) msg_put(req);
+    return DN_ERROR;
+  }
+  wreq->orig_msg = req;
+  wreq->orig_type = req->type;
+  memset(&wreq->rspmgr, 0, sizeof(wreq->rspmgr));
+  wreq->rspmgr.max_responses = 1;
+
+  if (redis_clear_repair_md_for_key(ctx, wreq, &cleanup) != DN_OK ||
+      strstr(repair_data(cleanup, buf, sizeof(buf)), has_field) == NULL) {
+    log_error("cleanup (mbuf %zu): script '%.60s...' lacks the field",
+              mbuf_data_size(), cleanup != NULL ? buf : "");
+    goto out;
+  }
+  status = DN_OK;
+
+out:
+  if (cleanup != NULL) msg_put(cleanup);
+  msg_put(wreq);
+  return status;
+}
+
 static rstatus_t test_read_repair(struct conn *conn) {
   static const size_t mbuf_sizes[] = {MBUF_MIN_SIZE, TEST_MBUF_SIZE};
   static char big[1000 + 1], rsp_e1[1100], rsp_e2[1100], rsp_r[1100],
@@ -1044,6 +1086,10 @@ static rstatus_t test_read_repair(struct conn *conn) {
       if (repair_run(conn, &cases[c]) != DN_OK) {
         nfailed++;
       }
+    }
+    nruns++;
+    if (cleanup_run(conn, big) != DN_OK) {
+      nfailed++;
     }
   }
   mbuf_deinit();

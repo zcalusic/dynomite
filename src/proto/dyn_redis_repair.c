@@ -865,6 +865,12 @@ rstatus_t redis_make_repair_query(struct context *ctx, struct response_mgr *rspm
 
   ret_status = finalize_repair_msg(ctx, rspmgr->msg->owner, &repair_msg_info, new_msg_ptr);
 
+  // The keys and fields belong to the original request, the values were copied
+  // into the repair msg.
+  if (repair_msg_info.values != NULL) {
+    array_destroy(repair_msg_info.values);
+  }
+
  done:
   adjust_rsp_buffers_for_client(rspmgr, num_values);
   return DN_OK;
@@ -957,8 +963,8 @@ static rstatus_t create_cleanup_script(struct context *ctx, struct msg *orig_msg
       *field_pos = *orig_field_pos;
       break;
     default:
-      return DN_NOOPS;
-      break;
+      ret_status = DN_NOOPS;
+      goto out;
   }
   // TODO: Consider adding a special type for cleanup scripts
   msg_info.cmd_type = MSG_UNKNOWN;
@@ -966,17 +972,19 @@ static rstatus_t create_cleanup_script(struct context *ctx, struct msg *orig_msg
   update_total_num_tokens(&msg_info);
 
   ret_status = finalize_repair_msg(ctx, conn, &msg_info, new_msg_ptr);
-
-  return ret_status;
+  goto out;
 
  error:
+  ret_status = DN_ERROR;
+ out:
+  // The script has copies of the key and the field.
   if (msg_info.keys != NULL) {
     array_destroy(msg_info.keys);
   }
   if (msg_info.fields != NULL) {
     array_destroy(msg_info.fields);
   }
-  return DN_ERROR;
+  return ret_status;
 }
 
 rstatus_t redis_clear_repair_md_for_key(struct context *ctx, struct msg *req,
