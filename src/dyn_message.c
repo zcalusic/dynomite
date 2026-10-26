@@ -682,12 +682,15 @@ void msg_put(struct msg *msg) {
     uint8_t num_dcs = array_n(&sp->datacenters);
 
     int i;
-    // Skip the 0th index as that points back to the statically allocated 'rspmgr' struct
-    // in 'msg'.
-    for (i = 1; i < num_dcs; ++i) {
-      dn_free(msg->additional_each_rspmgrs[i]);
+    // Every response manager has its own copy of its DC's name. Don't free the
+    // 0th one itself, as that points back to the statically allocated 'rspmgr'
+    // struct in 'msg'.
+    for (i = 0; i < num_dcs; ++i) {
+      string_deinit(&msg->additional_each_rspmgrs[i]->dc_name);
+      if (i > 0) dn_free(msg->additional_each_rspmgrs[i]);
     }
     dn_free(msg->additional_each_rspmgrs);
+    msg->additional_each_rspmgrs = NULL;
   }
   TAILQ_INSERT_HEAD(&free_msgq, msg, m_tqe);
 }

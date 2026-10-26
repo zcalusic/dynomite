@@ -18,7 +18,7 @@ rstatus_t init_response_mgr_all_dcs(struct context *ctx, struct msg *req,
   uint32_t total_responses_to_await = 0;
   int num_dcs_in_quorum = array_n(&ctx->pool.datacenters);
   req->additional_each_rspmgrs =
-      (struct response_mgr**) dn_alloc(num_dcs_in_quorum * (sizeof(struct response_mgr*)));
+      (struct response_mgr**) dn_zalloc(num_dcs_in_quorum * (sizeof(struct response_mgr*)));
   if (req->additional_each_rspmgrs == NULL) return DN_ENOMEM;
 
   // Initialize the response managers for all remote DCs. (The 0th idx in the
@@ -58,15 +58,17 @@ rstatus_t init_response_mgr_all_dcs(struct context *ctx, struct msg *req,
 
   return DN_OK;
  enomem: ;
-  int j = 1;
-  while (req->additional_each_rspmgrs[j] != NULL) {
-    if (req->additional_each_rspmgrs[j]->dc_name.data != NULL) {
-      string_deinit(&req->additional_each_rspmgrs[j]->dc_name);
-    }
-    dn_free(req->additional_each_rspmgrs[j]);
-    ++j;
+  // Slots not reached yet are NULL (zeroed array). The 0th one, if set, is the
+  // statically allocated 'rspmgr' in 'req', so only its DC name is freed.
+  int j;
+  for (j = 0; j < num_dcs_in_quorum; ++j) {
+    struct response_mgr *rspmgr = req->additional_each_rspmgrs[j];
+    if (rspmgr == NULL) continue;
+    string_deinit(&rspmgr->dc_name);
+    if (j > 0) dn_free(rspmgr);
   }
   dn_free(req->additional_each_rspmgrs);
+  req->additional_each_rspmgrs = NULL;
   return DN_ENOMEM;
 }
 
