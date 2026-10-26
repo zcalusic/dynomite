@@ -640,9 +640,15 @@ static void parse_cases_init(void) {
   parse_add(tc, MSG_REQ_REDIS_GET, "{}x()", "GET {}x");
   parse_add(tc, MSG_REQ_REDIS_GET, "a{b", "GET a{b");
   parse_add(tc, MSG_REQ_REDIS_GET, "a}b{c}(c)", "GET a}b{c}");
-  /* the second key is cut at the end of the smallest mbuf */
+  /*
+   * The first key is cut at the end of the smallest mbuf (448 bytes, without
+   * its MBUF_ESIZE extra room), then the second one, after its hash tag.
+   */
   dn_snprintf(words, sizeof(words), "MGET %.*s {t}abcdefghijklmnop", 430, big);
   dn_snprintf(rsp, sizeof(rsp), "%.*s {t}abcdefghijklmnop(t)", 430, big);
+  parse_add(tc, MSG_REQ_REDIS_MGET, rsp, words);
+  dn_snprintf(words, sizeof(words), "MGET %.*s {t}abcdefghijklmnop", 412, big);
+  dn_snprintf(rsp, sizeof(rsp), "%.*s {t}abcdefghijklmnop(t)", 412, big);
   parse_add(tc, MSG_REQ_REDIS_MGET, rsp, words);
 
   /* the number of keys is the last byte of the smallest mbuf */
@@ -680,9 +686,11 @@ static void parse_cases_init(void) {
   /* simple elements keep their type byte, which read repairs rely on */
   parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, ":1 +OK -ERR no-such:key",
                 "*3\r\n:1\r\n+OK\r\n-ERR no-such:key\r\n");
-  /* the reply of a read repair script */
-  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "E :1700000000000 bar",
-                "*3\r\n$1\r\nE\r\n:1700000000000\r\n$3\r\nbar\r\n");
+  /* the reply of a read repair script: status, timestamp (a ZSCORE), value */
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "E 1700000000000 bar",
+                "*3\r\n$1\r\nE\r\n$13\r\n1700000000000\r\n$3\r\nbar\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "X :0 :0",
+                "*3\r\n$1\r\nX\r\n:0\r\n:0\r\n");
   /* SCAN: a cursor, then the keys */
   parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "0 a b",
                 "*2\r\n$1\r\n0\r\n*2\r\n$1\r\na\r\n$1\r\nb\r\n");
