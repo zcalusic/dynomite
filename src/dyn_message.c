@@ -356,6 +356,7 @@ done:
   msg->state = 0;
   msg->pos = NULL;
   msg->token = NULL;
+  msg->arg_start = NULL;
   msg->latest_parsed_mbuf_idx = -1;
 
   msg->parser = NULL;

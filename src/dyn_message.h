@@ -473,6 +473,7 @@ struct msg {
   int state;      /* current parser state */
   uint8_t *pos;   /* parser position marker */
   uint8_t *token; /* token marker */
+  uint8_t *arg_start; /* start of the reply element being parsed (redis) */
   int latest_parsed_mbuf_idx; /* Most recent idx of mbuf parsed in 'mhdr' linked list */
 
   func_msg_parse_t parser;   /* message parser */

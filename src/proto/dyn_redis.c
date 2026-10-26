@@ -383,6 +383,21 @@ rstatus_t record_arg(uint8_t* start_pos, uint8_t* end_pos, struct array *target_
 }
 
 /*
+ * Record the reply element that started at r->arg_start and ends at end, in
+ * mbuf b. An element split between mbufs can't be recorded in one piece, so
+ * only its part in b is.
+ */
+static rstatus_t record_rsp_arg(struct msg *r, struct mbuf *b, uint8_t *end) {
+  uint8_t *start = r->arg_start;
+
+  if (start == NULL || start < b->start || start > end) {
+    start = b->pos;
+  }
+  r->arg_start = NULL;
+  return record_arg(start, end, r->args);
+}
+
+/*
  * Detects the query and does a rewrite if applicable.
  *
  * Currently the following queries are rewritten:
@@ -2683,17 +2698,9 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
 
       case SW_SIMPLE:
         if (ch == CR) {
-          uint8_t* j;
-
-          // Find where this arg started.
-          // TODO: Not a big deal, but avoid iterating backwards.
-          for (j = p; j > 0; --j) {
-            if (*j == ':' || *j == '+' || *j == '-') break;
-          }
-
-          // Record this argument.
+          // Record this argument, with its type byte.
           {
-            rstatus_t argstatus = record_arg(j , p , r->args);
+            rstatus_t argstatus = record_rsp_arg(r, b, p);
             if (argstatus == DN_ERROR) {
               goto error;
             } else if (argstatus == DN_ENOMEM) {
@@ -2885,6 +2892,7 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
           if (ch == ':' || ch == '+' || ch == '-') {
             /* handles not-found reply = '$-1' or integer reply = ':<num>' */
             /* and *2\r\n$2\r\nr0\r\n+OK\r\n or *1\r\n+OK\r\n */
+            r->arg_start = p;
             state = SW_SIMPLE;
             break;
           }
@@ -2931,6 +2939,9 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
         break;
 
       case SW_MULTIBULK_ARGN:
+        if (r->arg_start == NULL) {
+          r->arg_start = p;
+        }
         m = p + r->rlen;
         if (m >= b->last) {
           r->rlen -= (uint32_t)(b->last - p);
@@ -2945,7 +2956,7 @@ void redis_parse_rsp(struct msg *r, struct context *ctx) {
 
         {
           // Record all args.
-          rstatus_t argstatus = record_arg(p , m , r->args);
+          rstatus_t argstatus = record_rsp_arg(r, b, m);
           if (argstatus == DN_ERROR) {
             goto error;
           } else if (argstatus == DN_ENOMEM) {
