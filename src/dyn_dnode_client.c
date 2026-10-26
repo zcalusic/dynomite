@@ -279,9 +279,13 @@ static void dnode_req_forward(struct context *ctx, struct conn *conn,
 
   pool = conn->owner;
 
-  log_debug(LOG_DEBUG, "%s adding message %" PRIu64 ":%" PRIu64,
-            print_obj(conn), req->id, req->parent_id);
-  dictAdd(conn->outstanding_msgs_dict, &req->id, req);
+  // Only a response takes a message out of the dict again: a memcache
+  // noreply request gets none.
+  if (req->expect_datastore_reply) {
+    log_debug(LOG_DEBUG, "%s adding message %" PRIu64 ":%" PRIu64,
+              print_obj(conn), req->id, req->parent_id);
+    dictAdd(conn->outstanding_msgs_dict, &req->id, req);
+  }
 
   uint32_t keylen = 0;
   uint8_t *key = msg_get_tagged_key(req, 0, &keylen);

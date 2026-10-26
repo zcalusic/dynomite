@@ -982,8 +982,12 @@ static void req_forward(struct context *ctx, struct conn *c_conn,
   log_info(
       ">>>>>>>>>>>>>>>>>>>>>>> %s RECEIVED %s key '%.*s' tagged key '%.*s'",
       print_obj(c_conn), print_obj(req), full_keylen, full_key, keylen, key);
-  // add the message to the dict
-  dictAdd(c_conn->outstanding_msgs_dict, &req->id, req);
+  // Add the message to the dict, if a response is expected: only a response
+  // takes it out again, and the client connection waits for the dict to be
+  // empty before it's freed.
+  if (req->expect_datastore_reply) {
+    dictAdd(c_conn->outstanding_msgs_dict, &req->id, req);
+  }
 
   // need to capture the initial mbuf location as once we add in the dynomite
   // headers (as mbufs to the src req), that will bork the request sent to

@@ -836,9 +836,10 @@ void req_send_done(struct context *ctx, struct conn *conn, struct msg *req) {
   /*
    * expect_datastore_reply request instructs the server to send response. So,
    * enqueue message (request) in server outq, if response is expected.
-   * Otherwise, free the request
+   * Otherwise, free the request: a memcache noreply request gets no response
+   * from the datastore, and one in the outq would take the next request's.
    */
-  if (req->expect_datastore_reply || (conn->type == CONN_SERVER)) {
+  if (req->expect_datastore_reply) {
     conn_enqueue_outq(ctx, conn, req);
   } else {
     req_put(req);
