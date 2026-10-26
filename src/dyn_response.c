@@ -92,7 +92,7 @@ struct msg *rsp_send_next(struct context *ctx, struct conn *conn) {
   struct msg *rsp, *req; /* response and it's peer request */
 
   ASSERT_LOG(
-      (conn->type == CONN_DNODE_PEER_CLIENT) || (conn->type = CONN_CLIENT),
+      (conn->type == CONN_DNODE_PEER_CLIENT) || (conn->type == CONN_CLIENT),
       "conn %s", print_obj(conn));
 
   req = TAILQ_FIRST(&conn->omsg_q);

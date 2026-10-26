@@ -285,7 +285,7 @@ static rstatus_t client_handle_response(struct context *ctx, struct conn *conn, 
 struct msg *req_recv_next(struct context *ctx, struct conn *conn, bool alloc) {
   struct msg *req;
 
-  ASSERT((conn->type == CONN_DNODE_PEER_CLIENT) || (conn->type = CONN_CLIENT));
+  ASSERT((conn->type == CONN_DNODE_PEER_CLIENT) || (conn->type == CONN_CLIENT));
 
   if (conn->eof) {
     req = conn->rmsg;
