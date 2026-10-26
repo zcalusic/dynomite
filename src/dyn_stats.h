@@ -10,7 +10,7 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *_stats_pool_set_ts
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -361,9 +361,6 @@ struct stats_cmd {
     _stats_pool_set_ts(_ctx, STATS_POOL_##_name, _val); \
   } while (0)
 
-#define stats_pool_get_ts(_ctx, _name) \
-  _stats_pool_get_ts(_ctx, STATS_POOL_##_name)
-
 #define stats_pool_set_val(_ctx, _name, _val)            \
   do {                                                   \
     _stats_pool_set_val(_ctx, STATS_POOL_##_name, _val); \
@@ -397,9 +394,6 @@ struct stats_cmd {
     _stats_server_set_ts(_ctx, STATS_SERVER_##_name, _val); \
   } while (0)
 
-#define stats_server_get_ts(_ctx, _name) \
-  _stats_server_get_ts(_ctx, STATS_SERVER_##_name)
-
 #define stats_server_set_val(_ctx, _name, _val)              \
   do {                                                       \
     _stats_server_set_val(_ctx, STATS_SERVER_##_name, _val); \
@@ -432,8 +426,6 @@ struct stats_cmd {
 
 #define stats_server_set_ts(_ctx, _name, _val)
 
-#define stats_server_get_ts(_ctx, _name)
-
 #define stats_server_set_val(_ctx, _name, _val)
 
 #define stats_server_get_val(_ctx, _name)
@@ -452,7 +444,6 @@ void _stats_pool_decr_by(struct context *ctx, stats_pool_field_t fidx,
                          int64_t val);
 void _stats_pool_set_ts(struct context *ctx, stats_pool_field_t fidx,
                         int64_t val);
-uint64_t _stats_pool_get_ts(struct context *ctx, stats_pool_field_t fidx);
 void _stats_pool_set_val(struct context *ctx, stats_pool_field_t fidx,
                          int64_t val);
 int64_t _stats_pool_get_val(struct context *ctx, stats_pool_field_t fidx);
@@ -464,8 +455,7 @@ void _stats_server_incr_by(struct context *ctx, stats_server_field_t fidx,
 void _stats_server_decr_by(struct context *ctx, stats_server_field_t fidx,
                            int64_t val);
 void _stats_server_set_ts(struct context *ctx, stats_server_field_t fidx,
-                          uint64_t val);
-uint64_t _stats_server_get_ts(struct context *ctx, stats_server_field_t fidx);
+                          int64_t val);
 void _stats_server_set_val(struct context *ctx, stats_server_field_t fidx,
                            int64_t val);
 int64_t _stats_server_get_val(struct context *ctx, stats_server_field_t fidx);

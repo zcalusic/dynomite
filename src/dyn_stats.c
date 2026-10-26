@@ -773,8 +773,8 @@ static rstatus_t get_host_from_pname(struct string *host,
   uint8_t *found = dn_strchr(pname->data, &pname->data[pname->len], ':');
   string_init(host);
   if (found) {
-    size_t hostlen = found - pname->data;
-    THROW_STATUS(string_copy(host, pname->data, hostlen));
+    THROW_STATUS(
+        string_copy(host, pname->data, (uint32_t)(found - pname->data)));
     return DN_OK;
   }
   THROW_STATUS(string_copy(host, pname->data, pname->len));
@@ -791,7 +791,7 @@ static rstatus_t stats_add_node_host(struct stats *st,
   // so try to get the hostname if local otherwise use whats in pname
   char *hn = NULL;
   if (node->is_local && (hn = get_public_hostname(sp))) {
-    THROW_STATUS(string_copy(&host, hn, dn_strlen(hn)));
+    THROW_STATUS(string_copy(&host, (uint8_t *)hn, dn_strlen(hn)));
   } else
     get_host_from_pname(&host, &node->pname);
 
@@ -1154,7 +1154,7 @@ static rstatus_t stats_http_send(int sd, int status, const char *content_type,
   return DN_OK;
 }
 
-static rstatus_t stats_http_rsp(int sd, uint8_t *content, size_t len) {
+static rstatus_t stats_http_rsp(int sd, const void *content, size_t len) {
   return stats_http_send(sd, 200, "application/json; charset=utf-8", content,
                          len);
 }
@@ -1622,7 +1622,7 @@ void stats_swap(struct stats *st) {
   st->free_mbufs = mbuf_free_queue_size();
 
   getrusage(RUSAGE_SELF, &r_usage);
-  st->dyn_memory = r_usage.ru_maxrss;
+  st->dyn_memory = (uint64_t)r_usage.ru_maxrss;
 
   // swap current and shadow
   struct stats_pool temp = st->current;
@@ -1637,13 +1637,6 @@ void stats_swap(struct stats *st) {
   st->updated = 0;
 
   st->aggregate = 1;
-}
-
-uint64_t _stats_pool_get_ts(struct context *ctx, stats_pool_field_t fidx) {
-  struct stats *st = ctx->stats;
-  struct stats_pool *stp = &st->current;
-  struct stats_metric *stm = array_get(&stp->metric, fidx);
-  return stm->value.counter;
 }
 
 int64_t _stats_pool_get_val(struct context *ctx, stats_pool_field_t fidx) {
@@ -1713,15 +1706,6 @@ void _stats_pool_set_ts(struct context *ctx, stats_pool_field_t fidx,
 
   log_debug(LOG_VVVERB, "set ts field '%.*s' to %" PRId64 "", stm->name.len,
             stm->name.data, stm->value.timestamp);
-}
-
-uint64_t _stats_server_get_ts(struct context *ctx, stats_server_field_t fidx) {
-  struct stats *st = ctx->stats;
-  struct stats_pool *stp = &st->current;
-  struct stats_server *sts = &stp->server;
-  struct stats_metric *stm = array_get(&sts->metric, fidx);
-
-  return stm->value.timestamp;
 }
 
 void _stats_pool_set_val(struct context *ctx, stats_pool_field_t fidx,
@@ -1803,7 +1787,7 @@ void _stats_server_decr_by(struct context *ctx, stats_server_field_t fidx,
 }
 
 void _stats_server_set_ts(struct context *ctx, stats_server_field_t fidx,
-                          uint64_t val) {
+                          int64_t val) {
   struct stats_metric *stm = stats_server_to_metric(ctx, fidx);
 
   ASSERT(stm->type == STATS_TIMESTAMP);

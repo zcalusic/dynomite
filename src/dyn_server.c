@@ -128,7 +128,7 @@ static rstatus_t datastore_preconnect(struct datastore *datastore) {
 static void server_failure(struct context *ctx, struct datastore *server) {
   conn_pool_notify_conn_errored(server->conn_pool);
   if (ctx->stats) {
-    stats_server_set_ts(ctx, server_ejected_at, dn_msec_now());
+    stats_server_set_ts(ctx, server_ejected_at, (int64_t)dn_msec_now());
     stats_pool_incr(ctx, server_ejects);
   }
 }
