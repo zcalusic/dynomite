@@ -1877,8 +1877,7 @@ static void test_core_ctx_create(struct instance *nci) {
  * This is very primitive
  */
 static void test_server_pool(struct instance *nci) {
-  struct context *ctx = nci->ctx;
-  struct server_pool *sp = &ctx->pool;
+  struct server_pool *sp = &nci->ctx->pool;
   sp->mbuf_size = TEST_MBUF_SIZE;
   sp->alloc_msgs_max = TEST_ALLOC_MSGS_MAX;
 

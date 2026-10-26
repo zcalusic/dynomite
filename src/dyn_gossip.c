@@ -320,7 +320,7 @@ static rstatus_t gossip_forward_state(struct server_pool *sp) {
     dictReleaseIterator(rack_it);
   }
 
-  msg->len = pos - data;
+  msg->len = (uint32_t)(pos - data);
 
   log_debug(LOG_VERB,
             "\tForwarding my current gossip states           : '%.*s'",

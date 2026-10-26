@@ -42,7 +42,7 @@ rstatus_t init_response_mgr_all_dcs(struct context *ctx, struct msg *req,
         req, req->additional_each_rspmgrs[i], c_conn, remote_dc);
     if (max_rsps_for_dc == -1) goto enomem;
 
-    total_responses_to_await += max_rsps_for_dc;
+    total_responses_to_await += (uint32_t)max_rsps_for_dc;
   }
 
   // Now do the same as the above for the local DC.
@@ -52,7 +52,7 @@ rstatus_t init_response_mgr_all_dcs(struct context *ctx, struct msg *req,
   int max_rsps_for_dc = init_response_mgr_each_quorum_helper(
       req, req->additional_each_rspmgrs[0], c_conn, local_dc);
   if (max_rsps_for_dc == -1) goto enomem;
-  total_responses_to_await += max_rsps_for_dc;
+  total_responses_to_await += (uint32_t)max_rsps_for_dc;
 
   // Update the total number of responses to wait for.
   req->awaiting_rsps = total_responses_to_await;
@@ -194,7 +194,7 @@ static bool perform_repairs_if_necessary(struct context *ctx, struct response_mg
   if (repair_create_status == DN_OK && repair_msg != NULL) {
     struct conn *c_conn = rspmgr->msg->owner;
     struct keypos *key_pos = (struct keypos*)array_get(rspmgr->msg->keys, 0);
-    uint32_t keylen = key_pos->end - key_pos->start;
+    uint32_t keylen = (uint32_t)(key_pos->end - key_pos->start);
     int i;
     for (i = 0; i < rspmgr->good_responses; ++i) {
       if (rspmgr->responses[i]->needs_repair == false) continue;

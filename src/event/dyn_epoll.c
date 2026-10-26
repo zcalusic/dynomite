@@ -305,7 +305,8 @@ void event_loop_stats(event_stats_cb_t cb, void *arg) {
   for (;;) {
     int n;
 
-    n = epoll_wait(ep, &ev, 1, st->interval);
+    /* the interval comes from stats_interval, an int in the config */
+    n = epoll_wait(ep, &ev, 1, (int)st->interval);
     if (n < 0) {
       if (errno == EINTR) {
         continue;

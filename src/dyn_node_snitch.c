@@ -13,7 +13,7 @@
 #include "dyn_string.h"
 #include "dyn_util.h"
 
-static unsigned char *broadcast_address = NULL;
+static char *broadcast_address = NULL;
 static char *public_hostname = NULL;
 static char *public_ip4 = NULL;
 static char *private_ip4 = NULL;
@@ -51,19 +51,19 @@ static unsigned char *hostname_to_ip(char *hostname) {
 }
 
 unsigned char *get_broadcast_address(struct server_pool *sp) {
-  if (broadcast_address != NULL) return broadcast_address;
+  if (broadcast_address != NULL) return (unsigned char *)broadcast_address;
 
   if (is_aws_env(sp)) {
     broadcast_address = getenv("EC2_PUBLIC_HOSTNAME");
-    if (broadcast_address != NULL) return broadcast_address;
+    if (broadcast_address != NULL) return (unsigned char *)broadcast_address;
   } else {
     broadcast_address = getenv("PUBLIC_HOSTNAME");
-    if (broadcast_address != NULL) return broadcast_address;
+    if (broadcast_address != NULL) return (unsigned char *)broadcast_address;
   }
 
   struct node *peer = *(struct node **)array_get(&sp->peers, 0);
   broadcast_address = (char *)peer->name.data;
-  return broadcast_address;
+  return (unsigned char *)broadcast_address;
 }
 
 char *get_public_hostname(struct server_pool *sp) {
