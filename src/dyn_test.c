@@ -1076,6 +1076,50 @@ out:
   return status;
 }
 
+/*
+ * A write rewritten as a read repair script: what the script must have, or
+ * NULL if it mustn't be rewritten (Redis rejects it).
+ */
+struct rewrite_case {
+  const char *words;
+  const char *has[2];
+};
+
+static rstatus_t rewrite_run(struct conn *conn, const struct rewrite_case *wc) {
+  static char data[512];
+  struct msg *wreq;
+  rstatus_t status = DN_OK;
+  char buf[256], *word, *save;
+  int nwords = 0, n = 0;
+
+  /* the words as a RESP array */
+  dn_snprintf(buf, sizeof(buf), "%s", wc->words);
+  for (const char *w = wc->words; *w != '\0'; w++) {
+    if ((w == wc->words || w[-1] == ' ') && *w != ' ') nwords++;
+  }
+  n = dn_snprintf(data, sizeof(data), "*%d\r\n", nwords);
+  for (word = strtok_r(buf, " ", &save); word != NULL;
+       word = strtok_r(NULL, " ", &save)) {
+    n += dn_snprintf(data + n, sizeof(data) - (size_t)n, "$%zu\r\n%s\r\n",
+                     strlen(word), word);
+  }
+
+  wreq = repair_rewrite(conn, data);
+  if ((wreq != NULL) != (wc->has[0] != NULL)) {
+    log_error("%s (%s): %s", wc->words, repair_mode("-"),
+              wreq != NULL ? "rewritten" : "not rewritten");
+    status = DN_ERROR;
+  }
+  for (int i = 0; wreq != NULL && i < 2 && status == DN_OK; i++) {
+    if (wc->has[i] != NULL &&
+        !repair_has(wreq, wc->has[i], "script", wc->words, "-")) {
+      status = DN_ERROR;
+    }
+  }
+  if (wreq != NULL) msg_put(wreq);
+  return status;
+}
+
 static rstatus_t test_read_repair(struct conn *conn) {
   static const size_t mbuf_sizes[] = {MBUF_MIN_SIZE, TEST_MBUF_SIZE};
   static char big[1000 + 1], rsp_e1[1100], rsp_e2[1100], rsp_r[1100],
@@ -1115,6 +1159,33 @@ static rstatus_t test_read_repair(struct conn *conn) {
        "-ERR x\r\n"},
   };
 
+  /*
+   * ZADD: its options come before the first score; the script gets the number
+   * of options, the number of members and the timestamp, then the options, then
+   * each member and its score.
+   */
+  static const struct rewrite_case rewrites[] = {
+      {"ZADD z 1 m",
+       {"$4\r\nZADD\r\n$1\r\n0\r\n$1\r\n1\r\n$", "\r\n$1\r\nm\r\n$1\r\n1\r\n"}},
+      {"ZADD z NX 1 m",
+       {"$4\r\nZADD\r\n$1\r\n1\r\n$1\r\n1\r\n$",
+        "\r\n$2\r\nNX\r\n$1\r\nm\r\n$1\r\n1\r\n"}},
+      {"ZADD z xx ch 1 a 2 b",
+       {"$4\r\nZADD\r\n$1\r\n2\r\n$1\r\n2\r\n$",
+        "\r\n$2\r\nxx\r\n$2\r\nch\r\n$1\r\na\r\n$1\r\n1\r\n$1\r\nb\r\n$1\r\n2\r\n"}},
+      {"ZADD z XX GT CH INCR 5 m",
+       {"$4\r\nZADD\r\n$1\r\n4\r\n$1\r\n1\r\n$",
+        "\r\n$2\r\nXX\r\n$2\r\nGT\r\n$2\r\nCH\r\n$4\r\nINCR\r\n$1\r\nm\r\n$1\r\n5\r\n"}},
+      /* a member named like an option */
+      {"ZADD z 1 nx",
+       {"$4\r\nZADD\r\n$1\r\n0\r\n$1\r\n1\r\n$", "\r\n$2\r\nnx\r\n$1\r\n1\r\n"}},
+      /* rejected by Redis, so sent to it as they are */
+      {"ZADD z NX XX 1 m", {NULL, NULL}},
+      {"ZADD z GT LT 1 m", {NULL, NULL}},
+      {"ZADD z NX GT 1 m", {NULL, NULL}},
+      {"ZADD z NX", {NULL, NULL}},
+      {"ZADD z 1 m 2", {NULL, NULL}},
+  };
   /* keys with and without a hash tag in them, with and without one configured */
   static const struct {
     const char *hash_tag, *key;
@@ -1144,6 +1215,12 @@ static rstatus_t test_read_repair(struct conn *conn) {
       }
     }
     string_init(&ctx->pool.hash_tag);
+    for (size_t w = 0; w < NELEMS(rewrites); w++) {
+      nruns++;
+      if (rewrite_run(conn, &rewrites[w]) != DN_OK) {
+        nfailed++;
+      }
+    }
   }
   mbuf_deinit();
   mbuf_init(TEST_MBUF_SIZE);

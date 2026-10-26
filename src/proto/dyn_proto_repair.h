@@ -294,7 +294,7 @@
   "end\n"\
   "return {status_field, ts, value}\n\r\n"
 
-#define ZADD_SCRIPT "$4\r\nEVAL\r\n$2022\r\n"\
+#define ZADD_SCRIPT "$4\r\nEVAL\r\n$1798\r\n"\
   "local key = KEYS[1]\n"\
   "local top_level_add_set = KEYS[2]\n"\
   "local top_level_rem_set = KEYS[3]\n"\
@@ -306,6 +306,12 @@
   "local cur_ts = ARGV[4]\n"\
   "local start_loop = 5 + num_opts\n"\
   "local end_loop = (num_fields * 2) + 4 + num_opts\n"\
+  "local args = {key}\n"\
+  "for j=5,4 + num_opts\n"\
+  "do\n"\
+  "  args[#args + 1] = ARGV[j]\n"\
+  "end\n"\
+  "local num_args = #args\n"\
   "local top_level_rem_set_ts = redis.call('ZSCORE', top_level_rem_set, key)\n"\
   "if (top_level_rem_set_ts) then\n"\
   "  if (tonumber(cur_ts) < tonumber(top_level_rem_set_ts)) then\n"\
@@ -341,17 +347,9 @@
   "    end\n"\
   "  end\n"\
   "  if (skiploop == false) then\n"\
-  "    if (num_opts == '0') then\n"\
-  "      ret = redis.call(orig_cmd, key, value, field)\n"\
-  "    elseif (num_opts == '1') then\n"\
-  "      ret = redis.call(orig_cmd, key, ARGV[5], value, field)\n"\
-  "    elseif (num_opts == '2') then\n"\
-  "      ret = redis.call(orig_cmd, key, ARGV[5], ARGV[6], value, field)\n"\
-  "    elseif (num_opts == '3') then\n"\
-  "      ret = redis.call(orig_cmd, key, ARGV[5], ARGV[6], ARGV[7], value, field)\n"\
-  "    else\n"\
-  "      ret = false\n"\
-  "    end\n"\
+  "    args[num_args + 1] = value\n"\
+  "    args[num_args + 2] = field\n"\
+  "    ret = redis.call(orig_cmd, unpack(args))\n"\
   "    if (type(ret) ~= 'boolean') then\n"\
   "      redis.call('ZADD', add_set, cur_ts, field)\n"\
   "    end\n"\

@@ -5,6 +5,7 @@
 
 #include <ctype.h>
 #include <stdio.h>
+#include <strings.h>
 
 #include "../dyn_core.h"
 #include "../dyn_dnode_peer.h"
@@ -247,6 +248,21 @@ static rstatus_t get_values_from_source(int num_tokens, int start_pos,
   return DN_OK;
 }
 
+/* Whether 'arg' is 'word', ignoring case. 'arg' can be split between mbufs. */
+static bool arg_is(const struct argpos *arg, const char *word) {
+  uint8_t buf[8];
+  size_t len = strlen(word);
+
+  if (arg->len != len || len > sizeof(buf)) return false;
+  argpos_copy(arg, buf, sizeof(buf));
+  return strncasecmp((const char *)buf, word, len) == 0;
+}
+
+/*
+ * Records the optional args of 'orig_msg' in 'orig_msg->msg_info'. Returns
+ * DN_ERROR for ones Redis would reject, so that the msg isn't rewritten and
+ * Redis gets to reject it.
+ */
 rstatus_t post_parse_optional_args(struct msg *orig_msg) {
   struct write_with_ts *out_struct = &orig_msg->msg_info;
 
@@ -257,19 +273,20 @@ rstatus_t post_parse_optional_args(struct msg *orig_msg) {
 
       // All the optional fields for ZADD come before the first score, so record all the options
       // provided.
-      bool nx = false;
-      bool xx = false;
+      bool nx = false, xx = false, gt = false, lt = false;
       while (idx < num_args) {
         struct argpos *opt_arg = (struct argpos*)array_get(orig_msg->args, idx);
         if (opt_arg == NULL) return DN_ERROR;
 
-        uint8_t *opt_arg_start = opt_arg->start;
-        if (dn_strcasecmp(opt_arg_start, "NX") == 0) {
+        if (arg_is(opt_arg, "NX")) {
           nx = true;
-        } else if (dn_strcasecmp(opt_arg_start, "XX") == 0) {
+        } else if (arg_is(opt_arg, "XX")) {
           xx = true;
-        } else if (dn_strcasecmp(opt_arg_start, "INCR") != 0 &&
-                   dn_strcasecmp(opt_arg_start, "CH") != 0) {
+        } else if (arg_is(opt_arg, "GT")) {
+          gt = true;
+        } else if (arg_is(opt_arg, "LT")) {
+          lt = true;
+        } else if (!arg_is(opt_arg, "CH") && !arg_is(opt_arg, "INCR")) {
           break;
         }
         ++idx;
@@ -282,8 +299,10 @@ rstatus_t post_parse_optional_args(struct msg *orig_msg) {
         *record_opt_pos = *opt_arg;
       }
 
-      // Both these options cannot be set together.
-      if (nx && xx) return DN_ERROR;
+      // These options can't be set together, and the options must be followed by
+      // score and member pairs.
+      if ((nx && xx) || (gt && lt) || (nx && (gt || lt))) return DN_ERROR;
+      if (num_args - idx < 2 || (num_args - idx) % 2 != 0) return DN_ERROR;
 
       out_struct->num_optionals = idx;
       break;
@@ -363,8 +382,9 @@ rstatus_t post_parse_msg(struct msg *orig_msg) {
   }
 
   // Check if this command has optional arguments and parse + validate them.
-  if (orig_cmd_info->num_optionals > 0) {
-    post_parse_optional_args(orig_msg);
+  if (orig_cmd_info->num_optionals > 0 &&
+      post_parse_optional_args(orig_msg) != DN_OK) {
+    goto error;
   }
 
   // If we have optional fields, we need to offset the field and value positions
@@ -411,10 +431,24 @@ rstatus_t post_parse_msg(struct msg *orig_msg) {
   return DN_OK;
 error:
 
-  // Destroy allocated arrays.
-  array_destroy(out_struct->keys);
-  array_destroy(out_struct->fields);
-  array_destroy(out_struct->values);
+  // Destroy allocated arrays. msg_put() would destroy them again.
+  if (out_struct->keys != NULL) {
+    array_destroy(out_struct->keys);
+    out_struct->keys = NULL;
+  }
+  if (out_struct->fields != NULL) {
+    array_destroy(out_struct->fields);
+    out_struct->fields = NULL;
+  }
+  if (out_struct->values != NULL) {
+    array_destroy(out_struct->values);
+    out_struct->values = NULL;
+  }
+  if (out_struct->optionals != NULL) {
+    array_destroy(out_struct->optionals);
+    out_struct->optionals = NULL;
+  }
+  out_struct->num_optionals = 0;
   return DN_ERROR;
 }
 
