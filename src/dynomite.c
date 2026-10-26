@@ -431,6 +431,12 @@ static rstatus_t dn_get_options(int argc, char **argv, struct instance *nci) {
 
         break;
       case '?':
+        if (optopt == '?') {
+          // -? is not an error but a request for help, like -h.
+          show_version = 1;
+          show_help = 1;
+          break;
+        }
         switch (optopt) {
           case 'o':
           case 'c':
