@@ -183,9 +183,9 @@ rstatus_t hash_jenkins(const unsigned char *key, size_t length,
         a += k[0] & 0xff;
         break;
       case 0:
-        return c; /* zero length strings require no mixing */
+        goto out; /* zero length strings require no mixing */
       default:
-        return c;
+        goto out;
     }
 
   } else if ((u.i & 0x1) == 0) {
@@ -243,9 +243,9 @@ rstatus_t hash_jenkins(const unsigned char *key, size_t length,
         a += k8[0];
         break;
       case 0:
-        return c; /* zero length requires no mixing */
+        goto out; /* zero length requires no mixing */
       default:
-        return c;
+        goto out;
     }
 
   } else { /* need to read the key one byte at a time */
@@ -300,9 +300,9 @@ rstatus_t hash_jenkins(const unsigned char *key, size_t length,
         a += k[0];
         break;
       case 0:
-        return c;
+        goto out;
       default:
-        return c;
+        goto out;
     }
 #ifndef WORDS_BIGENDIAN
   }
@@ -310,6 +310,7 @@ rstatus_t hash_jenkins(const unsigned char *key, size_t length,
 
   final(a, b, c);
 
+out:
   size_dyn_token(token, 1);
   set_int_dyn_token(token, c);
 

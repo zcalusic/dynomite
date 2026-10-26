@@ -1653,6 +1653,64 @@ static rstatus_t conf_run(const struct conf_case *tc) {
   return DN_OK;
 }
 
+/*
+ * Every hash function, on an empty key and a short one: it must succeed and
+ * set the token whatever was in it before, the way callers use it.
+ */
+static rstatus_t test_hash(void) {
+  static const char *keys[] = {"", "k", "dynomite"};
+  size_t nruns = 0, nfailed = 0;
+
+  print_banner("HASH");
+
+  for (int h = 0; h < HASH_INVALID; h++) {
+    hash_func_t hash = get_hash_func((hash_type_t)h);
+    for (size_t k = 0; k < NELEMS(keys); k++) {
+      struct dyn_token t[2];
+      rstatus_t status[2];
+      size_t len = strlen(keys[k]);
+      for (int i = 0; i < 2; i++) {
+        memset(&t[i], i == 0 ? 0 : 0xff, sizeof(t[i]));
+        status[i] = hash((const unsigned char *)keys[k], len, &t[i]);
+      }
+      nruns++;
+      if (status[0] != DN_OK || status[1] != DN_OK || t[0].len != 1 ||
+          t[1].len != 1 || t[0].mag[0] != t[1].mag[0] ||
+          t[0].signum != t[1].signum) {
+        log_error("hash %d of '%s': status %d/%d, len %u/%u, token %u/%u", h,
+                  keys[k], status[0], status[1], t[0].len, t[1].len,
+                  t[0].mag[0], t[1].mag[0]);
+        nfailed++;
+      }
+    }
+  }
+
+  /*
+   * lookup3's hash of no bytes is its initial value, unmixed, and Paul Hsieh's
+   * is 0
+   */
+  struct dyn_token t;
+  nruns += 2;
+  if (hash_jenkins((const unsigned char *)"", 0, &t) != DN_OK || t.len != 1 ||
+      t.mag[0] != 0xdeadbeef + 13) {
+    log_error("hash jenkins of '': token %u, want %u", t.mag[0],
+              0xdeadbeef + 13);
+    nfailed++;
+  }
+  if (hash_hsieh((const unsigned char *)"", 0, &t) != DN_OK || t.len != 1 ||
+      t.mag[0] != 0) {
+    log_error("hash hsieh of '': token %u, want 0", t.mag[0]);
+    nfailed++;
+  }
+
+  if (nfailed != 0) {
+    log_error("%zu of %zu hash runs failed", nfailed, nruns);
+    return DN_ERROR;
+  }
+  loga("%zu hash runs passed", nruns);
+  return DN_OK;
+}
+
 static rstatus_t test_config(void) {
   size_t nfailed = 0;
 
@@ -1856,6 +1914,12 @@ int main(int argc, char **argv) {
   ret = test_append_format(conn);
   if (ret != DN_OK) {
     loga("Error in testing msg_append_format()!!!");
+    goto err_out;
+  }
+
+  ret = test_hash();
+  if (ret != DN_OK) {
+    loga("Error in testing the hash functions!!!");
     goto err_out;
   }
 

@@ -47,8 +47,10 @@ rstatus_t hash_hsieh(const unsigned char *key, size_t key_length,
   uint32_t hash = 0, tmp;
   int rem;
 
-  if (key_length <= 0 || key == NULL) {
-    return 0;
+  if (key_length == 0 || key == NULL) {
+    size_dyn_token(token, 1);
+    set_int_dyn_token(token, 0);
+    return DN_OK;
   }
 
   rem = key_length & 3;
