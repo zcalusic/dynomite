@@ -224,39 +224,49 @@ static void deinit_peer(struct node *s) {
   free(s);
 }
 
-/* A request the parser should produce: its type and its keys. */
+/*
+ * A message the parser should produce: its type and, for a request, its keys
+ * (each followed by its hash tag in parentheses, when it has one that isn't
+ * the whole key), or for a response, its args.
+ */
 struct parse_req {
   msg_type_t type;
-  char keys[64]; /* space-separated */
+  char keys[1024]; /* space-separated */
 };
 
 #define PARSE_DATA_MAX 8192
 #define PARSE_REQS_MAX 32
 
-/* A stream of requests, and what the parser should make of it. */
+/* A stream of requests or responses, and what the parser should make of it. */
 struct parse_case {
   const char *name;
   data_store_t data_store;
-  bool dyn_mode; /* sent by a dnode peer, each request with a dnode header */
+  bool dyn_mode; /* sent by a dnode peer, each message with a dnode header */
+  bool response;
+  const char *hash_tag; /* the pool's hash_tag, if any */
   char data[PARSE_DATA_MAX];
   size_t len;
   struct parse_req reqs[PARSE_REQS_MAX];
   size_t nreqs;
-  bool reject; /* the stream ends in a request the parser must reject */
+  bool reject; /* the stream ends in a message the parser must reject */
 };
 
 /*
- * Append a request to the stream. For redis, words are space-separated and
- * sent as a RESP array, unless raw; for memcache, they are always raw, sent as
- * they are.
+ * Append a message to the stream. For redis requests, words are
+ * space-separated and sent as a RESP array, unless raw; memcache requests and
+ * all responses are always raw, sent as they are.
  */
 static void parse_append(struct parse_case *tc, const char *words, bool raw) {
   char *out = tc->data + tc->len;
   size_t room = PARSE_DATA_MAX - tc->len;
-  int n;
+  int n = 0;
 
-  if (raw || tc->data_store == DATA_MEMCACHE) {
-    n = snprintf(out, room, "%s", words);
+  if (tc->dyn_mode) {
+    n += snprintf(out, room, "$2014$ %zu %d 0 1 1 *1 d *0\r\n", tc->nreqs + 1,
+                  tc->response ? DMSG_RES : DMSG_REQ);
+  }
+  if (raw || tc->response || tc->data_store == DATA_MEMCACHE) {
+    n += snprintf(out + n, room - (size_t)n, "%s", words);
   } else {
     char buf[PARSE_DATA_MAX], *word, *save;
     int nwords = 0;
@@ -266,11 +276,6 @@ static void parse_append(struct parse_case *tc, const char *words, bool raw) {
       if ((w == words || w[-1] == ' ') && *w != ' ') nwords++;
     }
 
-    n = 0;
-    if (tc->dyn_mode) {
-      n += snprintf(out + n, room - (size_t)n, "$2014$ %zu 3 0 1 1 *1 d *0\r\n",
-                    tc->nreqs + 1);
-    }
     n += snprintf(out + n, room - (size_t)n, "*%d\r\n", nwords);
     for (word = strtok_r(buf, " ", &save); word != NULL;
          word = strtok_r(NULL, " ", &save)) {
@@ -298,36 +303,69 @@ static void parse_add(struct parse_case *tc, msg_type_t type, const char *keys,
   parse_add_req(tc, type, keys, words, false);
 }
 
-/* End the stream with a request the parser must reject. */
+/* Append a response the parser should accept, with its type and args. */
+static void parse_add_rsp(struct parse_case *tc, msg_type_t type,
+                          const char *args, const char *data) {
+  ASSERT(tc->response);
+  parse_add_req(tc, type, args, data, true);
+}
+
+/* End the stream with a message the parser must reject. */
 static void parse_reject(struct parse_case *tc, const char *words) {
   parse_append(tc, words, false);
   tc->reject = true;
 }
 
-/* Compare a parsed request with the one expected. */
+/* For the error messages: the parsers take other paths with read repairs. */
+static const char *parse_mode(void) {
+  return g_read_repairs_enabled ? ", read repairs" : "";
+}
+
+/* Compare a parsed message with the one expected. */
 static rstatus_t parse_check(const struct parse_case *tc, size_t chunk,
                              size_t i, struct msg *msg) {
+  const char *what = tc->response ? "response" : "request";
   char keys[sizeof(tc->reqs[0].keys)] = "";
   size_t len = 0;
 
+  /*
+   * The args of a response split between mbufs aren't checked: only the part
+   * of an arg in its last mbuf is recorded.
+   */
+  bool args_unchecked = tc->response && STAILQ_FIRST(&msg->mhdr) !=
+                                            STAILQ_LAST(&msg->mhdr, mbuf, next);
+  if (tc->response) {
+    for (uint32_t k = 0; k < array_n(msg->args); k++) {
+      struct argpos *ap = array_get(msg->args, k);
+      len += (size_t)dn_snprintf(keys + len, sizeof(keys) - len, "%s%.*s",
+                                 k == 0 ? "" : " ", (int)(ap->end - ap->start),
+                                 ap->start);
+    }
+  }
   for (uint32_t k = 0; k < array_n(msg->keys); k++) {
     struct keypos *kp = array_get(msg->keys, k);
     len += (size_t)dn_snprintf(keys + len, sizeof(keys) - len, "%s%.*s",
                                k == 0 ? "" : " ", (int)(kp->end - kp->start),
                                kp->start);
+    if (kp->tag_start != kp->start || kp->tag_end != kp->end) {
+      len += (size_t)dn_snprintf(keys + len, sizeof(keys) - len, "(%.*s)",
+                                 (int)(kp->tag_end - kp->tag_start),
+                                 kp->tag_start);
+    }
   }
 
   if (i >= tc->nreqs) {
-    log_error("%s (mbuf %zu, chunk %zu): unexpected request %zu, %.*s [%s]",
-              tc->name, mbuf_data_size(), chunk, i + 1,
+    log_error("%s (mbuf %zu, chunk %zu%s): unexpected %s %zu, %.*s [%s]",
+              tc->name, mbuf_data_size(), chunk, parse_mode(), what, i + 1,
               msg_type_string(msg->type)->len, msg_type_string(msg->type)->data,
               keys);
     return DN_ERROR;
   }
-  if (msg->type != tc->reqs[i].type || strcmp(keys, tc->reqs[i].keys) != 0) {
-    log_error("%s (mbuf %zu, chunk %zu): request %zu is %.*s [%s], want "
+  if (msg->type != tc->reqs[i].type ||
+      (!args_unchecked && strcmp(keys, tc->reqs[i].keys) != 0)) {
+    log_error("%s (mbuf %zu, chunk %zu%s): %s %zu is %.*s [%s], want "
               "%.*s [%s]",
-              tc->name, mbuf_data_size(), chunk, i + 1,
+              tc->name, mbuf_data_size(), chunk, parse_mode(), what, i + 1,
               msg_type_string(msg->type)->len, msg_type_string(msg->type)->data,
               keys, msg_type_string(tc->reqs[i].type)->len,
               msg_type_string(tc->reqs[i].type)->data, tc->reqs[i].keys);
@@ -353,7 +391,11 @@ static rstatus_t parse_run(struct conn *conn, const struct parse_case *tc,
 
   g_data_store = tc->data_store;
   conn->dyn_mode = tc->dyn_mode ? 1 : 0;
-  msg = msg_get(conn, true, __FUNCTION__);
+  string_init(&ctx->pool.hash_tag);
+  if (tc->hash_tag != NULL) {
+    string_set_raw(&ctx->pool.hash_tag, tc->hash_tag);
+  }
+  msg = msg_get(conn, !tc->response, __FUNCTION__);
 
   while (fed < tc->len && !rejected && status == DN_OK) {
     mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
@@ -389,11 +431,11 @@ static rstatus_t parse_run(struct conn *conn, const struct parse_case *tc,
       mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
       if (msg->pos == mbuf->last) {
         msg_put(msg);
-        msg = msg_get(conn, true, __FUNCTION__);
+        msg = msg_get(conn, !tc->response, __FUNCTION__);
         break;
       }
       nbuf = mbuf_split(&msg->mhdr, msg->pos, NULL, NULL);
-      nmsg = msg_get(conn, true, __FUNCTION__);
+      nmsg = msg_get(conn, !tc->response, __FUNCTION__);
       mbuf_insert(&nmsg->mhdr, nbuf);
       nmsg->pos = nbuf->pos;
       nmsg->mlen = mbuf_length(nbuf);
@@ -403,18 +445,20 @@ static rstatus_t parse_run(struct conn *conn, const struct parse_case *tc,
   }
 
   if (status == DN_OK && (nparsed != tc->nreqs || rejected != tc->reject)) {
-    log_error("%s (mbuf %zu, chunk %zu): parsed %zu of %zu requests, %s",
-              tc->name, mbuf_data_size(), chunk, nparsed, tc->nreqs,
+    log_error("%s (mbuf %zu, chunk %zu%s): parsed %zu of %zu %ss, %s",
+              tc->name, mbuf_data_size(), chunk, parse_mode(), nparsed,
+              tc->nreqs, tc->response ? "response" : "request",
               rejected ? "then rejected the rest"
                        : (msg_empty(msg) ? "no data left"
                                          : "with unparsed data left"));
     status = DN_ERROR;
   }
   msg_put(msg);
+  string_init(&ctx->pool.hash_tag);
   return status;
 }
 
-static struct parse_case parse_cases[16];
+static struct parse_case parse_cases[48];
 static size_t nparse_cases;
 
 static struct parse_case *parse_case_new(const char *name,
@@ -431,7 +475,7 @@ static struct parse_case *parse_case_new(const char *name,
 
 static void parse_cases_init(void) {
   struct parse_case *tc;
-  char big[600 + 1], words[700];
+  char big[600 + 1], words[700], rsp[2048], args[1024];
 
   /* a value larger than the smallest mbuf */
   memset(big, 'x', sizeof(big) - 1);
@@ -490,6 +534,167 @@ static void parse_cases_init(void) {
     tc = parse_case_new(rejects[i], DATA_REDIS, false);
     parse_add(tc, MSG_REQ_REDIS_GET, "foo", "GET foo");
     parse_reject(tc, rejects[i]);
+  }
+
+  /* the rest are named, since the messages end in CRLF */
+  static const struct {
+    const char *name, *data;
+  } mc_rejects[] = {
+      {"memcache unknown command", "bogus k\r\n"},
+      {"memcache bad length", "set k 0 0 x\r\nhello\r\n"},
+      {"memcache value too long", "set k 0 0 5\r\nhelloX\r\n"},
+  };
+  for (size_t i = 0; i < NELEMS(mc_rejects); i++) {
+    tc = parse_case_new(mc_rejects[i].name, DATA_MEMCACHE, false);
+    parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
+    parse_reject(tc, mc_rejects[i].data);
+  }
+  /* a key one byte longer than memcache allows (MEMCACHE_MAX_KEY_LENGTH) */
+  tc = parse_case_new("memcache long key", DATA_MEMCACHE, false);
+  parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
+  dn_snprintf(words, sizeof(words), "get %.*s\r\n", 251, big);
+  parse_reject(tc, words);
+
+  tc = parse_case_new("redis hash tags", DATA_REDIS, false);
+  tc->hash_tag = "{}";
+  parse_add(tc, MSG_REQ_REDIS_GET, "user:{42}:name(42)", "GET user:{42}:name");
+  parse_add(tc, MSG_REQ_REDIS_MGET, "{a}1(a) {a}2(a) b", "MGET {a}1 {a}2 b");
+  parse_add(tc, MSG_REQ_REDIS_GET, "{}x()", "GET {}x");
+  parse_add(tc, MSG_REQ_REDIS_GET, "a{b", "GET a{b");
+  parse_add(tc, MSG_REQ_REDIS_GET, "a}b{c}(c)", "GET a}b{c}");
+  /* the second key is cut at the end of the smallest mbuf */
+  dn_snprintf(words, sizeof(words), "MGET %.*s {t}abcdefghijklmnop", 430, big);
+  dn_snprintf(rsp, sizeof(rsp), "%.*s {t}abcdefghijklmnop(t)", 430, big);
+  parse_add(tc, MSG_REQ_REDIS_MGET, rsp, words);
+
+  tc = parse_case_new("memcache hash tags", DATA_MEMCACHE, false);
+  tc->hash_tag = "{}";
+  parse_add(tc, MSG_REQ_MC_GET, "user:{42}:name(42) b",
+            "get user:{42}:name b\r\n");
+  parse_add(tc, MSG_REQ_MC_SET, "{a}1(a)", "set {a}1 0 0 1\r\nv\r\n");
+
+  tc = parse_case_new("redis responses", DATA_REDIS, false);
+  tc->response = true;
+  parse_add_rsp(tc, MSG_RSP_REDIS_STATUS, "", "+OK\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_ERROR_ERR, "", "-ERR unknown command\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_ERROR_WRONGTYPE, "",
+                "-WRONGTYPE Operation against a key holding the wrong kind "
+                "of value\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_ERROR_NOSCRIPT, "",
+                "-NOSCRIPT No matching script\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_ERROR, "", "-MOVED 3999 127.0.0.1:6381\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_INTEGER, "", ":1000\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_INTEGER, "", ":-1\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_BULK, "", "$3\r\nbar\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_BULK, "", "$0\r\n\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_BULK, "", "$-1\r\n"); /* nil */
+  dn_snprintf(rsp, sizeof(rsp), "$%zu\r\n%s\r\n", strlen(big), big);
+  parse_add_rsp(tc, MSG_RSP_REDIS_BULK, "", rsp);
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "", "*0\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "", "*-1\r\n"); /* nil */
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "a  bc",
+                "*4\r\n$1\r\na\r\n$0\r\n\r\n$-1\r\n$2\r\nbc\r\n");
+  /* simple elements keep their type byte, which read repairs rely on */
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, ":1 +OK -ERR no-such:key",
+                "*3\r\n:1\r\n+OK\r\n-ERR no-such:key\r\n");
+  /* the reply of a read repair script */
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "E :1700000000000 bar",
+                "*3\r\n$1\r\nE\r\n:1700000000000\r\n$3\r\nbar\r\n");
+  /* SCAN: a cursor, then the keys */
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "0 a b",
+                "*2\r\n$1\r\n0\r\n*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+  /* GEOPOS: arrays nested anywhere */
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "1.5 2.5",
+                "*2\r\n*2\r\n$3\r\n1.5\r\n$3\r\n2.5\r\n*-1\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "a b",
+                "*3\r\n*1\r\n$1\r\na\r\n*0\r\n*1\r\n$1\r\nb\r\n");
+  dn_snprintf(rsp, sizeof(rsp), "*2\r\n$%zu\r\n%s\r\n$1\r\nz\r\n",
+              strlen(big), big);
+  dn_snprintf(args, sizeof(args), "%s z", big);
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, args, rsp);
+  /* larger than the smallest mbuf, so some element is split between two */
+  int n = dn_snprintf(rsp, sizeof(rsp), "*150\r\n");
+  size_t alen = 0;
+  for (int i = 0; i < 150; i++) {
+    n += dn_snprintf(rsp + n, sizeof(rsp) - (size_t)n, ":%d\r\n", i);
+    alen += (size_t)dn_snprintf(args + alen, sizeof(args) - alen, "%s:%d",
+                                i == 0 ? "" : " ", i);
+  }
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, args, rsp);
+  n = dn_snprintf(rsp, sizeof(rsp), "*150\r\n");
+  alen = 0;
+  for (int i = 0; i < 150; i++) {
+    n += dn_snprintf(rsp + n, sizeof(rsp) - (size_t)n, "$%d\r\n%d\r\n",
+                     i < 10 ? 1 : (i < 100 ? 2 : 3), i);
+    alen += (size_t)dn_snprintf(args + alen, sizeof(args) - alen, "%s%d",
+                                i == 0 ? "" : " ", i);
+  }
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, args, rsp);
+  parse_add_rsp(tc, MSG_RSP_REDIS_STATUS, "", "+OK\r\n");
+
+  /* responses from a dnode peer, each with a dnode header */
+  tc = parse_case_new("dnode responses", DATA_REDIS, true);
+  tc->response = true;
+  parse_add_rsp(tc, MSG_RSP_REDIS_STATUS, "", "+OK\r\n");
+  dn_snprintf(rsp, sizeof(rsp), "$%zu\r\n%s\r\n", strlen(big), big);
+  parse_add_rsp(tc, MSG_RSP_REDIS_BULK, "", rsp);
+  parse_add_rsp(tc, MSG_RSP_REDIS_MULTIBULK, "a b",
+                "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+  parse_add_rsp(tc, MSG_RSP_REDIS_ERROR_ERR, "", "-ERR x\r\n");
+
+  tc = parse_case_new("memcache responses", DATA_MEMCACHE, false);
+  tc->response = true;
+  parse_add_rsp(tc, MSG_RSP_MC_STORED, "", "STORED\r\n");
+  parse_add_rsp(tc, MSG_RSP_MC_NOT_STORED, "", "NOT_STORED\r\n");
+  parse_add_rsp(tc, MSG_RSP_MC_EXISTS, "", "EXISTS\r\n");
+  parse_add_rsp(tc, MSG_RSP_MC_NOT_FOUND, "", "NOT_FOUND\r\n");
+  parse_add_rsp(tc, MSG_RSP_MC_DELETED, "", "DELETED\r\n");
+  parse_add_rsp(tc, MSG_RSP_MC_TOUCHED, "", "TOUCHED\r\n");
+  parse_add_rsp(tc, MSG_RSP_MC_NUM, "", "42\r\n");
+  parse_add_rsp(tc, MSG_RSP_MC_END, "", "END\r\n");
+  parse_add_rsp(tc, MSG_RSP_MC_END, "", "VALUE k1 0 5\r\nhello\r\nEND\r\n");
+  dn_snprintf(rsp, sizeof(rsp),
+              "VALUE k1 0 5 12345\r\nhello\r\nVALUE k2 3 %zu 678\r\n%s\r\n"
+              "END\r\n",
+              strlen(big), big);
+  parse_add_rsp(tc, MSG_RSP_MC_END, "", rsp);
+  parse_add_rsp(tc, MSG_RSP_MC_ERROR, "", "ERROR\r\n");
+  parse_add_rsp(tc, MSG_RSP_MC_CLIENT_ERROR, "",
+                "CLIENT_ERROR bad data chunk\r\n");
+  parse_add_rsp(tc, MSG_RSP_MC_SERVER_ERROR, "",
+                "SERVER_ERROR out of memory\r\n");
+  parse_add_rsp(tc, MSG_RSP_MC_STORED, "", "STORED\r\n");
+
+  static const struct {
+    const char *name, *data;
+  } rsp_rejects[] = {
+      {"redis unknown reply type", "?\r\n"},
+      {"redis bulk too long", "$3\r\nbarX\r\n"},
+      {"redis bad integer", ":12a\r\n"},
+      {"redis bulk without length", "$\r\n"},
+      {"redis bad array length", "*x\r\n"},
+      {"redis bad array element", "*1\r\n!x\r\n"},
+      {"redis CR without LF", "+OK\rX"},
+  };
+  for (size_t i = 0; i < NELEMS(rsp_rejects); i++) {
+    tc = parse_case_new(rsp_rejects[i].name, DATA_REDIS, false);
+    tc->response = true;
+    parse_add_rsp(tc, MSG_RSP_REDIS_STATUS, "", "+OK\r\n");
+    parse_reject(tc, rsp_rejects[i].data);
+  }
+  static const struct {
+    const char *name, *data;
+  } mc_rsp_rejects[] = {
+      {"memcache unknown reply", "BOGUS\r\n"},
+      {"memcache bad number", "12a\r\n"},
+      {"memcache reply value too long", "VALUE k1 0 5\r\nhelloX\r\n"},
+      {"memcache bad flags", "VALUE k1 x 5\r\nhello\r\nEND\r\n"},
+  };
+  for (size_t i = 0; i < NELEMS(mc_rsp_rejects); i++) {
+    tc = parse_case_new(mc_rsp_rejects[i].name, DATA_MEMCACHE, false);
+    tc->response = true;
+    parse_add_rsp(tc, MSG_RSP_MC_STORED, "", "STORED\r\n");
+    parse_reject(tc, mc_rsp_rejects[i].data);
   }
 }
 
