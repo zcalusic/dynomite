@@ -341,7 +341,6 @@ static rstatus_t dn_get_options(int argc, char **argv, struct instance *nci) {
 
       case 't':
         test_conf = 1;
-        nci->log_level = 11;
         break;
 
       case 'd':
@@ -481,10 +480,15 @@ static rstatus_t dn_get_options(int argc, char **argv, struct instance *nci) {
 static bool dn_test_conf(struct instance *nci) {
   struct conf *cf;
 
+  // Log to stderr, whatever -o says, to show why a configuration is invalid
+  // and which keys are deprecated next to the verdict.
+  if (log_init(nci->log_level, NULL) != 0) {
+    return false;
+  }
+
+  // conf_create() reports an invalid configuration itself.
   cf = conf_create(nci->conf_filename);
   if (cf == NULL) {
-    log_stderr("dynomite: configuration file '%s' syntax is invalid",
-               nci->conf_filename);
     return false;
   }
 

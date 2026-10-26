@@ -297,10 +297,14 @@ static void conf_pool_deinit(struct conf_pool *cp) {
   string_deinit(&cp->recon_iv_file);
   string_deinit(&cp->stats_listen.pname);
   string_deinit(&cp->stats_listen.name);
+  string_deinit(&cp->rack);
   string_deinit(&cp->dc);
   string_deinit(&cp->env);
 
-  if (array_n(&cp->dyn_seeds) != 0) array_deinit(&cp->dyn_seeds);
+  while (array_n(&cp->dyn_seeds) != 0) {
+    conf_server_deinit(array_pop(&cp->dyn_seeds));
+  }
+  array_deinit(&cp->dyn_seeds);
 
   array_deinit(&cp->tokens);
 
@@ -2093,6 +2097,8 @@ struct conf *conf_create(char *filename) {
 
   cf = conf_open(filename);
   if (cf == NULL) {
+    log_stderr("dynomite: configuration file '%s' syntax is invalid",
+               filename);
     return NULL;
   }
 
@@ -2130,6 +2136,13 @@ error:
 }
 
 void conf_destroy(struct conf *cf) {
+  // The parser is left open when parsing fails halfway.
+  if (cf->valid_parser) {
+    conf_event_done(cf);
+    conf_token_done(cf);
+    conf_yaml_deinit(cf);
+  }
+
   while (array_n(&cf->arg) != 0) {
     conf_pop_scalar(cf);
   }
