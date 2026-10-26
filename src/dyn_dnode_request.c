@@ -91,6 +91,13 @@ rstatus_t dnode_peer_req_forward(struct context *ctx, struct conn *c_conn,
     // TODO: Prefer a 2 hop mechanism for cross-DC traffic.
     msg_type = DMSG_REQ;
   }
+  if (req->consistency == DC_EACH_SAFE_QUORUM) {
+    // Under 'DC_EACH_SAFE_QUORUM', this node sends the request to every rack of each
+    // remote DC itself, to get a quorum of replies from each DC. With
+    // DMSG_REQ_FORWARD each of them would forward it to all racks of its DC again,
+    // and every remote replica would apply it once per rack.
+    msg_type = DMSG_REQ;
+  }
   // write dnode header
   dmsg_write(header_buf, req->id, msg_type, p_conn, msg_length(req));
 

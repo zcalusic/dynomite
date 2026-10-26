@@ -331,6 +331,34 @@ def run_encrypted_peer_msg_test(c):
     assert store.get(key) == b'value'
     print("\t-Encrypted peer message rejected, plaintext one accepted")
 
+def run_incr_replicas_test(c, incrs_per_dc=3):
+    """INCRs a key through one node in each DC, then checks every node's
+    datastore: each rack holds one replica, and every replica was incremented
+    exactly once per INCR, under the cluster's consistency level."""
+    print("Running INCR_REPLICAS test")
+    dyno_cluster = c.get_dynomite_cluster()
+    key = create_key('INCR_REPLICAS', 'counter')
+    coordinators = {}
+    for node in dyno_cluster.nodes:
+        coordinators.setdefault(node.spec.dc, node)
+    for node in coordinators.values():
+        conn = node.get_connection()
+        for _ in range(incrs_per_dc):
+            conn.incr(key)
+    expected = incrs_per_dc * len(coordinators)
+    num_racks = sum(len(racks) for racks in dyno_cluster.counts_by_rack.values())
+    # Replication to other DCs is asynchronous: give it a few seconds.
+    for _ in range(50):
+        values = [node.get_data_store_connection().get(key)
+                  for node in dyno_cluster.nodes]
+        replicas = [int(v) for v in values if v is not None]
+        if len(replicas) == num_racks and all(v == expected for v in replicas):
+            break
+        time.sleep(0.1)
+    assert len(replicas) == num_racks, (num_racks, values)
+    assert all(v == expected for v in replicas), (expected, values)
+    print("\t-%d replicas, each incremented %d times" % (num_racks, expected))
+
 def comparison_test(redis, dynomite, debug):
     c = dual_run(redis, dynomite, debug)
     run_key_value_tests(c)
@@ -343,6 +371,7 @@ def comparison_test(redis, dynomite, debug):
     run_hash_tests(c, max_keys=10, max_fields=100)
     run_script_tests(c)
     run_encrypted_peer_msg_test(c)
+    run_incr_replicas_test(c)
 
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM
