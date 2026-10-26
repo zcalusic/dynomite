@@ -1,8 +1,10 @@
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 
 #include "dyn_core.h"
 #include "dyn_seeds_provider.h"
@@ -31,13 +33,19 @@
   "HTMLGET 1.0\r\n\r\n";
 #endif
 
+/* Bounds connect(), each send() and each recv(), so a hung Florida can't stall
+ * the gossip thread. */
+#define FLORIDA_TIMEOUT_SEC 5
+
+/* Room for the status line and headers, on top of the seeds themselves. */
+#define FLORIDA_HEADER_MAX 8192
+
 static char *floridaIp = NULL;
 static int floridaPort = 0;
 static char *request = NULL;
 static int isOsVarEval = 0;
 
 static void evalOSVar();
-static uint32_t create_tcp_socket();
 
 static int64_t last = 0;  // storing last time for seeds check
 static uint32_t last_seeds_hash = 0;
@@ -89,13 +97,112 @@ static uint32_t hash_seeds(uint8_t *seeds, size_t length) {
   return value;
 }
 
+/* strerror(), except that a socket timeout reads as such. */
+static const char *florida_strerror(int err) {
+  /* connect() fails with EINPROGRESS on a timeout, send() and recv() with
+   * EAGAIN or EWOULDBLOCK. */
+  if (err == EINPROGRESS || err == EAGAIN || err == EWOULDBLOCK) {
+    return "timed out";
+  }
+  return strerror(err);
+}
+
+/* Connect to Florida, with timeouts; returns the socket or -1. */
+static int florida_connect(void) {
+  struct sockaddr_in remote;
+  struct timeval timeout = {FLORIDA_TIMEOUT_SEC, 0};
+  int sock;
+
+  memset(&remote, 0, sizeof(remote));
+  remote.sin_family = AF_INET;
+  remote.sin_port = htons((uint16_t)floridaPort);
+  if (inet_pton(AF_INET, floridaIp, &remote.sin_addr) != 1) {
+    log_error("Invalid Florida address '%s'", floridaIp);
+    return -1;
+  }
+
+  sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (sock < 0) {
+    log_error("Unable to create a socket for Florida: %s", strerror(errno));
+    return -1;
+  }
+
+  /* On Linux, SO_SNDTIMEO also bounds connect(). */
+  int status = setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                          sizeof(timeout));
+  if (status == 0) {
+    status = setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+                        sizeof(timeout));
+  }
+  if (status == 0) {
+    status = connect(sock, (struct sockaddr *)&remote, sizeof(remote));
+  }
+  if (status < 0) {
+    log_debug(LOG_VVERB, "Unable to connect to Florida at %s:%d: %s",
+              floridaIp, floridaPort, florida_strerror(errno));
+    close(sock);
+    return -1;
+  }
+
+  return sock;
+}
+
+/*
+ * Send the request and read the whole response into rsp, which has room for
+ * size bytes. Returns the response length, or -1 on an error, a timeout or a
+ * response larger than size.
+ */
+static ssize_t florida_query(int sock, uint8_t *rsp, size_t size) {
+  size_t len = dn_strlen(request), sent = 0, rcvd = 0;
+  ssize_t n;
+
+  while (sent < len) {
+    n = send(sock, request + sent, len - sent, 0);
+    if (n < 0) {
+      log_error("Unable to send the query to Florida: %s",
+                florida_strerror(errno));
+      return -1;
+    }
+    sent += (size_t)n;
+  }
+
+  /* The request is HTTP/1.0, so Florida closes the connection at the end. */
+  for (;;) {
+    if (rcvd == size) {
+      log_error("Florida response is larger than %zu bytes", size);
+      return -1;
+    }
+    n = recv(sock, rsp + rcvd, size - rcvd, 0);
+    if (n == 0) {
+      return (ssize_t)rcvd;
+    }
+    if (n < 0) {
+      log_error("Unable to read the Florida response: %s",
+                florida_strerror(errno));
+      return -1;
+    }
+    rcvd += (size_t)n;
+  }
+}
+
+/* Is it a 200 response: "HTTP/1.x 200", then a space or the end of the line? */
+static bool florida_status_ok(const uint8_t *rsp, size_t len) {
+  return len >= 13 && memcmp(rsp, "HTTP/1.", 7) == 0 && isdigit(rsp[7]) &&
+         memcmp(rsp + 8, " 200", 4) == 0 && (rsp[12] == ' ' || rsp[12] == CR);
+}
+
+/* Find the body, after the empty line ending the headers; NULL if none. */
+static const uint8_t *florida_body(const uint8_t *rsp, size_t len) {
+  for (size_t i = 0; i + 4 <= len; i++) {
+    if (memcmp(rsp + i, CRLF CRLF, 4) == 0) {
+      return rsp + i + 4;
+    }
+  }
+  return NULL;
+}
+
 uint8_t florida_get_seeds(struct context *ctx, struct mbuf *seeds_buf) {
   evalOSVar();
-
-  struct sockaddr_in *remote;
-  uint32_t sock;
-  int32_t tmpres;
-  uint8_t buf[BUFSIZ + 1];
 
   log_debug(LOG_VVERB, "Running florida_get_seeds!");
 
@@ -103,110 +210,48 @@ uint8_t florida_get_seeds(struct context *ctx, struct mbuf *seeds_buf) {
     return DN_NOOPS;
   }
 
-  sock = create_tcp_socket();
-  if (sock == -1) {
-    log_debug(LOG_VVERB, "Unable to create a socket");
+  int sock = florida_connect();
+  if (sock < 0) {
     return DN_ERROR;
-  }
-
-  remote = (struct sockaddr_in *)dn_alloc(sizeof(struct sockaddr_in *));
-  remote->sin_family = AF_INET;
-  tmpres = inet_pton(AF_INET, floridaIp, (void *)(&(remote->sin_addr.s_addr)));
-  remote->sin_port = htons(floridaPort);
-
-  if (connect(sock, (struct sockaddr *)remote, sizeof(struct sockaddr)) < 0) {
-    log_debug(LOG_VVERB, "Unable to connect the destination");
-    return DN_ERROR;
-  }
-
-  uint32_t sent = 0;
-  while (sent < dn_strlen(request)) {
-    tmpres = send(sock, request + sent, dn_strlen(request) - sent, 0);
-    if (tmpres == -1) {
-      log_debug(LOG_VVERB, "Unable to send query");
-      close(sock);
-      dn_free(remote);
-      return DN_ERROR;
-    }
-    sent += tmpres;
   }
 
   mbuf_rewind(seeds_buf);
 
-  memset(buf, 0, sizeof(buf));
-  uint32_t htmlstart = 0;
-  uint8_t *htmlcontent;
-  uint8_t *ok = NULL;
-
-  bool socket_has_data = true;
-  uint32_t rx_total = 0;
-
-  while (socket_has_data) {
-    // Read socket data until we get them all or RX buffer becomes full
-    while ((rx_total < BUFSIZ) &&
-           (tmpres = recv(sock, buf + rx_total, BUFSIZ - rx_total, 0)) > 0) {
-      rx_total += tmpres;
-    }
-
-    // Look for a OK response in the first buffer output.
-    if (!ok) ok = (uint8_t *)strstr((char *)buf, "200 OK\r\n");
-    if (ok == NULL) {
-      log_error("Received Error from Florida while getting seeds");
-      loga_hexdump(buf, rx_total,
-                   "Florida Response with %" PRIu32 " bytes of data", rx_total);
-      close(sock);
-      dn_free(remote);
-      return DN_ERROR;
-    }
-
-    if (htmlstart == 0) {
-      htmlcontent = (uint8_t *)strstr((char *)buf, "\r\n\r\n");
-      if (htmlcontent != NULL) {
-        htmlstart = 1;
-        htmlcontent += 4;
-      }
-    } else {
-      htmlcontent = buf;
-    }
-
-    if (htmlstart) {
-      mbuf_copy(seeds_buf, htmlcontent, rx_total - (htmlcontent - buf));
-    }
-
-    // If socket still has data for reading
-    if (tmpres > 0) {
-      if ((htmlstart == 0) && (rx_total >= 3)) {
-        /* In some corner cases (eg. when the read buffer size is near to the
-         * response header size) we can get into a situations when 4-bytes html
-         * content start sequence '\r\n\r\n' splits between two read iterations.
-         * To deal with this case the easiest way to restore splitted sequence
-         * before the next read iteration by move 3 last bytes (3 is enough to
-         * cover all split variants) from the current read iteration to the
-         * buffer head. Please notice, we repeat this step until html content is
-         * found.
-         */
-        memcpy(buf, buf + (rx_total - 3), 3);
-        memset(buf + 3, 0, rx_total - 3);
-        rx_total = 3;
-      } else {
-        memset(buf, 0, rx_total);
-        rx_total = 0;
-      }
-    } else {
-      socket_has_data = false;
-    }
+  size_t size = FLORIDA_HEADER_MAX + mbuf_remaining_space(seeds_buf);
+  uint8_t *rsp = dn_alloc(size);
+  if (rsp == NULL) {
+    close(sock);
+    return DN_ERROR;
   }
 
-  if (tmpres < 0) {
-    log_debug(LOG_VVERB, "Error receiving data");
-  }
-
+  ssize_t len = florida_query(sock, rsp, size);
   close(sock);
-  dn_free(remote);
+  if (len < 0) {
+    dn_free(rsp);
+    return DN_ERROR;
+  }
+
+  if (!florida_status_ok(rsp, (size_t)len)) {
+    log_error("Received Error from Florida while getting seeds");
+    loga_hexdump(rsp, MIN((size_t)len, 256),
+                 "Florida Response with %zd bytes of data", len);
+    dn_free(rsp);
+    return DN_ERROR;
+  }
+
+  const uint8_t *body = florida_body(rsp, (size_t)len);
+  size_t body_len = body == NULL ? 0 : (size_t)(rsp + len - body);
+  if (body_len > mbuf_remaining_space(seeds_buf)) {
+    log_error("Florida seeds are larger than %" PRIu32 " bytes",
+              mbuf_remaining_space(seeds_buf));
+    dn_free(rsp);
+    return DN_ERROR;
+  }
+  mbuf_copy(seeds_buf, body, body_len);
+  dn_free(rsp);
 
   if (mbuf_length(seeds_buf) == 0) {
-    log_error("No seeds were found in Florida response (htmlstart %u)",
-              htmlstart);
+    log_error("No seeds were found in Florida response");
     return DN_ERROR;
   }
 
@@ -219,13 +264,4 @@ uint8_t florida_get_seeds(struct context *ctx, struct mbuf *seeds_buf) {
   }
 
   return DN_OK;
-}
-
-uint32_t create_tcp_socket() {
-  uint32_t sock;
-  if ((sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) {
-    log_debug(LOG_VVERB, "Unable to create TCP socket");
-    return DN_ERROR;
-  }
-  return sock;
 }
