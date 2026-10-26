@@ -857,7 +857,7 @@ uint32_t msg_payload_crc32(struct msg *rsp) {
       }
     }
 
-    crc = crc32_sz((char *)start, (size_t)(end - start), crc);
+    crc = crc32_sz(start, (size_t)(end - start), crc);
   }
   return crc;
 }

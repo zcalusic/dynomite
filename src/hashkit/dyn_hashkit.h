@@ -32,10 +32,10 @@ struct string;
 typedef rstatus_t (*hash_func_t)(const unsigned char *, size_t,
                                  struct dyn_token *);
 
-void md5_signature(const unsigned char *key, unsigned int length,
+void md5_signature(const unsigned char *key, unsigned long length,
                    unsigned char *result);
 
-uint32_t crc32_sz(const char *buf, size_t length, uint32_t in_crc32);
+uint32_t crc32_sz(const unsigned char *buf, size_t length, uint32_t in_crc32);
 
 #define HASH_CODEC(ACTION)                  \
   ACTION(HASH_ONE_AT_A_TIME, one_at_a_time) \

@@ -126,7 +126,7 @@ int main(int argc, char **argv) {
     }
     struct dyn_token d;
     init_dyn_token(&d);
-    hash_murmur(line, read, &d);
+    hash_murmur((unsigned char *)line, (size_t)read, &d);
     log_debug(LOG_VERB, "KEY (%s) Token: %" PRIu32, line, *d.mag);
     if (outputkey) fprintf(ofp, "KEY:%s\n", line);
     fprintf(ofp, "%" PRIu32 "\n", *d.mag);

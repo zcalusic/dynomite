@@ -86,8 +86,8 @@ static void add_next_word(uint32_t *buf, uint32_t len, uint32_t next_int) {
 
   /* magick! */
   uint32_t radix_val = 0x17179149;
-  int32_t i;
-  for (i = len - 1; i >= 0; i--) {
+  uint32_t i;
+  for (i = len; i-- > 0;) {
     product = radix_val * buf[i] + carry;
     buf[i] = (uint32_t)product;
     carry = product >> 32;
@@ -96,7 +96,7 @@ static void add_next_word(uint32_t *buf, uint32_t len, uint32_t next_int) {
   uint64_t sum = buf[len - 1] + next_int;
   buf[len - 1] = (uint32_t)sum;
   carry = sum >> 32;
-  for (i = len - 2; i >= 0; i--) {
+  for (i = len - 1; i-- > 0;) {
     sum = buf[i] + carry;
     buf[i] = (uint32_t)sum;
     carry = sum >> 32;
@@ -114,7 +114,8 @@ rstatus_t parse_dyn_token(uint8_t *start, uint32_t len,
   uint8_t *q = p + len;
   uint32_t digits = len;
   if (p[0] == sign) {
-    token->signum = -1;
+    /* -1 as unsigned, so cmp_dyn_token() sorts it above any other sign */
+    token->signum = UINT32_MAX;
     p++;
     digits--;
     ASSERT(digits > 0);

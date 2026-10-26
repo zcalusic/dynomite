@@ -30,6 +30,7 @@
 #include <ctype.h>
 
 #include "../dyn_types.h"
+#include "dyn_hashkit.h"
 #include "dyn_token.h"
 
 static const uint32_t crc32tab[256] = {
@@ -98,8 +99,8 @@ rstatus_t hash_crc32(const unsigned char *key, size_t key_length,
   return DN_OK;
 }
 
-uint32_t hash_crc32a(const unsigned char *key, size_t key_length,
-                     struct dyn_token *token) {
+rstatus_t hash_crc32a(const unsigned char *key, size_t key_length,
+                      struct dyn_token *token) {
   const uint8_t *p = key;
   uint32_t crc;
 
@@ -122,11 +123,9 @@ uint32_t hash_crc32a(const unsigned char *key, size_t key_length,
 uint32_t crc32_sz(const unsigned char *buf, size_t buf_length,
                   uint32_t in_crc32) {
   uint32_t crc = ~in_crc32;
-  const unsigned char *p;
-  int len, nr;
 
-  len = 0;
-  nr = buf_length;
-  for (len += nr, p = buf; nr--; ++p) _CRC32_(crc, tolower((unsigned int)*p));
+  for (size_t i = 0; i < buf_length; i++) {
+    _CRC32_(crc, (uint32_t)tolower(buf[i]));
+  }
   return ~crc;
 }

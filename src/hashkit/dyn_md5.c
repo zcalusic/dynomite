@@ -20,6 +20,7 @@
  * limitations under the License.
  */
 
+#include "dyn_hashkit.h"
 #include "dyn_token.h"
 
 /*
@@ -73,7 +74,7 @@ typedef struct {
  * doesn't work.
  */
 #if defined(__i386__) || defined(__x86_64__) || defined(__vax__)
-#define SET(n) (*(MD5_u32plus *)&ptr[(n)*4])
+#define SET(n) (*(const MD5_u32plus *)&ptr[(n) * 4])
 #define GET(n) SET(n)
 #else
 #define SET(n)                                             \
@@ -88,8 +89,8 @@ typedef struct {
  * This processes one or more 64-byte data blocks, but does NOT update
  * the bit counters.  There are no alignment requirements.
  */
-static void *body(MD5_CTX *ctx, void *data, unsigned long size) {
-  unsigned char *ptr;
+static const void *body(MD5_CTX *ctx, const void *data, unsigned long size) {
+  const unsigned char *ptr;
   MD5_u32plus a, b, c, d;
   MD5_u32plus saved_a, saved_b, saved_c, saved_d;
 
@@ -194,7 +195,7 @@ static void *body(MD5_CTX *ctx, void *data, unsigned long size) {
   return ptr;
 }
 
-void MD5_Init(MD5_CTX *ctx) {
+static void MD5_Init(MD5_CTX *ctx) {
   ctx->a = 0x67452301;
   ctx->b = 0xefcdab89;
   ctx->c = 0x98badcfe;
@@ -204,15 +205,15 @@ void MD5_Init(MD5_CTX *ctx) {
   ctx->hi = 0;
 }
 
-void MD5_Update(MD5_CTX *ctx, void *data, unsigned long size) {
+static void MD5_Update(MD5_CTX *ctx, const void *data, unsigned long size) {
   MD5_u32plus saved_lo;
   unsigned long used, free;
 
   saved_lo = ctx->lo;
-  if ((ctx->lo = (saved_lo + size) & 0x1fffffff) < saved_lo) {
+  if ((ctx->lo = (MD5_u32plus)((saved_lo + size) & 0x1fffffff)) < saved_lo) {
     ctx->hi++;
   }
-  ctx->hi += size >> 29;
+  ctx->hi += (MD5_u32plus)(size >> 29);
 
   used = saved_lo & 0x3f;
 
@@ -225,7 +226,7 @@ void MD5_Update(MD5_CTX *ctx, void *data, unsigned long size) {
     }
 
     memcpy(&ctx->buffer[used], data, free);
-    data = (unsigned char *)data + free;
+    data = (const unsigned char *)data + free;
     size -= free;
     body(ctx, ctx->buffer, 64);
   }
@@ -238,7 +239,16 @@ void MD5_Update(MD5_CTX *ctx, void *data, unsigned long size) {
   memcpy(ctx->buffer, data, size);
 }
 
-void MD5_Final(unsigned char *result, MD5_CTX *ctx) {
+/* Store a 32-bit value as 4 bytes, least significant first. */
+#define OUT(dst, src)                        \
+  do {                                       \
+    (dst)[0] = (unsigned char)(src);         \
+    (dst)[1] = (unsigned char)((src) >> 8);  \
+    (dst)[2] = (unsigned char)((src) >> 16); \
+    (dst)[3] = (unsigned char)((src) >> 24); \
+  } while (0)
+
+static void MD5_Final(unsigned char *result, MD5_CTX *ctx) {
   unsigned long used, free;
 
   used = ctx->lo & 0x3f;
@@ -257,33 +267,15 @@ void MD5_Final(unsigned char *result, MD5_CTX *ctx) {
   memset(&ctx->buffer[used], 0, free - 8);
 
   ctx->lo <<= 3;
-  ctx->buffer[56] = ctx->lo;
-  ctx->buffer[57] = ctx->lo >> 8;
-  ctx->buffer[58] = ctx->lo >> 16;
-  ctx->buffer[59] = ctx->lo >> 24;
-  ctx->buffer[60] = ctx->hi;
-  ctx->buffer[61] = ctx->hi >> 8;
-  ctx->buffer[62] = ctx->hi >> 16;
-  ctx->buffer[63] = ctx->hi >> 24;
+  OUT(&ctx->buffer[56], ctx->lo);
+  OUT(&ctx->buffer[60], ctx->hi);
 
   body(ctx, ctx->buffer, 64);
 
-  result[0] = ctx->a;
-  result[1] = ctx->a >> 8;
-  result[2] = ctx->a >> 16;
-  result[3] = ctx->a >> 24;
-  result[4] = ctx->b;
-  result[5] = ctx->b >> 8;
-  result[6] = ctx->b >> 16;
-  result[7] = ctx->b >> 24;
-  result[8] = ctx->c;
-  result[9] = ctx->c >> 8;
-  result[10] = ctx->c >> 16;
-  result[11] = ctx->c >> 24;
-  result[12] = ctx->d;
-  result[13] = ctx->d >> 8;
-  result[14] = ctx->d >> 16;
-  result[15] = ctx->d >> 24;
+  OUT(&result[0], ctx->a);
+  OUT(&result[4], ctx->b);
+  OUT(&result[8], ctx->c);
+  OUT(&result[12], ctx->d);
 
   memset(ctx, 0, sizeof(*ctx));
 }
@@ -292,7 +284,7 @@ void MD5_Final(unsigned char *result, MD5_CTX *ctx) {
  * Just a simple method for getting the signature
  * result must be == 16
  */
-void md5_signature(unsigned char *key, unsigned long length,
+void md5_signature(const unsigned char *key, unsigned long length,
                    unsigned char *result) {
   MD5_CTX my_md5;
 
@@ -305,7 +297,7 @@ rstatus_t hash_md5(const unsigned char *key, size_t key_length,
                    struct dyn_token *token) {
   unsigned char results[16];
 
-  md5_signature((unsigned char *)key, (unsigned long)key_length, results);
+  md5_signature(key, (unsigned long)key_length, results);
 
   uint32_t val = ((uint32_t)(results[3] & 0xFF) << 24) |
                  ((uint32_t)(results[2] & 0xFF) << 16) |
