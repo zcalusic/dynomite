@@ -27,7 +27,7 @@ All development happens on the `master` branch, the only branch in this fork. Re
 
 Install the build dependencies (Debian package names):
 
-    $ sudo apt-get install automake gcc git libc6-dev libssl-dev libtool libyaml-dev make patch
+    $ sudo apt-get install automake gcc git libc6-dev libssl-dev libyaml-dev make
 
 Build from a git clone: the version is taken from `git describe`, which needs the history and tags.
 

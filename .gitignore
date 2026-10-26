@@ -52,13 +52,11 @@ dyno-hash-tool
 /autom4te.cache
 /stamp-h1
 /autoscan.log
-/libtool
 
 /config/config.guess
 /config/config.sub
 /config/depcomp
 /config/install-sh
-/config/ltmain.sh
 /config/missing
 /config
 
