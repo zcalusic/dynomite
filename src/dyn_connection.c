@@ -41,19 +41,19 @@
  * from several clients over a server connection and hence use the connection
  * bandwidth to the server efficiently
  *
- * Client and server connection maintain two fifo queues for requests:
+ * Client and server connections maintain two fifo queues for requests:
  *
  * 1). in_q (imsg_q):  queue of incoming requests
  * 2). out_q (omsg_q): queue of outstanding (outgoing) requests
  *
- * Request received over the client connection are forwarded to the server by
+ * Requests received over the client connection are forwarded to the server by
  * enqueuing the request in the chosen server's in_q. From the client's
  * perspective once the request is forwarded, it is outstanding and is tracked
  * in the client's out_q (unless the request was tagged as
  * !expect_datastore_reply). The server in turn picks up requests from its own
  * in_q in fifo order and puts them on the wire. Once the request is outstanding
  * on the wire, and a response is expected for it, the server keeps track of
- * outstanding requests it in its own out_q.
+ * outstanding requests in its own out_q.
  *
  * The server's out_q enables us to pair a request with a response while the
  * client's out_q enables us to pair request and response in the order in
@@ -78,9 +78,9 @@
  * other hand, client2 has three requests req21, req22 and req23, of which
  * only req21 is outstanding on the server connection while req22 and
  * req23 are still waiting to be put on the wire. The fifo of client's
- * out_q ensures that we always send back the response of request at the head
- * of the queue, before sending out responses of other completed requests in
- * the queue.
+ * out_q ensures that we always send back the response of the request at the
+ * head of the queue, before sending out responses of other completed requests
+ * in the queue.
  *
  * TODOs: Minh: add explanation for peer-to-peer communication
  */

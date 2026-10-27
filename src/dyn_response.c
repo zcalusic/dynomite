@@ -89,7 +89,7 @@ static struct msg *rsp_make_error(struct context *ctx, struct conn *conn,
 
 struct msg *rsp_send_next(struct context *ctx, struct conn *conn) {
   rstatus_t status;
-  struct msg *rsp, *req; /* response and it's peer request */
+  struct msg *rsp, *req; /* response and its peer request */
 
   ASSERT_LOG(
       (conn->type == CONN_DNODE_PEER_CLIENT) || (conn->type == CONN_CLIENT),

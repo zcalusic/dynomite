@@ -62,7 +62,7 @@
 
   The end that performs active close i.e. the end that sends the first FIN
   goes into TIME_WAIT state. After a FIN packet is sent to the peer and
-  after that peers FIN/ACK arrvies and is ACKed, we go into a TIME_WAIT
+  after that peers FIN/ACK arrives and is ACKed, we go into a TIME_WAIT
   state. The duration that the end point remains in this state is 2 x MSL
   (maximum segment lifetime). The reason that the duration of the TIME_WAIT
   state is 2 x MSL is because the maximum amount of time a packet can wander
@@ -75,7 +75,7 @@
   #define TCP_TIMEWAIT_LEN (60*HZ) /* how long to wait to destroy TIME-WAIT
                                     * state, about 60 seconds */
 
-  TIME_WAIT state on client, combined with limited number of ephermeral ports
+  TIME_WAIT state on client, combined with limited number of ephemeral ports
   available for TCP connections severely limits the rate at which new
   connections to the server can be created. On Linux, by default ephemeral
   ports are in the range of 32768 to 61000:

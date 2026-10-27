@@ -231,7 +231,7 @@ static void stats_pool_unmap(struct stats_pool *stp) {
 
 static rstatus_t stats_create_bufs(struct stats *st) {
   uint32_t int64_max_digits = 20; /* INT64_MAX = 9223372036854775807 */
-  uint32_t int32_max_digits = 10; /* INT32_MAX = 4294967294 */
+  uint32_t int32_max_digits = 10; /* UINT32_MAX = 4294967295 */
   uint32_t key_value_extra = 8;   /* "key": "value", */
   uint32_t pool_extra = 8;        /* '"pool_name": { ' + ' }' */
   uint32_t server_extra = 8;      /* '"server_name": { ' + ' }' */
@@ -623,8 +623,8 @@ static rstatus_t stats_end_nesting(struct stats_buffer *buf, bool arr) {
 
   pos = buf->data + buf->len;
 
-  // if last non-white space character is , remove it
-  // first count white spaces at end
+  // if last non-whitespace character is , remove it
+  // first count whitespace at end
   int space_count = 0;
   while (isspace(*(pos - space_count - 1))) {
     space_count++;
@@ -633,7 +633,7 @@ static rstatus_t stats_end_nesting(struct stats_buffer *buf, bool arr) {
     // now remove , from end
     pos -= (space_count + 1);
     buf->len--;
-    // put white spaces back
+    // put whitespace back
     while (space_count > 0) {
       *pos = *(pos + 1);
       pos++;
@@ -793,8 +793,8 @@ static rstatus_t stats_add_node_host(struct stats *st,
   string_set_text(&host_str, "host");
   struct server_pool *sp = &st->ctx->pool;
   struct string host;
-  // pname is host:port. for local its 0.0.0.0:port
-  // so try to get the hostname if local otherwise use whats in pname
+  // pname is host:port. for local it's 0.0.0.0:port
+  // so try to get the hostname if local otherwise use what's in pname
   char *hn = NULL;
   if (node->is_local && (hn = get_public_hostname(sp))) {
     THROW_STATUS(string_copy(&host, (uint8_t *)hn, dn_strlen(hn)));
@@ -1083,7 +1083,7 @@ static int parse_request(int sd, struct stats_cmd *st_cmd) {
     return 0;
   }
   if (rcvd == 0) {  // receive socket closed
-    log_debug(LOG_VERB, "Client disconnected upexpectedly");
+    log_debug(LOG_VERB, "Client disconnected unexpectedly");
     return 0;
   }
   mesg[rcvd] = '\0';

@@ -291,7 +291,7 @@ void dn_stacktrace(int skip_count) {
     snprintf(syscom, sizeof(syscom), "addr2line %p -e /proc/%d/exe >&2",
              stack[i], getpid());
     if (system(syscom) < 0) {
-      loga("system command did not succeed to print filename");
+      loga("system command failed to print the file name");
     }
   }
 
@@ -317,7 +317,7 @@ int _vscnprintf(char *buf, size_t size, const char *fmt, va_list args) {
    * into buf not including the trailing '\0'. If size is == 0 the
    * function returns 0.
    *
-   * On error, the function also returns 0. This is to allow idiom such
+   * On error, the function also returns 0. This is to allow idioms such
    * as len += _vscnprintf(...)
    *
    * See: http://lwn.net/Articles/69419/

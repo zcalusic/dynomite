@@ -659,7 +659,7 @@ static char *conf_add_server(struct conf *cf, struct command *cmd, void *conf) {
   }
 
   if (k != delimlen) {
-    return "has an invalid \"hostname:port:weight [name]\"or "
+    return "has an invalid \"hostname:port:weight [name]\" or "
            "\"/path/unix_socket:weight [name]\" format string";
   }
 
@@ -727,7 +727,8 @@ static char *conf_add_server(struct conf *cf, struct command *cmd, void *conf) {
  * Well, this just blows. Copied from conf_add_server() there is a colon
  * delimited string in the yaml that requires a few levels of magic in order to
  * guess the structure of, rather than doing the right thing and making proper
- * fields. Need to fix however, there's bigger fish to deep fry at this point.
+ * fields. Needs fixing; however, there are bigger fish to deep fry at this
+ * point.
  */
 static char *conf_add_dyn_server(struct conf *cf, struct command *cmd,
                                  void *conf) {
@@ -823,7 +824,7 @@ static char *conf_add_dyn_server(struct conf *cf, struct command *cmd,
   }
 
   if (k != delimlen) {
-    return "has an invalid format must match \"hostname:port:rack:dc:tokens "
+    return "has an invalid format, must match \"hostname:port:rack:dc:tokens "
            "[name]\"";
   }
 
@@ -865,8 +866,8 @@ static char *conf_add_dyn_server(struct conf *cf, struct command *cmd,
 
   field->port = dn_atoi(port, portlen);
   if (field->port < 0 || !dn_valid_port(field->port)) {
-    return "has an invalid port in \"hostname:port:weight [name]\" format "
-           "string";
+    return "has an invalid port in \"hostname:port:rack:dc:tokens [name]\" "
+           "format string";
   }
 
   if (name == NULL) {
@@ -1944,7 +1945,7 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
     g_read_consistency = DC_EACH_SAFE_QUORUM;
   else {
     log_error(
-        "conf: directive \"read_consistency:\"must be one of 'DC_ONE' "
+        "conf: directive \"read_consistency:\" must be one of 'DC_ONE' "
         "'DC_QUORUM' 'DC_SAFE_QUORUM' 'DC_EACH_SAFE_QUORUM'");
     return DN_ERROR;
   }
@@ -1959,7 +1960,7 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
     g_write_consistency = DC_EACH_SAFE_QUORUM;
   else {
     log_error(
-        "conf: directive \"write_consistency:\"must be one of 'DC_ONE' "
+        "conf: directive \"write_consistency:\" must be one of 'DC_ONE' "
         "'DC_QUORUM' 'DC_SAFE_QUORUM' 'DC_EACH_SAFE_QUORUM'");
     return DN_ERROR;
   }

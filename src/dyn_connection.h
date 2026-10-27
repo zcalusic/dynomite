@@ -27,8 +27,9 @@
  * SERVER - outgoing connection to the underlying data store.
  *
  * Dynomite extended this same concept and added 3 other types of connections
- * DNODE_PEER_PROXY - listens to connections from other dynomite node (default
- * 8101) DNODE_PEER_CLIENT - incoming connection from other dnode
+ * DNODE_PEER_PROXY - listens to connections from other dynomite nodes (default
+ * 8101)
+ * DNODE_PEER_CLIENT - incoming connection from another dnode
  * DNODE_PEER_SERVER - outgoing connection to other dnode.
  *
  */
@@ -147,7 +148,7 @@ struct conn {
   unsigned done : 1;             /* done? aka close? */
   unsigned dyn_mode : 1;         /* is a dyn connection? */
   unsigned same_dc : 1;  /* bit to indicate whether a peer conn is same DC */
-  uint32_t avail_tokens; /* used to throttle the traffics */
+  uint32_t avail_tokens; /* used to throttle the traffic */
   uint32_t last_sent;    /* ts in sec used to determine the last sent time */
   // uint32_t           non_bytes_send;        /* #times or epoll triggers that
   // we are not able to send any bytes */

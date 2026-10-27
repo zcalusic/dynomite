@@ -39,7 +39,7 @@ void deinit_dyn_token(struct dyn_token *token) {
 }
 
 // This implementation does not take into account that token's val can be very
-// large, larger than an uint32 number
+// large, larger than a uint32 number
 rstatus_t size_dyn_token(struct dyn_token *token, uint32_t token_len) {
   ASSERT(token_len <= 4);
   token->len = token_len;
@@ -49,7 +49,7 @@ rstatus_t size_dyn_token(struct dyn_token *token, uint32_t token_len) {
 }
 
 // This implementation does not take into account that token's val can be very
-// large, larger than an uint32 number
+// large, larger than a uint32 number
 rstatus_t copy_dyn_token(const struct dyn_token *src, struct dyn_token *dst) {
   rstatus_t status = size_dyn_token(dst, 1);
   set_int_dyn_token(dst, src->mag[0]);
@@ -57,7 +57,7 @@ rstatus_t copy_dyn_token(const struct dyn_token *src, struct dyn_token *dst) {
 }
 
 // This implementation does not take into account that token's val can be very
-// large, larger than an uint32 number
+// large, larger than a uint32 number
 void set_int_dyn_token(struct dyn_token *token, uint32_t val) {
   token->mag[0] = val;
   token->len = 1;

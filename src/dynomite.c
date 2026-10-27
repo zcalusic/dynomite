@@ -362,8 +362,8 @@ static rstatus_t dn_get_options(int argc, char **argv, struct instance *nci) {
 
       case 'm':  // deprecated argument
         loga(
-            "-m or --mbuf-size command line arguments has been deprecated. Use "
-            "configuration file.");
+            "-m or --mbuf-size command line argument has been deprecated. "
+            "Use the configuration file.");
         value = dn_atoi(optarg, strlen(optarg));
         if (value <= 0) {
           log_stderr("dynomite: option -m requires a non-zero number");
@@ -387,8 +387,8 @@ static rstatus_t dn_get_options(int argc, char **argv, struct instance *nci) {
 
       case 'M':  // deprecated argument
         loga(
-            "-M or max-msgs command line argument has been deprecated. Use "
-            "configuration file.");
+            "-M or --max-msgs command line argument has been deprecated. "
+            "Use the configuration file.");
         value = dn_atoi(optarg, strlen(optarg));
         if (value <= 0) {
           log_stderr("dynomite: option -M requires a non-zero number");

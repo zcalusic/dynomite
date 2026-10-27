@@ -30,7 +30,7 @@ struct logger {
   int nerror; /* # log error */
 };
 
-#define LOG_EMERG 0   /* system in unusable */
+#define LOG_EMERG 0   /* system is unusable */
 #define LOG_ALERT 1   /* action must be taken immediately */
 #define LOG_CRIT 2    /* critical conditions */
 #define LOG_ERR 3     /* error conditions */
@@ -54,7 +54,7 @@ struct logger {
  * log_panic    - log messages followed by a panic
  * ...
  * log_debug    - debug log messages based on a log level
- * log_hexdump  - hexadump -C of a log buffer
+ * log_hexdump  - hexdump -C of a log buffer
  */
 #ifdef DN_DEBUG_LOG
 

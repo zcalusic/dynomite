@@ -359,7 +359,7 @@ static inline char *dyn_error_source(dyn_error_t err) {
   }
 }
 /* This is a wrong place for this typedef. But adding to core has some
- * dependency issues - FixIt someother day :(
+ * dependency issues - FixIt some other day :(
  */
 typedef enum consistency {
   DC_ONE = 0,
@@ -540,7 +540,7 @@ struct msg {
    * did a dmsg_write of a dnode header in this message. If we do not remember
    * it, then if the same message gets attempted to be sent twice in
    * msg_send_chain, (due to lack of space in the previous attempt), we will
-   * prepend another header and we will have corrupted message at the
+   * prepend another header and we will have a corrupted message at the
    * destination */
   unsigned dnode_header_prepended : 1;
   unsigned rsp_sent : 1; /* is a response sent for this request?*/
@@ -548,7 +548,7 @@ struct msg {
   unsigned key_too_long : 1;
   /* A command came with the wrong number of args: req_filter() answers. */
   unsigned wrong_arity : 1;
-  uint64_t timestamp;   // Timestamp of request. Used only if 'read_repiars' is enabled.
+  uint64_t timestamp;  // Request timestamp, used only with 'read_repairs'.
 
   bool needs_repair;    // If 'true', a repair msg will be sent to 'owner'.
   struct write_with_ts msg_info;
@@ -574,7 +574,7 @@ struct msg {
   // request is in flight, so this, not the pool's current DC count, bounds it.
   uint32_t num_each_rspmgrs;
 
-  // Indicates whether the rspmgr and additional_each_rspmgrs(if applicable)
+  // Indicates whether the rspmgr and additional_each_rspmgrs (if applicable)
   // are init-ed.
   bool rspmgrs_inited;
 };

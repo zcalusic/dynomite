@@ -44,7 +44,7 @@ static void core_print_peer_status(void *arg1) {
   uint32_t dc_index;
   for (dc_index = 0; dc_index < dc_cnt; dc_index++) {
     struct datacenter *dc = array_get(&sp->datacenters, dc_index);
-    if (!dc) log_panic("DC is null. Topology not inited proerly");
+    if (!dc) log_panic("DC is null. Topology not initialized properly");
     uint8_t rack_cnt = (uint8_t)array_n(&dc->racks);
     uint8_t rack_index;
     for (rack_index = 0; rack_index < rack_cnt; rack_index++) {
@@ -55,7 +55,7 @@ static void core_print_peer_status(void *arg1) {
         ASSERT(c != NULL);
         uint32_t peer_index = c->index;
         struct node *peer = *(struct node **)array_get(&sp->peers, peer_index);
-        if (!peer) log_panic("peer is null. Topology not inited proerly");
+        if (!peer) log_panic("peer is null. Topology not initialized properly");
 
         log_notice("%u)%p %.*s %.*s %.*s %s", peer_index, peer, dc->name->len,
                    dc->name->data, rack->name->len, rack->name->data,
@@ -305,7 +305,7 @@ rstatus_t core_start(struct instance *nci) {
   struct server_pool *sp = &ctx->pool;
 
   if (sp->mbuf_size == 0) {
-    loga("mbuf_size not in YAML: using deprecated way  %zu",
+    loga("mbuf_size not in YAML: using deprecated way %zu",
          nci->mbuf_chunk_size);
     mbuf_init(nci->mbuf_chunk_size);
   } else {
@@ -323,8 +323,8 @@ rstatus_t core_start(struct instance *nci) {
   return DN_OK;
 
 error:
-  // If we hit an error, undo everything in the reverse order as it was setup to maintain
-  // symmetric setup/teardown semantics.
+  // If we hit an error, undo everything in the reverse order as it was set up
+  // to maintain symmetric setup/teardown semantics.
   if (ctx != NULL) {
     //gossip_pool_deinit(ctx);   // XXX: Gossip not actively maintained.
     dnode_peer_pool_disconnect(ctx);
@@ -631,7 +631,7 @@ void core_debug(struct context *ctx) {
       struct rack *rack = array_get(&dc->racks, rack_index);
       log_debug(LOG_VERB, "\tPeer rack........'%.*s'", rack->name->len,
                 rack->name->data);
-      log_debug(LOG_VERB, "\tPeer rack ncontinuumm    : %d", rack->ncontinuum);
+      log_debug(LOG_VERB, "\tPeer rack ncontinuum    : %d", rack->ncontinuum);
       log_debug(LOG_VERB, "\tPeer rack nserver_continuum    : %d",
                 rack->nserver_continuum);
     }

@@ -362,7 +362,7 @@ int dictReplace(dict *d, void *key, void *val) {
   dictEntry *entry, auxentry;
 
   /* Try to add the element. If the key
-   * does not exists dictAdd will succeed. */
+   * does not exist dictAdd will succeed. */
   if (dictAdd(d, key, val) == DICT_OK) return 1;
   /* It already exists, get the entry */
   entry = dictFind(d, key);
@@ -526,7 +526,7 @@ long long dictFingerprint(dict *d) {
    * to a different number. */
   for (j = 0; j < 6; j++) {
     hash += integers[j];
-    /* For the hashing step we use Tomas Wang's 64 bit integer hash. */
+    /* For the hashing step we use Thomas Wang's 64 bit integer hash. */
     hash = (~hash) + (hash << 21);  // hash = (hash << 21) - hash - 1;
     hash = hash ^ (hash >> 24);
     hash = (hash + (hash << 3)) + (hash << 8);  // hash * 265
@@ -714,10 +714,10 @@ static unsigned long rev(unsigned long v) {
  *
  * The function guarantees that all the elements that are present in the
  * dictionary from the start to the end of the iteration are returned.
- * However it is possible that some element is returned multiple time.
+ * However it is possible that some element is returned multiple times.
  *
  * For every element returned, the callback 'fn' passed as argument is
- * called, with 'privdata' as first argument and the dictionar entry
+ * called, with 'privdata' as first argument and the dictionary entry
  * 'de' as second argument.
  *
  * HOW IT WORKS.
@@ -1031,7 +1031,7 @@ dictType dictTypeHeapStringCopyKey = {
 };
 
 /* This is like StringCopy but does not auto-duplicate the key.
- * It's used for intepreter's shared strings. */
+ * It's used for interpreter's shared strings. */
 dictType dictTypeHeapStrings = {
     _dictStringCopyHTHashFunction, /* hash function */
     NULL,                          /* key dup */

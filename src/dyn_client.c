@@ -22,13 +22,13 @@
 
 /**
  * This is the client connection. It receives requests from the client, and
- * forwards it to the corresponding peers and local data store server (if this
+ * forwards them to the corresponding peers and local data store server (if this
  * node owns the token).
- * There is fair amount of machinery involved here mainly for consistency
- * feature It acts more of a co-ordinator than a mere client connection handler.
+ * There is a fair amount of machinery involved here mainly for consistency
+ * feature. It acts more as a coordinator than a mere client connection handler.
  * - outstanding_msgs_dict : This is a hash table (HT) of request id to request
  *   mapping. When it receives a request, it adds the message to the HT, and
- *   removes it when it finished responding. We need a hash table mainly for
+ *   removes it when it has finished responding. We need a hash table mainly for
  *   implementing consistency. When a response is received from a peer, it is
  *   handed over to the client connection. It uses this HT to get the request &
  *   calls the request's response handler.
@@ -36,10 +36,10 @@
  * that we have consistency, there is a need for the responses to refer back to
  * the original requests. This makes cleaning up and connection tear down
  * fairly complex. The client connection has to wait for all responses (either
- * a good response or a error response due to timeout). Hence the client
- * connection should wait for the above HT outstanding_msgs_dict to get empty.
- * This flag waiting_to_unref indicates that the client connection is ready to
- * close and just waiting for the outstanding messages to finish.
+ * a good response or an error response due to timeout). Hence the client
+ * connection should wait for the above HT outstanding_msgs_dict to become
+ * empty. This flag waiting_to_unref indicates that the client connection is
+ * ready to close and just waiting for the outstanding messages to finish.
  */
 
 #include "dyn_client.h"
@@ -231,7 +231,7 @@ static void client_close(struct context *ctx, struct conn *conn) {
   client_unref(conn);
 }
 
-/* Handle a response to a given request. if this is a quorum setting, choose the
+/* Handle a response to a given request. If this is a quorum setting, choose the
  * right response. Then make sure all the requests are satisfied in a fragmented
  * request scenario and then use the post coalesce logic to cook up a combined
  * response
@@ -245,7 +245,7 @@ static rstatus_t client_handle_response(struct context *ctx, struct conn *conn, 
   // Fetch the original request
   struct msg *req = dictFetchValue(conn->outstanding_msgs_dict, &reqid);
   if (!req) {
-    log_notice("looks like we already cleanedup the request for %" PRIu64,
+    log_notice("looks like we already cleaned up the request for %" PRIu64,
                reqid);
     rsp_put(rsp);
     return DN_OK;
@@ -345,7 +345,7 @@ struct msg *req_recv_next(struct context *ctx, struct conn *conn, bool alloc) {
     conn->rmsg = req;
   }
 
-  // Record timetamps if repairs are enabled.
+  // Record timestamps if repairs are enabled.
   if (is_read_repairs_enabled()) {
     req->timestamp = current_timestamp_in_millis();
   }
@@ -513,9 +513,9 @@ static void req_forward_error_for_dc(struct context *ctx, struct conn *conn,
     return;
   }
 
-  // Create an appropriate response for the request so its propagated up;
-  // This response gets dropped in rsp_make_error anyways. But since this is
-  // an error path its ok with the overhead.
+  // Create an appropriate response for the request so it's propagated up.
+  // This response gets dropped in rsp_make_error anyway. But since this is
+  // an error path, it's ok with the overhead.
   struct msg *rsp = msg_get_error(conn, dyn_error_code, error_code);
   if (rsp == NULL) {
     // Out of memory: close the client connection, which cleans up 'req'.
@@ -572,7 +572,7 @@ static void req_redis_stats(struct context *ctx, struct msg *req) {
     case MSG_REQ_REDIS_LREM:
       stats_server_incr(ctx, redis_req_lreqm);
       /* do not break as this is a list operation as the following.
-       * We count twice the LREM because it is an intensive operation/
+       * We count twice the LREM because it is an intensive operation.
        *  */
     case MSG_REQ_REDIS_LRANGE:
     case MSG_REQ_REDIS_LSET:
@@ -584,7 +584,7 @@ static void req_redis_stats(struct context *ctx, struct msg *req) {
     case MSG_REQ_REDIS_SUNION:
       stats_server_incr(ctx, redis_req_sunion);
       /* do not break as this is a set operation as the following.
-       * We count twice the SUNION because it is an intensive operation/
+       * We count twice the SUNION because it is an intensive operation.
        *  */
     case MSG_REQ_REDIS_SETBIT:
     case MSG_REQ_REDIS_SETEX:
@@ -850,7 +850,7 @@ rstatus_t req_forward_to_peer(struct context *ctx, struct conn *c_conn,
           status, dyn_error_source(*dyn_error_code));
     }
   }
-  // Release the copy if we made one above..
+  // Release the copy if we made one above.
   if (rack_msg != NULL && (force_copy || !same_rack)) {
     req_put(rack_msg);
   }
@@ -939,7 +939,8 @@ static rstatus_t req_forward_all_dcs_all_racks_all_nodes(struct context *ctx,
 
   req->rsp_handler = msg_get_rsp_handler(ctx, req);
 
-  // Ennumerate every node (or 'peer') in the cluster and send 'req' to each of them.
+  // Enumerate every node (or 'peer') in the cluster and send 'req' to each of
+  // them.
   uint32_t peer_idx = 0;
   for (peer_idx = 0; peer_idx < peer_cnt; ++peer_idx) {
     struct node *peer = *(struct node **)array_get(&pool->peers, peer_idx);
@@ -970,8 +971,8 @@ static void req_forward_remote_dc(struct context *ctx, struct conn *c_conn,
   }
 
   // If we're not expecting a consistency level of 'DC_EACH_SAFE_QUORUM', then
-  // we send it to only to the preselected rack in the remote DCs. If that's not
-  // reachable, we failover to another in the remote DC.
+  // we send it only to the preselected rack in the remote DCs. If that's not
+  // reachable, we fail over to another in the remote DC.
 
   // Pick the preferred pre-selected rack for this DC.
   struct rack *rack = dc->preselected_rack_for_replication;
@@ -1173,8 +1174,8 @@ static void req_forward(struct context *ctx, struct conn *c_conn,
 /*
  * Rewrites a query if necessary.
  *
- * If a rewrite occured, it will replace '*req' with the new 'msg' that contains
- * the new query and free up the original msg.
+ * If a rewrite occurred, it will replace '*req' with the new 'msg' that
+ * contains the new query and free up the original msg.
  *
  */
 rstatus_t rewrite_query_if_necessary(struct msg **req, struct context *ctx) {
@@ -1198,8 +1199,8 @@ rstatus_t rewrite_query_if_necessary(struct msg **req, struct context *ctx) {
 /*
  * Rewrites a query as a script that updates both the data and metadata.
  *
- * If a rewrite occured, it will replace '*req' with the new 'msg' that contains
- * the new query and free up the original msg.
+ * If a rewrite occurred, it will replace '*req' with the new 'msg' that
+ * contains the new query and free up the original msg.
  *
  */
 static rstatus_t rewrite_query_with_timestamp_md(struct msg **req, struct context *ctx) {
@@ -1215,8 +1216,9 @@ static rstatus_t rewrite_query_with_timestamp_md(struct msg **req, struct contex
   THROW_STATUS(ret_status);
 
   if (did_rewrite) {
-    // If we successfully did a rewrite, we neet to make sure that the 'new_req' is the
-    // msg considered from here on, and record the original msg for later reference.
+    // If we successfully did a rewrite, we need to make sure that the 'new_req'
+    // is the msg considered from here on, and record the original msg for later
+    // reference.
     new_req->orig_msg = *req;
     *req = new_req;
     (*req)->orig_type = orig_msg_type;
@@ -1303,14 +1305,14 @@ error:
     // wouldn't find it.
     dictAdd(conn->outstanding_msgs_dict, &req->id, req);
   }
-  req_forward_error(ctx, conn, req, DN_OK, status);  // TODO: CHeck error code
+  req_forward_error(ctx, conn, req, DN_OK, status);  // TODO: Check error code
   return;
 }
 
 static msg_response_handler_t msg_get_rsp_handler(struct context *ctx, struct msg *req) {
   if (request_send_to_all_local_racks(req)) {
-    // Request is being braoadcasted
-    // Check if its quorum
+    // Request is being broadcast
+    // Check if it's quorum
     if ((req->consistency == DC_QUORUM) || (req->consistency == DC_SAFE_QUORUM)) {
       return msg_quorum_rsp_handler;
     } else if (req->consistency == DC_EACH_SAFE_QUORUM) {

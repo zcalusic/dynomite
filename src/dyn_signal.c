@@ -51,7 +51,7 @@ static struct signal signals[] = {
     {SIGPIPE, "SIGPIPE", 0, SIG_IGN, 0},
     {0, NULL, 0, NULL, 0}};
 
-/* set by signal_handler(), when any signal's pending is */
+/* set by signal_handler(), when any signal is pending */
 static volatile sig_atomic_t signal_pending_any;
 
 /* the signals signal_block() blocked, and the mask to wait for events with */

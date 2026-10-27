@@ -17,7 +17,7 @@
 struct cmd_info proto_cmd_info[] = {
  {"UNKNOWN", 0, 0, 0, 0, 0, false, false, false, -1, -1, -1, -1, -1, -1, NULL, 0, 0},
 
- // Begin memcache commands. All Memcache commands are not supported. (idx 1 onwards)
+ // Begin memcache commands. No Memcache commands are supported. (idx 1 onwards)
  {"MC_GET", 0, 0, 0, 0, 0, false, false, false, -1, -1, -1, -1, -1, -1, NULL, 0, 0},
  {"MC_GETS", 0, 0, 0, 0, 0, false, false, false, -1, -1, -1, -1, -1, -1, NULL, 0, 0},
  {"MC_DELETE", 0, 0, 0, 0, 0, false, false, false, -1, -1, -1, -1, -1, -1, NULL, 0, 0},
@@ -596,7 +596,7 @@ static rstatus_t obtain_info_from_latest_rsp(
  * <key1>..(<keyN>) <+set> <-set> <orig_cmd> (<num_opts>) <num_flds> \
  * <ts> (<opt1>) .. (<optN>) (<fld1>) (<val1>) (<fldN>) ..
  *
- * Tokens shown above with parantheses are optional.
+ * Tokens shown above with parentheses are optional.
  *
  */
 static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
@@ -693,7 +693,7 @@ static rstatus_t create_redis_prtcl_script(struct write_with_ts *src,
 }
 
 /*
- * Uses 'msg_info' and 'arg_str' to create a repair msg and parse it so that its ready
+ * Uses 'msg_info' and 'arg_str' to create a repair msg and parse it so that it's ready
  * to be understood by Redis.
  *
  */
@@ -733,7 +733,7 @@ static rstatus_t finalize_repair_msg(struct context *ctx, struct conn *conn,
 }
 
 /*
- * Finds all the timetamps from responses in rspmgr, updates the respective 'msg'
+ * Finds all the timestamps from responses in rspmgr, updates the respective 'msg'
  * structures with their timestamp, and finds the response that has the latest
  * timestamp.
  *
@@ -885,7 +885,7 @@ rstatus_t redis_make_repair_query(struct context *ctx, struct response_mgr *rspm
   // repairable.
   if (rspmgr->msg->orig_msg == NULL) return DN_OK;
 
-  // Redis commands either lookup keys or fields (secondary keys), so the number of
+  // Redis commands either look up keys or fields (secondary keys), so the number of
   // expected values would be based on either one of them.
   if (rspmgr->msg->orig_msg->msg_info.num_fields > 0) {
     num_values = (uint32_t)rspmgr->msg->orig_msg->msg_info.num_fields;
@@ -1037,7 +1037,7 @@ static rstatus_t create_cleanup_script(struct context *ctx, struct msg *orig_msg
 
 rstatus_t redis_clear_repair_md_for_key(struct context *ctx, struct msg *req,
     struct msg **new_msg_ptr) {
-  // If we lost a track of the original message type, we cannot proceed.
+  // If we lost track of the original message type, we cannot proceed.
   if (req->orig_msg == NULL) return DN_NOOPS;
   msg_type_t orig_msg_type = req->orig_msg->type;
 

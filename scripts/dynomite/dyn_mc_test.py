@@ -37,14 +37,14 @@ def main():
                       help="Operation to perform: write, read, del, swrite (single write), sread (polling single read), and sdel")
     parser.add_option("-l", "--logfile",
                       action="store",
-                      dest="logfle",
+                      dest="logfile",
                       default="/tmp/dynomite-test.log",
                       help="log file location")
     parser.add_option("-H", "--host",
                       action="store",
                       dest="host",
                       default="127.0.0.1",
-                      help="targe host ip")
+                      help="target host ip")
     parser.add_option("-P", "--port",
                       action="store",
                       dest="port",
@@ -106,7 +106,7 @@ def main():
              print('No value for key: ' + 'key_' + str(i))
           else :
              print('key_' + str(i) + ' has value : ' + value)
-       print('Errour count: ' + str(error_count))
+       print('Error count: ' + str(error_count))
     elif 'mread' == options.operation :
        n = (end - start) / 10
        n = min(n, 10)

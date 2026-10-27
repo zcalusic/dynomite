@@ -60,7 +60,7 @@ struct dmsg {
 
   uint64_t id;      /* message id */
   dmsg_type_t type; /* message type */
-  uint8_t flags;    /* bit field; the right most bit meant encrypted: never
+  uint8_t flags;    /* bit field; the rightmost bit meant encrypted: never
                        sent, and rejected when received */
   dmsg_version_t version; /* version of the message sender */
   uint8_t same_dc;        /* indicate it is an inter_dc */

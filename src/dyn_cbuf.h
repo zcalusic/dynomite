@@ -20,7 +20,7 @@
  *   (assumes one reader & one writer).
  *
  *   It requires that the circular buffer size be a power of two, and the
- *   size of the buffer needs to smaller than the index. So an 8 bit index
+ *   size of the buffer needs to be smaller than the index. So an 8 bit index
  *   supports a circular buffer up to ( 1 << 7 ) = 128 entries, and a 16 bit
  *   index supports a circular buffer up to ( 1 << 15 ) = 32768 entries.
  *
@@ -35,7 +35,7 @@
  *
  *   The size macro that needs to be defined will be the name of the
  *   circular buffer followed by @c _SIZE. The size must be a power of two
- *   and it needs to fit in the get/put indicies. i.e. if you use an
+ *   and it needs to fit in the get/put indices. i.e. if you use an
  *   8 bit index, then the maximum supported size would be 128.
  *
  *   The structure which defines the circular buffer needs to have 3 members
@@ -117,7 +117,7 @@
  *   Returns a pointer to the next spot to push. This can be used
  *   in conjunction with CBUF_AdvancePushIdx to fill out an entry
  *   before indicating that it's available. It is the caller's
- *   responsibility to enure that space is available, and that no
+ *   responsibility to ensure that space is available, and that no
  *   other items are pushed to overwrite the entry returned.
  */
 
@@ -127,7 +127,7 @@
 /**
  *   Advances the put index. This is useful if you need to
  *   reserve space for an item but can't fill in the contents
- *   yet. CBUG_GetLastEntryPtr can be used to get a pointer to
+ *   yet. CBUF_GetLastEntryPtr can be used to get a pointer to
  *   the item. It is the caller's responsibility to ensure that
  *   the item isn't popped before the contents are filled in.
  */
@@ -177,7 +177,7 @@
 #define CBUF_IsFull(cbuf) (CBUF_Len(cbuf) == (cbuf##_SIZE))
 
 /**
- *   Determines if the circular buffer is currenly overflowed or underflowed.
+ *   Determines if the circular buffer is currently overflowed or underflowed.
  */
 
 #define CBUF_Error(cbuf) (CBUF_Len(cbuf) > cbuf##_SIZE)

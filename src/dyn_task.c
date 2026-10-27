@@ -9,8 +9,8 @@
 #include "dyn_util.h"
 
 /**
- * This is a generic task manager. There was a increasing demand in Dynomite to
- * create a module to schedule task a specific times. For example reconnecting
+ * This is a generic task manager. There was an increasing demand in Dynomite to
+ * create a module to schedule tasks at specific times. For example reconnecting
  * a disconnected peer, or handling gossip messages, or timeouts etc. This is a
  * module to implement such use cases.
  *

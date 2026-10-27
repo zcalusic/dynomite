@@ -30,7 +30,7 @@
  */
 
 /*
- * This has is Jenkin's "One at A time Hash".
+ * This is Jenkins's "One at a Time Hash".
  * http://en.wikipedia.org/wiki/Jenkins_hash_function
  */
 

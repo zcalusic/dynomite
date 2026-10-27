@@ -2,13 +2,13 @@
 
 ## Florida Multi-Cluster Solution
 
-Let's say you want to have multiple clusters so you need to have different Florida URLs providing different seeds for each cluster. In such a case, the following environment variables can be used to customize the behavior of Dynomite without requiring a custom build (via Make).
+Let's say you want to have multiple clusters, so you need to have different Florida URLs providing different seeds for each cluster. In such a case, the following environment variables can be used to customize the behavior of Dynomite without requiring a custom build (via Make).
 
 - `DYNOMITE_FLORIDA_IP`
 - `DYNOMITE_FLORIDA_PORT`
 - `DYNOMITE_FLORIDA_REQUEST`
 
-The Florida server only reads the environment variables one time when the server is started. If the environment variables are not present (NULL) the code will use the macros or CFLAGS values. This is great because it allows us to use the same binary all the time, and then later when I deploy the code into ASGARD I can have just different user data since is just a matter of export different values to the AMI/Linux. There is a minor FIX of YAML syntax as well.
+The Florida server only reads the environment variables one time when the server is started. If the environment variables are not present (NULL), the code will use the macros or CFLAGS values. This is great because it allows us to use the same binary all the time, and then later when I deploy the code into ASGARD I can have just different user data since it's just a matter of exporting different values to the AMI/Linux. There is a minor FIX of YAML syntax as well.
 
 So for instance someone can have in the `/etc/profile`
 
@@ -42,7 +42,7 @@ Then build dynomite normally like:
 sudo autoreconf -fvi ; sudo ./configure --enable-debug=log ; sudo make;
 ```
 
-And Run:
+And run:
 
 ```bash
 sudo --preserve-env src/dynomite -c conf/dynomite_florida_single.yml
@@ -52,7 +52,7 @@ And it works :-)
 
 ## florida.js
 
-`florida.js` is an http server that returns a list of seed nodes via a REST API.
+`florida.js` is an HTTP server that returns a list of seed nodes via a REST API.
 
 ### Command
 

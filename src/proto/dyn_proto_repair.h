@@ -29,14 +29,14 @@
  * corresponding primary keys and are denoted by '._add-set_<key>' and '._rem-set_<key>'.
  *
  * The 'redis_cmd_info' static array of structures contains information that will be used
- * by  the "rewrite with metadata" and "repair" logic. This array is indexed by the command
+ * by the "rewrite with metadata" and "repair" logic. This array is indexed by the command
  * index that is set in dyn_message.h.
  *
  * All queries that will be rewritten to include metadata are denoted by
  * 'redis_cmd_info[CMD_IDX].has_repair_support' where 'CMD_IDX' is the index of the
  * corresponding query. All read queries that return the requested values along with the
  * metadata are denoted by 'redis_cmd_info[CMD_IDX].is_repairable'.
- * If queries do not have "rewrite with MD" or "repair" support, we fallback to the old
+ * If queries do not have "rewrite with MD" or "repair" support, we fall back to the old
  * behavior which is based on quorum checksums.
  *
  * Every repairable read ('is_repairable' == true) returns data in the Redis wire protocol

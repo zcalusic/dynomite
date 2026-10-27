@@ -24,7 +24,7 @@
 - Always use size_t type when dealing with sizes of objects or memory ranges.
 - Your code should be 64-bit and 32-bit friendly. Bear in mind problems
   of printing, comparisons, and structure alignment. You have to include
-  <intyptes.h> to get generic format specifier macros for printing.
+  <inttypes.h> to get generic format specifier macros for printing.
 
 - 80 column line limit.
 - If you have to wrap a long statement (> 80 column), put the operator at the

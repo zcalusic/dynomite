@@ -39,7 +39,7 @@ RSP_STRING(DEFINE_ACTION)
 #undef DEFINE_ACTION
 
 /*
- * Return true, if the redis command take no key, otherwise
+ * Return true, if the redis command takes no key, otherwise
  * return false
  */
 static bool redis_argz(struct msg *r) {
@@ -439,7 +439,7 @@ static rstatus_t record_arg(struct msg *r, struct mbuf *b, uint8_t *end) {
  *    query to fail. Rewriting it to a SORT query ensures ordering and thus
  *    ensures that the checksum comparison succeeds.
  *
- * * Sets *did_rewrite='true' if a rewrite occured and 'false' if not.
+ * * Sets *did_rewrite='true' if a rewrite occurred and 'false' if not.
  * * Does not modify 'orig_msg' and sets 'new_msg_ptr' to point to the new 'msg'
  * struct with the rewritten query if 'did_rewrite' is true.
  * * Caller must take ownership of the newly allocated msg '*new_msg_ptr'.
@@ -584,7 +584,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
   ASSERT(b != NULL);
   ASSERT(b->pos <= b->last);
 
-  /* validate the parsing maker */
+  /* validate the parsing marker */
   ASSERT(r->pos != NULL);
   // ASSERT(r->pos >= b->pos && r->pos <= b->last);
 
@@ -1635,19 +1635,19 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
 
       case SW_REQ_TYPE_LF:
         if (r->type == MSG_REQ_REDIS_SCRIPT || r->type == MSG_REQ_REDIS_CLIENT) {
-          // Parsing "SCRIPT <LOAD/KILL/FLUSH/EXISTS>" is a special case since there is a
-          // space between the keyword SCRIPT and the following keyword. To deal with
-          // this, we reset the state machine to a previous state to allow parsing of the
-          // second keyword as well.
-          // Set 'state' back to 'SW_REQ_TYPE_LEN' to parse the second half of the command
-          // the space in 'SCRIPT <LOAD/KILL/FLUSH/EXISTS>'.
+          // Parsing "SCRIPT <LOAD/KILL/FLUSH/EXISTS>" is a special case since
+          // there is a space between the keyword SCRIPT and the following
+          // keyword. To deal with this, we reset the state machine to a
+          // previous state to allow parsing of the second keyword as well. Set
+          // 'state' back to 'SW_REQ_TYPE_LEN' to parse the second half of the
+          // command after the space in 'SCRIPT <LOAD/KILL/FLUSH/EXISTS>'.
           if (r->rntokens == 0) {
             goto wrong_arity;
           }
           state = SW_REQ_TYPE_LEN;
           log_debug(LOG_VERB,
-                    "parsed partial command '%.*s'. Continuing to parse"
-                    "remainaing part of command",
+                    "parsed partial command '%.*s'. Continuing to parse "
+                    "the remaining part of the command",
                     (int)(p - m), m);
           break;
         }
@@ -1724,10 +1724,11 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
              * can't be answered that way.
              */
             if (r->owner == NULL || r->owner->dyn_mode) {
-              log_error("parsed bad req %" PRIu64
-                        " of type %d with key length %d that greater than or "
-                        "equal to maximum redis key length of %zu",
-                        r->id, r->type, r->rlen, mbuf_data_size());
+              log_error(
+                  "parsed bad req %" PRIu64
+                  " of type %d with key length %d that is greater than or "
+                  "equal to maximum redis key length of %zu",
+                  r->id, r->type, r->rlen, mbuf_data_size());
               goto error;
             }
             log_info("req %" PRIu64 " of type %d has a key of %" PRIu32
@@ -2136,7 +2137,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           }
 
           if (nkey == 0) {
-            log_error("EVAL/EVALSHA requires atleast 1 key");
+            log_error("EVAL/EVALSHA requires at least 1 key");
             goto error;
           }
           if (r->rntokens < nkey) {
@@ -2480,7 +2481,7 @@ error:
  *
  * 1). Status reply (or single line reply) is in the form of a single line
  *     string starting with "+" terminated by "\r\n".
- * 2). Error reply are similar to status replies. The only difference is
+ * 2). Error replies are similar to status replies. The only difference is
  *     that the first byte is "-" instead of "+".
  * 3). Integer reply is just a CRLF terminated string representing an
  *     integer, and prefixed by a ":" byte.
@@ -2491,7 +2492,7 @@ error:
  *     value does not exist the bulk reply will use the special value '-1'
  *     as the data length.
  * 5). Multi-bulk reply is used by the server to return many binary safe
- *     strings (bulks) with the initial line indicating how many bulks that
+ *     strings (bulks) with the initial line indicating how many bulks
  *     will follow. The first byte of a multi bulk reply is always *.
  */
 void redis_parse_rsp(struct msg *r, struct context *ctx) {
@@ -3175,7 +3176,7 @@ static rstatus_t redis_copy_bulk(struct msg *dst, struct msg *src, bool log) {
 /*
  * Pre-coalesce handler is invoked when the message is a response to
  * the fragmented multi vector request - 'mget' or 'del' and all the
- * responses to the fragmented request vector hasn't been received
+ * responses to the fragmented request vector haven't been received
  */
 void redis_pre_coalesce(struct msg *rsp) {
   struct msg *req = rsp->peer; /* peer request */
@@ -3219,9 +3220,9 @@ void redis_pre_coalesce(struct msg *rsp) {
 
       mbuf = STAILQ_FIRST(&rsp->mhdr);
       /*
-       * Muti-bulk reply can span over multiple mbufs and in each reply
+       * Multi-bulk reply can span over multiple mbufs and in each reply
        * we should skip over the ntokens token. Our response parser
-       * guarantees thaat the ntokens token and the immediately following
+       * guarantees that the ntokens token and the immediately following
        * '\r\n' will exist in a contiguous region in the first mbuf
        */
       ASSERT(rsp->ntoken_start == mbuf->pos);
@@ -3249,7 +3250,7 @@ void redis_pre_coalesce(struct msg *rsp) {
 
     default:
       /*
-       * Valid responses for a fragmented request are MSG_RSP_REDIS_INTEGER or,
+       * Valid responses for a fragmented request are MSG_RSP_REDIS_INTEGER or
        * MSG_RSP_REDIS_MULTIBULK. For an invalid response, we send out -ERR
        * with EINVAL errno
        */
@@ -3265,8 +3266,8 @@ void redis_pre_coalesce(struct msg *rsp) {
 /*
  * Post-coalesce handler is invoked when the message is a response to
  * the fragmented multi vector request - 'mget' or 'del' and all the
- * responses to the fragmented request vector has been received and
- * the fragmented request is consider to be done
+ * responses to the fragmented request vector have been received and
+ * the fragmented request is considered done
  */
 static void redis_post_coalesce_mset(struct msg *request) {
   rstatus_t status;
@@ -3300,8 +3301,8 @@ static void redis_post_coalesce_mget(struct msg *request) {
   status = msg_prepend_format(response, "*%d\r\n", request->ntokens - 1);
   if (status != DN_OK) {
     /*
-     * the fragments is still in c_conn->omsg_q, we have to discard all of them,
-     * we just close the conn here
+     * the fragments are still in c_conn->omsg_q, we have to discard all of
+     * them, we just close the conn here
      */
     log_warn("marking %s as error", print_obj(response->owner));
     response->owner->err = 1;
@@ -3309,7 +3310,7 @@ static void redis_post_coalesce_mget(struct msg *request) {
   }
 
   for (i = 0; i < array_n(request->keys); i++) {  /* for each key */
-    sub_msg = request->frag_seq[i]->selected_rsp; /* get it's peer response */
+    sub_msg = request->frag_seq[i]->selected_rsp; /* get its peer response */
     if (sub_msg == NULL) {
       struct keypos *kpos = array_get(request->keys, i);
       log_warn("Response missing for key %.*s, %s marking %s as error",
@@ -3331,8 +3332,8 @@ static void redis_post_coalesce_mget(struct msg *request) {
 /*
  * Post-coalesce handler is invoked when the message is a response to
  * the fragmented multi vector request - 'mget' or 'del' and all the
- * responses to the fragmented request vector has been received and
- * the fragmented request is consider to be done
+ * responses to the fragmented request vector have been received and
+ * the fragmented request is considered done
  */
 void redis_post_coalesce(struct msg *req) {
   ASSERT(!req->selected_rsp->is_request);
@@ -3409,26 +3410,26 @@ static rstatus_t redis_append_key(struct msg *r, struct keypos *kpos_src) {
 
 /*
  * input a msg, return a msg chain.
- * ncontinuum is the number of backend redis/memcache server
+ * ncontinuum is the number of backend redis/memcache servers
  *
- * the original msg will be fragment into at most ncontinuum fragments.
- * all the keys map to the same backend will group into one fragment.
+ * the original msg will be fragmented into at most ncontinuum fragments.
+ * all the keys that map to the same backend are grouped into one fragment.
  *
  * frag_id:
  * a unique fragment id for all fragments of the message vector. including the
  * orig msg.
  *
  * frag_owner:
- * All fragments of the message use frag_owner point to the orig msg
+ * All fragments of the message use frag_owner to point to the orig msg
  *
  * frag_seq:
- * the map from each key to it's fragment, (only in the orig msg)
+ * the map from each key to its fragment, (only in the orig msg)
  *
  * For example, a message vector with 3 keys:
  *
  *     get key1 key2 key3
  *
- * suppose we have 2 backend server, and the map is:
+ * suppose we have 2 backend servers, and the map is:
  *
  *     key1  => backend 0
  *     key2  => backend 1
@@ -3631,7 +3632,7 @@ rstatus_t redis_verify_request(struct msg *r, struct server_pool *pool,
   if (r->type != MSG_REQ_REDIS_EVAL) return DN_OK;
 
   // For EVAL based commands, Dynomite wants to restrict all keys used by the
-  // script belong to same node
+  // script to belong to the same node
   if (1 >= array_n(r->keys)) {
     return DN_OK;
   }
@@ -3816,7 +3817,7 @@ static struct msg *redis_reconcile_multikey_responses(
   log_info("%s cloned %d good responses", print_obj(rspmgr->msg),
            array_n(&cloned_responses));
 
-  // if number of arguments do not match, return NULL;
+  // if the number of arguments does not match, return NULL;
   int nargs;
   s = consume_numargs_from_responses(&cloned_responses, &nargs);
   if (s != DN_OK) goto cleanup;

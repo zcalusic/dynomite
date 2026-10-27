@@ -152,7 +152,7 @@ bool rspmgr_check_is_done(struct response_mgr *rspmgr) {
       rspmgr->max_responses - rspmgr->good_responses - rspmgr->error_responses);
   // do the required calculation and tell if we are done here
   if (rspmgr->good_responses >= rspmgr->quorum_responses) {
-    // We received enough good responses but do their checksum match?
+    // We received enough good responses but do their checksums match?
     if (rspmgr_is_quorum_achieved(rspmgr)) {
       log_info("req %lu quorum achieved", rspmgr->msg->id);
       rspmgr->done = true;
@@ -160,13 +160,13 @@ bool rspmgr_check_is_done(struct response_mgr *rspmgr) {
       // There's a mismatch in checksum. Wait for any pending responses
       rspmgr->done = false;
     } else {
-      // no pending responses, and the checksum do not match.
+      // no pending responses, and the checksums do not match.
       rspmgr->done = true;
     }
   } else if ((pending_responses + rspmgr->good_responses) <
              rspmgr->quorum_responses) {
     // Even if we receive all the pending responses, still we do not form
-    // a quorum, So decision is done, no quorum possible
+    // a quorum, so the decision is done, no quorum possible
     rspmgr->done = true;
   }
   return rspmgr->done;
@@ -275,7 +275,7 @@ struct msg *rspmgr_get_response(struct context *ctx, struct response_mgr *rspmgr
     return rspmgr->responses[0];
   }
 
-  // If we did not perform any repairs. we fall back to checksum matching.
+  // If we did not perform any repairs, we fall back to checksum matching.
   uint32_t chk0, chk1, chk2;
   chk0 = rspmgr->checksums[0];
   chk1 = rspmgr->checksums[1];
@@ -294,12 +294,12 @@ struct msg *rspmgr_get_response(struct context *ctx, struct response_mgr *rspmgr
     msg_dump(LOG_DEBUG, rspmgr->msg);
   }
   if (log_loggable(LOG_VVERB)) {
-    log_error("Respone 0: ");
+    log_error("Response 0: ");
     msg_dump(LOG_VVERB, rspmgr->responses[0]);
-    log_error("Respone 1: ");
+    log_error("Response 1: ");
     msg_dump(LOG_VVERB, rspmgr->responses[1]);
     if (rspmgr->good_responses == 3) {
-      log_error("Respone 2: ");
+      log_error("Response 2: ");
       msg_dump(LOG_VVERB, rspmgr->responses[2]);
     }
   }

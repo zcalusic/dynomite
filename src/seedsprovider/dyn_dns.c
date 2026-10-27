@@ -13,7 +13,7 @@
 #include "dyn_seeds_provider.h"
 #include "dyn_string.h"
 
-// Keep poling DNS server for the TXT record with seeds, same format as for
+// Keep polling the DNS server for the TXT record with seeds, same format as for
 // Florida seeds
 //
 //
@@ -39,7 +39,7 @@ static bool seeds_check(void) {
 
   int64_t delta = (int64_t)(now - last);
   log_debug(LOG_VERB, "Delta or elapsed time : %" PRId64, delta);
-  log_debug(LOG_VERB, "Seeds check internal %d", SEEDS_CHECK_INTERVAL);
+  log_debug(LOG_VERB, "Seeds check interval %d", SEEDS_CHECK_INTERVAL);
 
   if (delta > SEEDS_CHECK_INTERVAL) {
     last = now;

@@ -11,4 +11,4 @@ char *get_public_ip4(struct server_pool *sp);
 char *get_private_ip4(struct server_pool *sp);
 unsigned char *hostname_to_private_ip4(char *hostname);
 
-#endif /* _DYN_SNITCH_H_s */
+#endif /* _DYN_SNITCH_H_ */

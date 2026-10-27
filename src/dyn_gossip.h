@@ -19,7 +19,7 @@
 typedef rstatus_t (*seeds_provider_t)(struct context *, struct mbuf *);
 extern struct gossip_node_pool gn_pool;
 
-// In comparison to conf_server in dyn_conf.h, this structure,
+// In comparison to conf_server in dyn_conf.h, this structure
 // has sockinfo & valid flag missing
 // It has is_local, state, and timestamp extra
 // Also in conf_server, pname is name:port:weight,

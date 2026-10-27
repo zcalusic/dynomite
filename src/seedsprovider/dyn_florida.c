@@ -13,7 +13,7 @@
 /***************************************************************************
  * Keep polling the local REST service at the address
  * http://127.0.0.1:8080/REST/v1/admin/get_seeds
- * Expect response is a list of peers in the format:
+ * Expects the response to be a list of peers in the format:
  *   peer_host1:peer_listen_port:rack:dc:peer_token1|peer_host2:peer_listen_port:rack:dc:peer_token2|...
  * For example:
  *   ec2-54-145-17-101.compute-1.amazonaws.com:8101:dyno_pds--useast1e:us-east-1:1383429731|ec2-54-101-51-17.eu-west-1.compute.amazonaws.com:8101:dyno_pds--euwest1c:eu-west-1:1383429731
@@ -70,7 +70,7 @@ static bool seeds_check(void) {
 
   int64_t delta = (int64_t)(now - last);
   log_debug(LOG_VERB, "Delta or elapsed time : %" PRId64, delta);
-  log_debug(LOG_VERB, "Seeds check internal %d", SEEDS_CHECK_INTERVAL);
+  log_debug(LOG_VERB, "Seeds check interval %d", SEEDS_CHECK_INTERVAL);
 
   if (delta > SEEDS_CHECK_INTERVAL) {
     last = now;

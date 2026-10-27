@@ -29,7 +29,7 @@ def main():
         help='mutual TLS between the nodes, with certificates made on the fly')
     args = parser.parse_args()
 
-    # Setup a temporary directory to store logs and configs for this cluster.
+    # Set up a temporary directory to store logs and configs for this cluster.
     temp = setup_temp_dir()
 
     # Generate IP addresses to be used by the nodes we will create.

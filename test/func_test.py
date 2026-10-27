@@ -291,7 +291,7 @@ def run_read_repair_test(c, num_keys=10, min_size=1, max_size=1024):
     assert redis_conn.set(key, REPAIRED_VALUE) == True
 
     test_success = False
-    # Attempt to retrieve the up to 20 times and confirm that we read the
+    # Attempt to retrieve the key up to 20 times and confirm that we read the
     # repaired value.
     # We retry multiple times since the quorum can be achieved with the majority replicas
     # that have the older data, but we'll eventually conflict with the replica with the

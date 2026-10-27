@@ -236,7 +236,7 @@ struct server_pool {
 /** \struct context
  * @brief Context of the Dynomite process.
  *
- * Context of the Dynomite process including it's configuration including
+ * Context of the Dynomite process including its configuration including
  * dynomite itself plus statistics, the server pool (i.e. connections),
  * the event base, timeout, dynomite state, gossip and whether or not the admin
  * functionality is enabled/disabled.

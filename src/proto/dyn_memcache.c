@@ -90,7 +90,7 @@ static bool memcache_retrieval(struct msg *r) {
 }
 
 /*
- * Return true, if the memcache command is a arithmetic command, otherwise
+ * Return true, if the memcache command is an arithmetic command, otherwise
  * return false
  */
 static bool memcache_arithmetic(struct msg *r) {
@@ -170,7 +170,7 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
   ASSERT(b != NULL);
   ASSERT(b->pos <= b->last);
 
-  /* validate the parsing maker */
+  /* validate the parsing marker */
   ASSERT(r->pos != NULL);
   ASSERT(r->pos >= b->pos && r->pos <= b->last);
 
@@ -733,7 +733,7 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
 
   /*
    * At this point, buffer from b->pos to b->last has been parsed completely
-   * but we haven't been able to reach to any conclusion. Normally, this
+   * but we haven't been able to reach any conclusion. Normally, this
    * means that we have to parse again starting from the state we are in
    * after more data has been read. The newly read data is either read into
    * a new mbuf, if existing mbuf is full (b->last == b->end) or into the
@@ -1283,7 +1283,7 @@ static rstatus_t memcache_append_key(struct msg *r,
 }
 
 /*
- * read the comment in proto/nc_redis.c
+ * read the comment in proto/dyn_redis.c
  */
 static rstatus_t memcache_fragment_retrieval(struct msg *r,
                                              struct server_pool *pool,
@@ -1326,7 +1326,7 @@ static rstatus_t memcache_fragment_retrieval(struct msg *r,
   r->nfrag = 0;
   r->frag_owner = r;
 
-  for (i = 0; i < array_n(r->keys); i++) { /* for each  key */
+  for (i = 0; i < array_n(r->keys); i++) { /* for each key */
     struct msg *sub_msg;
     struct keypos *kpos = array_get(r->keys, i);
     // use hash-tagged start and end for forwarding.
@@ -1404,7 +1404,7 @@ rstatus_t memcache_verify_request(struct msg *r, struct server_pool *pool,
 /*
  * Pre-coalesce handler is invoked when the message is a response to
  * the fragmented multi vector request - 'get' or 'gets' and all the
- * responses to the fragmented request vector hasn't been received
+ * responses to the fragmented request vector haven't been received
  */
 void memcache_pre_coalesce(struct msg *r) {
   struct msg *pr = r->peer; /* peer request */
@@ -1458,8 +1458,8 @@ void memcache_pre_coalesce(struct msg *r) {
 
     default:
       /*
-       * Valid responses for a fragmented requests are MSG_RSP_MC_VALUE or,
-       * MSG_RSP_MC_END. For an invalid response, we send out SERVER_ERRROR
+       * Valid responses for a fragmented request are MSG_RSP_MC_VALUE or
+       * MSG_RSP_MC_END. For an invalid response, we send out SERVER_ERROR
        * with EINVAL errno
        */
       mbuf = STAILQ_FIRST(&r->mhdr);
@@ -1501,7 +1501,7 @@ static rstatus_t memcache_copy_bulk(struct msg *dst, struct msg *src,
 
   mbuf = STAILQ_FIRST(&src->mhdr);
   if (mbuf == NULL) {
-    return DN_OK; /* no more values, key not exists */
+    return DN_OK; /* no more values, key doesn't exist */
   }
   p = mbuf->pos;
 
@@ -1515,7 +1515,7 @@ static rstatus_t memcache_copy_bulk(struct msg *dst, struct msg *src,
     return DN_ERROR;
   }
   if ((uint32_t)(p - k) != keylen || memcmp(k, kpos->start, keylen) != 0) {
-    return DN_OK; /* value of a later key, key not exists */
+    return DN_OK; /* value of a later key, key doesn't exist */
   }
 
   for (p++; p < mbuf->last && *p != ' '; p++) { /* eat flags */
@@ -1568,8 +1568,8 @@ static rstatus_t memcache_copy_bulk(struct msg *dst, struct msg *src,
 /*
  * Post-coalesce handler is invoked when the message is a response to
  * the fragmented multi vector request - 'get' or 'gets' and all the
- * responses to the fragmented request vector has been received and
- * the fragmented request is consider to be done
+ * responses to the fragmented request vector have been received and
+ * the fragmented request is considered done
  */
 void memcache_post_coalesce(struct msg *request) {
   struct msg *response = request->selected_rsp;
@@ -1584,8 +1584,8 @@ void memcache_post_coalesce(struct msg *request) {
     return;
   }
 
-  for (i = 0; i < array_n(request->keys); i++) { /* for each  key */
-    sub_msg = request->frag_seq[i]->selected_rsp; /* get it's peer response */
+  for (i = 0; i < array_n(request->keys); i++) {  /* for each key */
+    sub_msg = request->frag_seq[i]->selected_rsp; /* get its peer response */
     if (sub_msg == NULL) {
       response->owner->err = 1;
       return;
@@ -1620,7 +1620,7 @@ struct msg *memcache_reconcile_responses(struct response_mgr *rspmgr) {
 
 /*
  * Placeholder function for memcache query rewrites.
- * No rewrites implemented toady.
+ * No rewrites implemented today.
  */
 rstatus_t memcache_rewrite_query(struct msg *orig_msg, struct context *ctx,
                                  bool *did_rewrite, struct msg **new_msg_ptr) {

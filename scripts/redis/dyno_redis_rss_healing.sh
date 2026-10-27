@@ -53,7 +53,7 @@ function restart_redis(){
            redis-server --port 22122 &
            sleep 10
 
-           # check if Redis running after relauncing it"
+           # check if Redis running after relaunching it"
            REDIS_RESTARTED=`ps aux | grep redis-server | grep 22122 | wc -l`
            if [[ ${REDIS_RESTARTED} -eq 1 ]]; then
                log "OK: redis launched - sleeping 20 seconds"
@@ -79,7 +79,7 @@ function restart_redis(){
 
 # Default values for threshold for available node memory in KB
 FREE_MIN_MEMORY=5000000
-# Default value for threshold for Redis RSS framgentation
+# Default value for threshold for Redis RSS fragmentation
 THRESHOLD_REDIS_RSS=1.5
 
 parser=0;
@@ -129,7 +129,7 @@ if [[ ${FREE_MEMORY} -le ${FREE_MIN_MEMORY} ]]; then
          log "OK: Redis BGREWRITEAOF starting"
          REWRITEAOF=`redis-cli -p 22122 BGREWRITEAOF | grep ERR | wc -l`
 
-         # check if BGREWRITEAOF can be competed successfully; otherwise fall back to synchronous SAVE.
+         # check if BGREWRITEAOF can be completed successfully; otherwise fall back to synchronous SAVE.
          if (( $REWRITEAOF != 0)); then
             log "INFO: Redis BGREWRITEAOF failed - falling back to synchronous SAVE"
             log "OK: Starting Redis SAVE - Note: client is stalled during that process"
@@ -140,7 +140,7 @@ if [[ ${FREE_MEMORY} -le ${FREE_MIN_MEMORY} ]]; then
             restart_redis
 
             # check if BGREWRITEAOF can be completed, after restarting Redis.
-	    # eventually want to have an AOF file stored. According to Redis documantation,
+	    # eventually want to have an AOF file stored. According to Redis documentation,
   	    # if both AOF and RDB have been saved, AOF is preferred when starting Redis.
 	    if [[ ${REDIS_UP} -ne 1 ]]; then
 		((RESULT++))

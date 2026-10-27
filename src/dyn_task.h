@@ -12,8 +12,8 @@ typedef void (*task_handler_1)(void *arg1);
 /* Initialize the task manager */
 rstatus_t task_mgr_init(void);
 
-/* creates a new task and adds to the internal datastructure
- * handler1 : a handler function that takes 1 arguemtn
+/* creates a new task and adds it to the internal datastructure
+ * handler1 : a handler function that takes 1 argument
  * arg1 : the argument that will be sent back to handler1
  * timeout : time in msec after which this task should get fired
  */
@@ -23,7 +23,7 @@ struct task *schedule_task_1(task_handler_1 handler1, void *arg1,
 /* Returns the time in msec to the next task */
 msec_t time_to_next_task(void);
 
-/* Execute expired tasks one after other calling individual handlers */
+/* Execute expired tasks one after another, calling individual handlers */
 /* limit = 0 (execute all expired tasks)
  *       > 0 (up to limit tasks)
  */

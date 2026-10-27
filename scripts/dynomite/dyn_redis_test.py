@@ -211,14 +211,14 @@ def main():
                       help="Operation to perform: write, read, del, swrite (single write), sread (polling single read), and sdel")
     parser.add_option("-l", "--logfile",
                       action="store",
-                      dest="logfle",
+                      dest="logfile",
                       default="/tmp/dynomite-test.log",
                       help="log file location. Default is /tmp/dynomite-test.log")
     parser.add_option("-H", "--host",
                       action="store",
                       dest="host",
                       default="127.0.0.1",
-                      help="targe host ip. Default is 127.0.0.1")
+                      help="target host ip. Default is 127.0.0.1")
     parser.add_option("-P", "--port",
                       action="store",
                       dest="port",

@@ -55,7 +55,7 @@
  * At the high level, each handler takes in a message: request or response
  * and produces the message for the next handler in the chain. The input
  * for a handler is either a request or response, but never both and
- * similarly the output of an handler is either a request or response or
+ * similarly the output of a handler is either a request or response or
  * nothing.
  *
  * Each handler itself is composed of two processing units:
@@ -118,11 +118,11 @@
  */
 
 /* Changes to message for consistency:
- * In order to implement consistency, following changes have been made to
+ * In order to implement consistency, the following changes have been made to
  * message peer: Previously there was a one to one relation between request and
- * a response both of which is struct message unfortunately. And due to the fact
- * that some requests are forwarded as is to the underlying server while
- * some are copied, the notion of 'peer' gets complicated. hence I changed
+ * a response both of which are struct message unfortunately. And due to the
+ * fact that some requests are forwarded as is to the underlying server while
+ * some are copied, the notion of 'peer' gets complicated. Hence I changed
  * its meaning somewhat. response->peer points to request that this
  * response belongs to. Right now request->peer does not have any meaning
  * other than some code in redis which does coalescing etc, and some other
@@ -140,7 +140,7 @@
  * is sent and the request can be deleted from the client hash table
  * outstanding_msgs_dict.
  *
- * So generally request->selected_rsp & response->peer is valid. Eventually it
+ * So generally request->selected_rsp & response->peer are valid. Eventually it
  * will be good to have different structures for request and response.
  */
 static uint64_t msg_id;          /* message id counter */
@@ -168,7 +168,7 @@ static struct string msg_type_strings[] = {MSG_TYPE_CODEC(DEFINE_ACTION)
                                                null_string};
 #undef DEFINE_ACTION
 
-// Determines if read repairs is enabled or not.
+// Determines if read repairs are enabled or not.
 bool g_read_repairs_enabled = false;
 
 static char *print_req(struct object *obj) {
@@ -741,7 +741,7 @@ void msg_dump(int level, struct msg *msg) {
 
 /**
  * Initialize the message queue.
- * @param[in] alloc_msgs_max Dynomite instance.
+ * @param[in] alloc_msgs_max Maximum number of messages to allocate.
  */
 void msg_init(size_t msgs_max) {
   log_debug(LOG_DEBUG, "msg size %zu", sizeof(struct msg));
@@ -841,7 +841,7 @@ uint32_t msg_payload_crc32(struct msg *rsp) {
   uint32_t crc = 0;
   struct mbuf *mbuf;
   /* Since we want to checksum only the payload, we have to start from the
-     payload offset. which is somewhere in the mbufs. Skip the mbufs till we
+     payload offset, which is somewhere in the mbufs. Skip the mbufs till we
      find the start of the payload. If there is no dyno header, we start from
      the beginning of the first mbuf */
   bool start_found = rsp->dmsg ? false : true;
@@ -1144,8 +1144,8 @@ static rstatus_t msg_send_chain(struct context *ctx, struct conn *conn,
 
   nsend = 0;
   /*
-   * readv() and writev() returns EINVAL if the sum of the iov_len values
-   * overflows an ssize_t value Or, the vector count iovcnt is less than
+   * readv() and writev() return EINVAL if the sum of the iov_len values
+   * overflows an ssize_t value, or the vector count iovcnt is less than
    * zero or greater than the permitted maximum.
    */
   limit = SSIZE_MAX;

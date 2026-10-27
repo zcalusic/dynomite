@@ -40,9 +40,9 @@ static void print_usage(void) {
       "line\n");
   printf("number of the input key.\n\n");
   printf(
-      "If the '-k' option is specified, then keys and tokens will output on "
+      "If the '-k' option is specified, then keys and tokens will be output on "
       "alternating\n");
-  printf("rows. Each key has 'KEY:' appended to the beginning of the line\n\n");
+  printf("rows. Each key line starts with 'KEY:'\n\n");
   printf("WARNING: dyno-hash-tool ONLY SUPPORTS MURMUR HASH (CURRENTLY)\n\n");
 }
 
@@ -110,12 +110,12 @@ int main(int argc, char **argv) {
   if (!strcmp(token_filename, "-"))
     ofp = stdout;
   else {
-    log_debug(LOG_VERB, "opening output stream %s", key_filename);
+    log_debug(LOG_VERB, "opening output stream %s", token_filename);
     ofp = fopen(token_filename, "w");
   }
 
   if (ofp == NULL) {
-    log_error("could not open input stream");
+    log_error("could not open output stream");
     exit(EXIT_FAILURE);
   }
 

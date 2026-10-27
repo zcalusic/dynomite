@@ -211,7 +211,7 @@ static rstatus_t dnode_client_handle_response(struct context *ctx, struct conn *
   // Fetch the original request
   struct msg *req = dictFetchValue(conn->outstanding_msgs_dict, &reqid);
   if (!req) {
-    log_notice("looks like we already cleanedup the request for %" PRIu64,
+    log_notice("looks like we already cleaned up the request for %" PRIu64,
                reqid);
     rsp_put(rsp);
     return DN_OK;
@@ -294,7 +294,7 @@ static void dnode_req_forward(struct context *ctx, struct conn *conn,
 
   ASSERT(req->dmsg != NULL);
   /* enqueue message (request) into client outq, if response is expected
-   * and its not marked for swallow */
+   * and it's not marked for swallow */
   if (req->expect_datastore_reply && !req->swallow) {
     conn_enqueue_outq(ctx, conn, req);
     req->rsp_handler = msg_local_one_rsp_handler;

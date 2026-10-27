@@ -32,13 +32,13 @@
  * have to walk the entire character sequence until the null terminating
  * character every time that the length of the String is requested
  *
- * The only way to create a String is to initialize it using, string_init()
- * and duplicate an existing String - string_duplicate() or copy an existing
- * raw sequence of character bytes - string_copy(). Such String's must be
+ * The only way to create a String is to initialize it using string_init(),
+ * duplicate an existing String - string_duplicate() or copy an existing
+ * raw sequence of character bytes - string_copy(). Such Strings must be
  * freed using string_deinit()
  *
- * We can also create String as reference to raw string - string_set_raw()
- * or to text string - string_set_text() or string(). Such String don't have
+ * We can also create a String as a reference to a raw string - string_set_raw()
+ * or to a text string - string_set_text() or string(). Such Strings don't have
  * to be freed.
  */
 

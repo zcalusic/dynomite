@@ -278,8 +278,9 @@ static bool dyn_parse_core(struct msg *r) {
 
   log_debug(LOG_DEBUG, "Not fully parsed yet!!!!!!");
 split:
-  // this is an attempt recovery when we got a bad message
-  // we try to look for the start the next good one and throw away the bad part
+  // this is an attempt at recovery when we got a bad message
+  // we try to look for the start of the next good one and throw away the bad
+  // part
   if (r->dyn_parse_state == DYN_START) {
     r->result = MSG_PARSE_AGAIN;
     if (b->last == b->end) {
@@ -463,7 +464,7 @@ void dyn_parse_req(struct msg *r, struct context *ctx) {
 
   // bad case
   if (log_loggable(LOG_VVERB)) {
-    log_debug(LOG_VVERB, "Bad or splitted message");  // fix me to do something
+    log_debug(LOG_VVERB, "Bad or split message");  // fix me to do something
     msg_dump(LOG_VVERB, r);
   }
   r->result = MSG_PARSE_AGAIN;

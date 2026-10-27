@@ -83,11 +83,11 @@ rstatus_t dnode_peer_req_forward(struct context *ctx, struct conn *c_conn,
       DMSG_REQ_FORWARD : DMSG_REQ;
 
   if (req->msg_routing == ROUTING_ALL_NODES_ALL_RACKS_ALL_DCS) {
-    // If the routing type is 'ROUTING_ALL_NODES_ALL_RACKS_ALL_DCS', the server that
-    // initiated the request will forward the request to all the nodes in the cluster
-    // globally. So, here we pretend as though the request is coming from the same DC,
-    // to avoid having the receiving DNODE from forwarding the request again to its
-    // peers in its local AZs.
+    // If the routing type is 'ROUTING_ALL_NODES_ALL_RACKS_ALL_DCS', the server
+    // that initiated the request will forward the request to all the nodes in
+    // the cluster globally. So, here we pretend as though the request is coming
+    // from the same DC, to keep the receiving DNODE from forwarding the request
+    // again to its peers in its local AZs.
     // TODO: Prefer a 2 hop mechanism for cross-DC traffic.
     msg_type = DMSG_REQ;
   }
@@ -165,7 +165,7 @@ conn->sd, msg->id, data->len, data->data);
  */
 
 /*
- * Sending a mbuf of gossip data over the wire to a peer
+ * Sending an mbuf of gossip data over the wire to a peer
  */
 void dnode_peer_gossip_forward(struct context *ctx, struct conn *conn,
                                struct mbuf *data_buf) {

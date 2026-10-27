@@ -18,14 +18,14 @@ I. Specification:
   a. MagicNumber: it is always 2014
   b. MessageId: sequence id of a message
   c. TypeId: please see the code for the list.  
-  d. BitField: the right most bit indicated an encrypted message, the 2nd bit from the
+  d. BitField: the rightmost bit indicated an encrypted message, the 2nd bit from the
      right a compressed one. Dynomite always sends 0; the built-in encryption was removed,
      and a message with the encryption bit set is rejected (the connection is closed).
   e. Version: version of the msg.  This usually depends on the version of the dynomite.
      This is needed during upgrading a live cluster with mixed versions.
   f. Same-dc: bit to indicate whether the communication is inter-dcs.
-              We should later to exchange node's metadata like rack, dc, and ip.
-  g. Data: carried the encrypted AES key; now always the single byte 'd' ('a' in
+              Later, we should exchange node's metadata like rack, dc, and ip.
+  g. Data: used to carry the encrypted AES key; now always the single byte 'd' ('a' in
      gossip messages), and ignored when received.
 
 3. Example:

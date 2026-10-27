@@ -247,9 +247,9 @@ int event_wait(struct event_base *evb, int timeout) {
 
     /*
      * port_getn() retrieves multiple events from a port. A port_getn()
-     * call will block until at least nreturned events is triggered. On
+     * call will block until at least nreturned events are triggered. On
      * a successful return event[] is populated with triggered events
-     * up to the maximum sized allowed by nevent. The number of entries
+     * up to the maximum size allowed by nevent. The number of entries
      * actually placed in event[] is saved in nreturned, which may be
      * more than what we asked for but less than nevent.
      */

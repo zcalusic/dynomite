@@ -181,9 +181,9 @@ static void server_ack_err(struct context *ctx, struct conn *conn,
       (c_conn->type == CONN_CLIENT) || (c_conn->type == CONN_DNODE_PEER_CLIENT),
       "c_conn %s", print_obj(c_conn));
 
-  // Create an appropriate response for the request so its propagated up;
-  // This response gets dropped in rsp_make_error anyways. But since this is
-  // an error path its ok with the overhead.
+  // Create an appropriate response for the request so it's propagated up.
+  // This response gets dropped in rsp_make_error anyway. But since this is
+  // an error path, it's ok with the overhead.
   // core_timeout() closes the connection with ETIMEDOUT.
   dyn_error_t dyn_error_code = conn->err == ETIMEDOUT
                                    ? STORAGE_TIMEOUT
@@ -620,7 +620,7 @@ struct msg *rsp_recv_next(struct context *ctx, struct conn *conn, bool alloc) {
     }
 
     /*
-     * We treat TCP half-close from a server different from how we treat
+     * We treat TCP half-close from a server differently from how we treat
      * those from a client. On a FIN from a server, we close the connection
      * immediately by sending the second FIN even if there were outstanding
      * or pending requests. This is actually a tricky part in the FA, as
@@ -858,8 +858,8 @@ static void req_server_enqueue_imsgq(struct context *ctx, struct conn *conn,
    * the server in_q; the clock continues to tick until it either expires
    * or the message is dequeued from the server out_q
    *
-   * expect_datastore_reply request have timeouts because client is expecting
-   * a response
+   * expect_datastore_reply requests have timeouts because the client is
+   * expecting a response
    */
   if (req->expect_datastore_reply) {
     msg_tmo_insert(req, conn);

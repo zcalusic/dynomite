@@ -52,7 +52,7 @@ The memcache protocol limits keys to 250 characters. Redis has no such limit, bu
 
 [Hash Tags](http://antirez.com/post/redis-presharding.html) enable you to use part of the key for calculating the hash. When the hash tag is present, we use the part of the key within the tag as the key to be used for consistent hashing. Otherwise, we use the full key as is. Hash tags enable you to map different keys to the same node as long as the part of the key within the tag is the same.
 
-For example, the configuration below specifies a two character hash_tag string - "{}". This means that keys "user:{user1}:ids" and "user:{user1}:tweets" map to the same node because we compute the hash on "user1". For a key like "user:user1:ids", we use the entire string "user:user1:ids" to compute the hash and it may map to a different node.
+For example, the configuration below specifies a two-character hash_tag string - "{}". This means that keys "user:{user1}:ids" and "user:{user1}:tweets" map to the same node because we compute the hash on "user1". For a key like "user:user1:ids", we use the entire string "user:user1:ids" to compute the hash and it may map to a different node.
 
     dyn_o_mite:
       listen: 127.0.0.1:8102
@@ -73,7 +73,7 @@ To follow the health of the datastore over time, graph these stats exposed by dy
 
 - **server_eof** is incremented when the server closes the connection normally, which should not happen because we use persistent connections.
 - **server_timedout** is incremented when the connection / request to the server timed out.
-- **server_err** is incremented for any other kinds of errors.
+- **server_err** is incremented for any other kind of error.
 - **server_ejects** is incremented on every failure of a datastore connection, and **server_ejected_at** holds the time of the last one. Despite their names, no server is ejected.
 
 ## Several Datastore Connections

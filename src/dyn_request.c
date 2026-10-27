@@ -112,7 +112,7 @@ bool req_done(struct conn *conn, struct msg *req) {
    * been received.
    *
    * Mark all fragments of the given request vector to be done to speed up
-   * future req_done calls for any of fragments of this request
+   * future req_done calls for any of the fragments of this request
    */
 
   req->fdone = 1;
@@ -138,7 +138,7 @@ bool req_done(struct conn *conn, struct msg *req) {
   log_debug(LOG_DEBUG,
             "req from c %d with fid %" PRIu64 " and %" PRIu32
             " "
-            "fragments is done",
+            "fragments are done",
             conn->sd, id, nfragment);
 
   return true;
@@ -167,7 +167,7 @@ rstatus_t req_make_reply(struct context *ctx, struct conn *conn,
  *
  * A request is in error, if there was an error in receiving response for the
  * given request. A multiget request is in error if there was an error in
- * receiving response for any its fragments.
+ * receiving response for any of its fragments.
  */
 bool req_error(struct conn *conn, struct msg *req) {
   struct msg *cmsg; /* current message */
@@ -213,7 +213,7 @@ ferror:
 
   /*
    * Mark all fragments of the given request to be in error to speed up
-   * future req_error calls for any of fragments of this request
+   * future req_error calls for any of the fragments of this request
    */
 
   req->is_ferror = 1;
@@ -235,7 +235,7 @@ ferror:
   log_debug(LOG_DEBUG,
             "req from c %d with fid %" PRIu64 " and %" PRIu32
             " "
-            "fragments is in error",
+            "fragments are in error",
             conn->sd, id, nfragment);
 
   return true;

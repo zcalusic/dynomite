@@ -956,7 +956,7 @@ rstatus_t gossip_pool_init(struct context *ctx) {
       unsigned char *local_ip4 =
           hostname_to_private_ip4((char *)gnode->name.data);
       // Use the local_ipv4 instead of the hostname, that's what we use for
-      // comparison eventually anyways
+      // comparison eventually anyway
       if (local_ip4 != NULL) {
         string_deinit(&gnode->name);
         string_copy_c(&gnode->name, local_ip4);
@@ -969,7 +969,7 @@ rstatus_t gossip_pool_init(struct context *ctx) {
     struct dyn_token *ptoken = array_get(&peer->tokens, 0);
     copy_dyn_token(ptoken, &gnode->token);
 
-    // copy socket stuffs
+    // copy socket stuff
 
     g_rack->nnodes++;
     // add into dicts

@@ -52,7 +52,7 @@ if [ -z "$ALLOC_MSGS" ]; then
        ALLOC_MSGS=800000
     elif [ "$EC2_INSTANCE_TYPE" == "r3.8xlarge" ]; then
        # r3.8xlarge: 244GB RAM (34.19GB available)
-       # Dynomite uper threshold is 1M
+       # Dynomite upper threshold is 1M
        ALLOC_MSGS=1000000
     fi
     echo "Instance Type: $EC2_INSTANCE_TYPE --> Allocated messages: $ALLOC_MSGS"

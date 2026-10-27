@@ -210,7 +210,7 @@ rstatus_t _conn_reuse(struct conn *p) {
 
     case AF_UNIX:
       /*
-       * bind() will fail if the pathname already exist. So, we call unlink()
+       * bind() will fail if the pathname already exists. So, we call unlink()
        * to delete the pathname, in case it already exists. If it does not
        * exist, unlink() returns error, which we ignore
        */

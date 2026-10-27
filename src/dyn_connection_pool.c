@@ -11,7 +11,7 @@ struct conn_pool {
                             // to each connection
   struct context *ctx;
   func_conn_init_t
-      func_conn_init;  // initializtion function for each connection
+      func_conn_init;  // initialization function for each connection
 
   // connection state
   struct array active_connections; /* pool connections */
@@ -177,9 +177,9 @@ static void _conn_pool_reconnect_task(void *arg1) {
 
 void conn_pool_notify_conn_errored(conn_pool_t *cp) {
   // check if reconnect task is active
-  // if so , never mind
+  // if so, never mind
   if (cp->scheduled_reconnect_task) {
-    log_notice("%s already have a reconnect task %p", print_obj(cp),
+    log_notice("%s already has a reconnect task %p", print_obj(cp),
                cp->scheduled_reconnect_task);
     return;
   }

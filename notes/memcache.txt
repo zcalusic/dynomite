@@ -17,7 +17,7 @@
   <data>    - uint8_t[]: data block
   <cas>     - uint64_t
 
-- Retrival Commands (get, gets):
+- Retrieval Commands (get, gets):
 
   get <key>\r\n
   get <key> [<key>]+\r\n
@@ -78,7 +78,7 @@
   NOT_FOUND\r\n
   DELETED\r\n
 
-- Retrival Responses:
+- Retrieval Responses:
 
   END\r\n
   VALUE <key> <flags> <datalen> [<cas>]\r\n<data>\r\nEND\r\n

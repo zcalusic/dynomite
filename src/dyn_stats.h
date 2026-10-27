@@ -91,7 +91,7 @@ struct server_pool;
          "# times we encountered a peer forwarding error")                     \
   ACTION(peer_requests, STATS_COUNTER, "# peer requests")                      \
   ACTION(peer_request_bytes, STATS_COUNTER, "total peer request bytes")        \
-  ACTION(peer_responses, STATS_COUNTER, "# peer respones")                     \
+  ACTION(peer_responses, STATS_COUNTER, "# peer responses")                    \
   ACTION(peer_response_bytes, STATS_COUNTER, "total peer response bytes")      \
   ACTION(peer_ejected_at, STATS_TIMESTAMP, "timestamp when peer was ejected")  \
   ACTION(peer_ejects, STATS_COUNTER, "# times a peer was ejected")             \
@@ -135,9 +135,9 @@ struct server_pool;
   ACTION(read_request_bytes, STATS_COUNTER, "total read request bytes")       \
   ACTION(write_requests, STATS_COUNTER, "# write requests")                   \
   ACTION(write_request_bytes, STATS_COUNTER, "total write request bytes")     \
-  ACTION(read_responses, STATS_COUNTER, "# read respones")                    \
+  ACTION(read_responses, STATS_COUNTER, "# read responses")                   \
   ACTION(read_response_bytes, STATS_COUNTER, "total read response bytes")     \
-  ACTION(write_responses, STATS_COUNTER, "# write respones")                  \
+  ACTION(write_responses, STATS_COUNTER, "# write responses")                 \
   ACTION(write_response_bytes, STATS_COUNTER, "total write response bytes")   \
   ACTION(in_queue, STATS_GAUGE, "# requests in incoming queue")               \
   ACTION(in_queue_bytes, STATS_GAUGE,                                         \
@@ -182,7 +182,7 @@ typedef enum {
   CMD_WRITES_ONLY,
   CMD_RESUMING,
   CMD_NORMAL,
-  CMD_BOOTSTRAPING,
+  CMD_BOOTSTRAPPING,
   CMD_LEAVING,
   CMD_PEER_DOWN,
   CMD_PEER_UP,

@@ -45,10 +45,10 @@ class DynoNode(Node):
         self.proc_future.wait()
 
     def teardown(self):
-        # First teardown the Dynomite node.
+        # First tear down the Dynomite node.
         self.stop_dynomite()
 
-        # Lastly, teardown the storage node.
+        # Lastly, tear down the storage node.
         self.data_store_node.teardown()
 
     def __enter__(self):

@@ -295,9 +295,9 @@ static void dnode_peer_ack_err(struct context *ctx, struct conn *conn,
       "conn:%s c_conn:%s, req %" PRIu64 ":%" PRIu64, print_obj(conn),
       print_obj(c_conn), req->id, req->parent_id);
 
-  // Create an appropriate response for the request so its propagated up;
-  // This response gets dropped in rsp_make_error anyways. But since this is
-  // an error path its ok with the overhead.
+  // Create an appropriate response for the request so it's propagated up.
+  // This response gets dropped in rsp_make_error anyway. But since this is
+  // an error path, it's ok with the overhead.
   // core_timeout() closes the connection with ETIMEDOUT.
   dyn_error_t dyn_error_code =
       conn->err == ETIMEDOUT ? PEER_TIMEOUT : PEER_CONNECTION_REFUSE;
@@ -404,7 +404,7 @@ static void dnode_peer_close(struct context *ctx, struct conn *conn) {
     /* dequeue the message (request) from peer inq */
     conn_dequeue_inq(ctx, conn, req);
     // We should also remove the req from the timeout rbtree.
-    // for outq, its already taken care of
+    // for outq, it's already taken care of
     msg_tmo_delete(req);
     dnode_peer_ack_err(ctx, conn, req);
     in_counter++;
@@ -503,7 +503,7 @@ rstatus_t dnode_peer_forward_state(void *rmsg) {
 
   struct conn *conn = dnode_peer_conn(peer, 0);
   if (conn == NULL) {
-    // running out of connection due to memory exhaust
+    // running out of connections due to memory exhaustion
     log_debug(LOG_ERR, "Unable to obtain a connection object");
     mbuf_put(mbuf);
     return DN_ERROR;
@@ -543,7 +543,7 @@ rstatus_t dnode_peer_handshake_announcing(void *rmsg) {
     return DN_ENOMEM;
   }
 
-  // annoucing myself by sending msg:
+  // announcing myself by sending msg:
   // 'dc$rack$token,started_ts,node_state,node_dns'
   mbuf_write_string(mbuf, &sp->dc);
   mbuf_write_char(mbuf, '$');
@@ -577,7 +577,7 @@ rstatus_t dnode_peer_handshake_announcing(void *rmsg) {
 
     struct conn *conn = dnode_peer_conn(peer, 0);
     if (conn == NULL) {
-      // running out of connection due to memory exhaust
+      // running out of connections due to memory exhaustion
       log_debug(LOG_DEBUG, "Unable to obtain a connection object");
       mbuf_put(mbuf);
       return DN_ERROR;
@@ -731,7 +731,7 @@ rstatus_t dnode_peer_replace(void *rmsg) {
 
     dnode_peer_each_preconnect(&s);
   } else {
-    log_debug(LOG_INFO, "Unable to find any node matched the token");
+    log_debug(LOG_INFO, "Unable to find any node matching the token");
   }
 
   return DN_OK;
@@ -988,7 +988,7 @@ static void dnode_rsp_forward_match(struct context *ctx, struct conn *peer_conn,
       "c_conn %s", print_obj(c_conn));
 
   dnode_rsp_forward_stats(ctx, rsp);
-  // c_conn owns respnse now
+  // c_conn owns response now
   status = conn_handle_response(ctx, c_conn,
                                 req->parent_id ? req->parent_id : req->id, rsp);
   IGNORE_RET_VAL(status);
@@ -1001,8 +1001,8 @@ static void dnode_rsp_forward_match(struct context *ctx, struct conn *peer_conn,
 /* There are chances that the request to the remote peer or its response got
  * dropped. Hence we may not always receive a response to the request at the
  * head of the FIFO. Hence what we do is we mark that request as errored and
- * move on the next one in the outgoing queue. This works since we always have
- * message ids in monotonically increasing order.
+ * move on to the next one in the outgoing queue. This works since we always
+ * have message ids in monotonically increasing order.
  */
 static void dnode_rsp_forward(struct context *ctx, struct conn *peer_conn,
                               struct msg *rsp) {
@@ -1051,7 +1051,7 @@ static void dnode_rsp_forward(struct context *ctx, struct conn *peer_conn,
 
     if (req->consistency == DC_ONE) {
       if (req->swallow) {
-        // swallow the request and move on the next one
+        // swallow the request and move on to the next one
         dnode_rsp_swallow(ctx, peer_conn, req, NULL);
         continue;
       }
@@ -1064,7 +1064,7 @@ static void dnode_rsp_forward(struct context *ctx, struct conn *peer_conn,
          (req->consistency == DC_SAFE_QUORUM)) &&
         !peer_conn->same_dc) {
       if (req->swallow) {
-        // swallow the request and move on the next one
+        // swallow the request and move on to the next one
         dnode_rsp_swallow(ctx, peer_conn, req, NULL);
         continue;
       }
@@ -1086,7 +1086,7 @@ static void dnode_rsp_forward(struct context *ctx, struct conn *peer_conn,
     conn_dequeue_outq(ctx, peer_conn, req);
     req->done = 1;
 
-    // Create an appropriate response for the request so its propagated up;
+    // Create an appropriate response for the request so it's propagated up.
     struct msg *err_rsp = msg_get(peer_conn, false, __FUNCTION__);
     err_rsp->is_error = req->is_error = 1;
     err_rsp->error_code = req->error_code = BAD_FORMAT;
@@ -1216,7 +1216,7 @@ static struct msg *dnode_req_send_next(struct context *ctx, struct conn *conn) {
 
   // TODO: Not the right way to use time_t directly. FIXME
   uint32_t now = (uint32_t)time(NULL);
-  // throttling the sending traffics here
+  // throttling the sending traffic here
   if (!conn->same_dc) {
     if (conn->last_sent != 0) {
       uint32_t elapsed_time = now - conn->last_sent;

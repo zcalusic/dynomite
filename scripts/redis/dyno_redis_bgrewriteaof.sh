@@ -1,5 +1,5 @@
 #!/bin/bash
-# The following script checks runs Redis background rewrite AOF.
+# The following script runs a Redis background AOF rewrite.
 
 declare -i RESULT
 
@@ -16,7 +16,7 @@ fi
 
 log "OK: Redis BGREWRITEAOF starting"
 
-# check if BGREWRITEAOF can be competed successfully.
+# check if BGREWRITEAOF can be completed successfully.
 REWRITEAOF=`redis-cli -p 22122 BGREWRITEAOF | grep ERR | wc -l`
 if (( $REWRITEAOF != 0)); then
     ((RESULT++))

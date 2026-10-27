@@ -89,7 +89,7 @@ stop_dynomite () {
             --pidfile $PIDFILE --exec $DAEMON -- $DAEMON_OPTS
         RETVAL="$?"
     else
-        RETVAL=1 # deamon already stopped
+        RETVAL=1 # daemon already stopped
         fi
 
         sleep 1

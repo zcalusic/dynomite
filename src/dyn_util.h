@@ -75,7 +75,7 @@
 #define DN_UINTMAX_MAXLEN DN_UINT64_MAXLEN
 
 /*
- * Make data 'd' or pointer 'p', n-byte aligned, where n is a power of 2
+ * Make data 'd' or pointer 'p', n-byte aligned, where n is a power
  * of 2.
  */
 #define DN_ALIGNMENT sizeof(unsigned long) /* platform word */
@@ -84,7 +84,7 @@
   (void *)(((uintptr_t)(p) + ((uintptr_t)n - 1)) & ~((uintptr_t)n - 1))
 
 /*
- * Wrapper to workaround well known, safe, implicit type conversion when
+ * Wrapper to work around well-known, safe, implicit type conversion when
  * invoking system calls.
  */
 #define dn_gethostname(_name, _len) gethostname((char *)_name, (size_t)_len)
@@ -114,7 +114,7 @@ bool dn_valid_port(int n);
 /*
  * Memory allocation and free wrappers.
  *
- * These wrappers enables us to loosely detect double free, dangling
+ * These wrappers enable us to loosely detect double free, dangling
  * pointer access and zero-byte alloc.
  */
 #define dn_alloc(_s) _dn_alloc((size_t)(_s), __FILE__, __LINE__)

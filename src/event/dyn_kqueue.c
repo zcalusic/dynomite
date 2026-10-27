@@ -250,7 +250,7 @@ int event_wait(struct event_base *evb, int timeout) {
      * kevent() is used both to register new events with kqueue, and to
      * retrieve any pending events. Changes that should be applied to the
      * kqueue are given in the change[] and any returned events are placed
-     * in event[], up to the maximum sized allowed by nevent. The number
+     * in event[], up to the maximum size allowed by nevent. The number
      * of entries actually placed in event[] is returned by the kevent()
      * call and saved in nreturned.
      *
@@ -286,7 +286,7 @@ int event_wait(struct event_base *evb, int timeout) {
         /*
          * If an error occurs while processing an element of the
          * change[] and there is enough room in the event[], then the
-         * event event will be placed in the eventlist with EV_ERROR
+         * event will be placed in the eventlist with EV_ERROR
          * set in flags and the system error(errno) in data.
          */
         if (ev->flags & EV_ERROR) {
