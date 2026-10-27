@@ -2,7 +2,7 @@
 > maintained by [@zcalusic](https://github.com/zcalusic). It is not affiliated with or endorsed by
 > Netflix. Upstream is no longer actively maintained, so this fork collects fixes needed to keep
 > Dynomite building and running on current systems (newer GCC and Debian releases, memory leak and
-> crash fixes). Releases are tagged as `v0.6.22-N`. A Docker image,
+> crash fixes). Releases are tagged `vX.Y.Z`, starting with `v0.9.0`. A Docker image,
 > [zcalusic/dynomite](https://hub.docker.com/r/zcalusic/dynomite/), is built from
 > [zcalusic/dockerfiles](https://github.com/zcalusic/dockerfiles/tree/master/dynomite). Please
 > report issues for this fork here, not upstream.
@@ -21,7 +21,7 @@ The ultimate goal with Dynomite is to be able to implement high availability and
 
 ## Workflow
 
-All development happens on the `master` branch, the only branch in this fork. Releases are signed tags named `v0.6.22-N`, published as [GitHub releases](https://github.com/zcalusic/dynomite/releases); the Docker image is built from the latest release. Every push to `master` is built and tested by [CI](https://github.com/zcalusic/dynomite/actions/workflows/ci.yml).
+All development happens on the `master` branch, the only branch in this fork. Releases are signed tags named `vX.Y.Z` (`v0.9.0`, `v0.9.1`, ...; before `v0.9.0` they were `v0.6.22-N`), published as [GitHub releases](https://github.com/zcalusic/dynomite/releases); the Docker image is built from the latest release. Every push to `master` is built and tested by [CI](https://github.com/zcalusic/dynomite/actions/workflows/ci.yml).
 
 ## Build
 
