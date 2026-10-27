@@ -39,6 +39,7 @@ rstatus_t rspmgr_submit_response(struct response_mgr *rspmgr, struct msg *rsp);
 bool rspmgr_check_is_done(struct response_mgr *rspmgr);
 struct msg *rspmgr_get_response(struct context *ctx, struct response_mgr *rspmgr);
 void rspmgr_free_response(struct response_mgr *rspmgr, struct msg *dont_free);
+struct msg *rspmgr_no_quorum_error(struct response_mgr *rspmgr);
 void rspmgr_free_other_responses(struct response_mgr *rspmgr,
                                  struct msg *dont_free);
 rstatus_t msg_local_one_rsp_handler(struct context *ctx, struct msg *req, struct msg *rsp);

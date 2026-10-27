@@ -306,6 +306,24 @@ struct msg *rspmgr_get_response(struct context *ctx, struct response_mgr *rspmgr
   return g_reconcile_responses(rspmgr);
 }
 
+/*
+ * The error for replicas that don't agree. It replaces all their responses,
+ * so they are freed first: the msg and the mbufs they give back are what
+ * msg_get_error() takes, which can't then fail on alloc_msgs_max or memory.
+ */
+struct msg *rspmgr_no_quorum_error(struct response_mgr *rspmgr) {
+  int i;
+
+  for (i = 0; i < rspmgr->good_responses; i++) {
+    rsp_put(rspmgr->responses[i]);
+    rspmgr->responses[i] = NULL;
+  }
+  rsp_put(rspmgr->err_rsp);
+  rspmgr->err_rsp = msg_get_error(NULL, DYNOMITE_NO_QUORUM_ACHIEVED, 0);
+  rspmgr->error_responses++;
+  return rspmgr->err_rsp;
+}
+
 void rspmgr_free_other_responses(struct response_mgr *rspmgr,
                                  struct msg *dont_free) {
   int i;

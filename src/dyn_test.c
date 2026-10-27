@@ -1427,6 +1427,99 @@ out:
   return status;
 }
 
+/* Take every msg off the free list, so the next msg_get() allocates. */
+static rstatus_t take_free_msgs(struct conn *conn, struct msg ***taken,
+                                size_t *ntaken) {
+  size_t n = msg_free_queue_size();
+  struct msg **all = dn_realloc(*taken, (*ntaken + n) * sizeof(*all));
+
+  if (all == NULL && *ntaken + n > 0) return DN_ENOMEM;
+  *taken = all;
+  for (size_t i = 0; i < n; i++) {
+    all[(*ntaken)++] = msg_get(conn, true, __FUNCTION__);
+  }
+  return DN_OK;
+}
+
+/*
+ * Replicas that disagree under DC_SAFE_QUORUM: the client gets a "no quorum"
+ * error, also when no msg can be allocated (alloc_msgs_max reached, the free
+ * list empty). This used to return NULL, which the client code dereferenced.
+ */
+static rstatus_t no_quorum_run(struct conn *conn, data_store_t store) {
+  static char buf[256];
+  const char *name, *get, *rsp[2];
+  struct msg *(*reconcile)(struct response_mgr *);
+  struct response_mgr rspmgr;
+  struct msg **taken = NULL, *err;
+  size_t ntaken = 0;
+  rstatus_t status = DN_ERROR;
+
+  if (store == DATA_REDIS) {
+    name = "redis";
+    get = "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n";
+    rsp[0] = "$3\r\none\r\n";
+    rsp[1] = "$3\r\ntwo\r\n";
+    reconcile = redis_reconcile_responses;
+  } else {
+    name = "memcache";
+    get = "get k\r\n";
+    rsp[0] = "VALUE k 0 3\r\none\r\nEND\r\n";
+    rsp[1] = "VALUE k 0 3\r\ntwo\r\nEND\r\n";
+    reconcile = memcache_reconcile_responses;
+  }
+  g_data_store = store;
+  conn->dyn_mode = 0;
+  memset(&rspmgr, 0, sizeof(rspmgr));
+  rspmgr.msg = repair_parse(conn, true, get);
+  if (rspmgr.msg == NULL) return DN_ERROR;
+  rspmgr.msg->consistency = DC_SAFE_QUORUM;
+  for (int i = 0; i < 2; i++) {
+    rspmgr.responses[i] = repair_parse(conn, false, rsp[i]);
+    if (rspmgr.responses[i] == NULL) goto out;
+    rspmgr.good_responses++;
+  }
+  rspmgr.quorum_responses = 2;
+
+  if (take_free_msgs(conn, &taken, &ntaken) != DN_OK) goto out;
+  msg_init(msg_alloc_msgs());
+
+  err = reconcile(&rspmgr);
+  if (err == NULL) {
+    log_error("%s: no error reply without a free msg", name);
+  } else if (!err->is_error ||
+             err->dyn_error_code != DYNOMITE_NO_QUORUM_ACHIEVED ||
+             strstr(repair_data(err, buf, sizeof(buf)),
+                    "Failed to achieve Quorum") == NULL) {
+    log_error("%s: wrong error reply '%s'", name, buf);
+  } else {
+    status = DN_OK;
+  }
+
+out:
+  /* restore the limit with an empty free list, msg_init() drops it */
+  if (take_free_msgs(conn, &taken, &ntaken) != DN_OK) status = DN_ERROR;
+  msg_init(TEST_ALLOC_MSGS_MAX);
+  for (size_t i = 0; i < ntaken; i++) msg_put(taken[i]);
+  dn_free(taken);
+  rspmgr_free_other_responses(&rspmgr, NULL);
+  msg_put(rspmgr.msg);
+  return status;
+}
+
+static rstatus_t test_no_quorum(struct conn *conn) {
+  static const data_store_t stores[] = {DATA_REDIS, DATA_MEMCACHE};
+  size_t nfailed = 0;
+
+  print_banner("NO QUORUM");
+  for (size_t i = 0; i < sizeof(stores) / sizeof(stores[0]); i++) {
+    if (no_quorum_run(conn, stores[i]) != DN_OK) nfailed++;
+  }
+  loga("no quorum runs: %zu, failed: %zu", sizeof(stores) / sizeof(stores[0]),
+       nfailed);
+  return nfailed == 0 ? DN_OK : DN_ERROR;
+}
+
 static rstatus_t test_rewrite(struct conn *conn) {
   static const size_t mbuf_sizes[] = {MBUF_MIN_SIZE, TEST_MBUF_SIZE};
   static char longest[TEST_MBUF_SIZE];
@@ -2366,6 +2459,12 @@ int main(int argc, char **argv) {
   ret = test_read_repair(conn);
   if (ret != DN_OK) {
     loga("Error in testing read repairs!!!");
+    goto err_out;
+  }
+
+  ret = test_no_quorum(conn);
+  if (ret != DN_OK) {
+    loga("Error in testing replies without quorum!!!");
     goto err_out;
   }
 
