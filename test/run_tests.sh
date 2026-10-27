@@ -6,6 +6,8 @@
 #
 # Without request files, runs test/no_quorum_request.yaml,
 # test/safe_quorum_request.yaml and test/each_safe_quorum_request.yaml.
+# Each cluster runs plaintext and with mutual TLS between its nodes; the
+# peer TLS checks in test/tls_test.py come last.
 
 usage() {
     echo "usage: $0 [-n|--no-rebuild] [request_file ...]" >&2
@@ -44,4 +46,9 @@ fi
 for request_file in "$@"; do
     echo "Running functional tests with ${request_file}"
     test/cluster_generator.py "${request_file}"
+    echo "Running functional tests with ${request_file} and peer TLS"
+    test/cluster_generator.py --peer-tls "${request_file}"
 done
+
+echo "Running the peer TLS tests"
+test/tls_test.py

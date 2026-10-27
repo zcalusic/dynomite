@@ -333,7 +333,8 @@ def send_peer_request(node, key, flags):
 
 def run_encrypted_peer_msg_test(c):
     print("Running ENCRYPTED_PEER_MSG test")
-    node = c.get_dynomite_cluster().nodes[0]
+    cluster = c.get_dynomite_cluster()
+    node = cluster.nodes[0]
     store = node.get_data_store_connection()
     # Built-in peer encryption was removed: a message with the encryption bit
     # gets the connection closed, without a reply or a write.
@@ -345,6 +346,12 @@ def run_encrypted_peer_msg_test(c):
     # the bit and not a malformed message.
     key = create_key('ENCRYPTED_PEER_MSG', 'plain')
     received = send_peer_request(node, key, 0)
+    if cluster.peer_tls:
+        # With peer TLS, a plaintext message is closed before it is read.
+        assert received == b'', received
+        assert not store.exists(key)
+        print("\t-Both plaintext peer messages rejected with peer TLS")
+        return
     assert received.endswith(b'+OK\r\n'), received
     assert store.get(key) == b'value'
     print("\t-Encrypted peer message rejected, plaintext one accepted")

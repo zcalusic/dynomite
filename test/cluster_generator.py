@@ -25,6 +25,8 @@ def main():
             'tests against it')
     parser.add_argument('request_file', default='test/no_quorum_request.yaml',
         help='YAML file describing desired cluster', nargs='?')
+    parser.add_argument('--peer-tls', action='store_true',
+        help='mutual TLS between the nodes, with certificates made on the fly')
     args = parser.parse_args()
 
     # Setup a temporary directory to store logs and configs for this cluster.
@@ -38,7 +40,7 @@ def main():
     standalone_redis = RedisNode(standalone_redis_ip, REDIS_PORT)
 
     # Create a Dynomite cluster.
-    dynomite_cluster = DynoCluster(args.request_file, ips)
+    dynomite_cluster = DynoCluster(args.request_file, ips, peer_tls=args.peer_tls)
 
     with ExitStack() as stack:
         # Make sure to change the working directory to the temp dir before running the

@@ -9,6 +9,7 @@ import signal
 import yaml
 
 from dyno_node import DynoNode
+from tls_util import make_cluster_certs
 from utils import *
 
 # TODO: Make this path absolute based on param instead of relative.
@@ -36,6 +37,8 @@ class DynoSpec(namedtuple('DynoSpec', 'ip dnode_port client_port rack dc token '
                  remote_connections, req_conf):
         self.data_store_port = REDIS_PORT
         self.stats_port = STATS_PORT
+        # dict(cert=, key=, ca=) with the PEM file paths for peer TLS, or None
+        self.tls_files = None
 
     def _generate_config(self, seeds_list):
         conf = dict(DYN_O_MITE_DEFAULTS)
@@ -52,11 +55,17 @@ class DynoSpec(namedtuple('DynoSpec', 'ip dnode_port client_port rack dc token '
         conf['tokens'] = self.token
         # dynomite needs at least 1; it used to take 0 for unset and use 1
         conf['local_peer_connections'] = max(1, self.local_connections)
-        conf['remote_peer_connections'] = self.remote_connections
+        conf['remote_peer_connections'] = max(1, self.remote_connections)
 
         # Add configurations based on the request.
         for conf_key, conf_value in self.req_conf.items():
             conf[conf_key] = conf_value
+
+        if self.tls_files is not None:
+            conf['peer_tls'] = True
+            conf['peer_tls_cert'] = self.tls_files['cert']
+            conf['peer_tls_key'] = self.tls_files['key']
+            conf['peer_tls_ca'] = self.tls_files['ca']
         return dict(dyn_o_mite=conf)
 
     def write_config(self, seeds_list):
@@ -67,12 +76,14 @@ class DynoSpec(namedtuple('DynoSpec', 'ip dnode_port client_port rack dc token '
         return filename
 
 class DynoCluster(object):
-    def __init__(self, request_file, ips):
+    def __init__(self, request_file, ips, peer_tls=False):
         # Load the YAML file describing the cluster.
         with open(request_file, 'r') as fh:
             self.request = yaml.safe_load(fh)
 
         self.ips = ips
+        # Mutual TLS between the nodes, with certificates made at launch.
+        self.peer_tls = peer_tls
         self.nodes = []
         self.counts_by_dc = {}
         self.counts_by_rack = {}
@@ -133,8 +144,18 @@ class DynoCluster(object):
     def _delete_running_cluster_file(self):
         os.remove(CLUSTER_DESC_FILEPATH)
 
+    def _make_certs(self):
+        """A CA and a certificate per node, in tls/ under the test directory."""
+        tls_dir = os.path.abspath('tls')
+        ca_cert, certs = make_cluster_certs(tls_dir, [spec.ip for spec in self.specs])
+        for spec in self.specs:
+            key, cert = certs[spec.ip]
+            spec.tls_files = dict(cert=cert, key=key, ca=ca_cert)
+
     def launch(self):
         self._pre_launch_sanity_check()
+        if self.peer_tls:
+            self._make_certs()
         # Get the list of seeds from the specification for each node.
         seeds_list = [spec.seed_string for spec in self.specs]
         # Launch each individual Dyno node.

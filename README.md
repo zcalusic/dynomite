@@ -63,7 +63,7 @@ The functional tests start a local cluster of Dynomite and Redis nodes and compa
 
     $ sudo apt-get install openssl redis-server python3 python3-plumbum python3-redis python3-requests python3-yaml
 
-Then run them from the repository; this builds Dynomite with debug logs first (`-n` skips the build):
+Then run them from the repository; this builds Dynomite with debug logs first (`-n` skips the build). Each cluster runs plaintext and with mutual TLS between its nodes (certificates are made on the fly with `openssl`), and `test/tls_test.py` checks what the TLS peer port accepts and rejects:
 
     $ test/run_tests.sh
 
