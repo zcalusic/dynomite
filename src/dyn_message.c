@@ -1256,7 +1256,7 @@ rstatus_t msg_send(struct context *ctx, struct conn *conn) {
       return status;
     }
 
-    if ((conn->type == CONN_SERVER || conn->type == CONN_DNODE_PEER_SERVER) &&
+    if (conn->type == CONN_DNODE_PEER_SERVER &&
         TAILQ_COUNT(&conn->omsg_q) > MAX_CONN_QUEUE_SIZE) {
       conn->send_ready = 0;
       conn->err = ENOTRECOVERABLE;
