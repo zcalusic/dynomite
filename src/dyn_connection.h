@@ -43,7 +43,11 @@
 #include "dyn_string.h"
 #include "dyn_types.h"
 
-#define MAX_CONN_QUEUE_SIZE 20000
+/*
+ * A peer conn with this many requests queued, to send and sent, refuses new
+ * ones: a slow peer, like one in a remote DC, doesn't take up all memory.
+ */
+#define PEER_QUEUE_MAX 20000
 /*
  * A client or peer with this many requests waiting for their replies isn't
  * read until it is down to CONN_RECV_RESUME: TCP pushes back on it.
@@ -139,6 +143,7 @@ struct conn {
   unsigned eof : 1;              /* eof? aka passive close? */
   unsigned waiting_to_unref : 1; /* eof? aka passive close? */
   unsigned recv_paused : 1;      /* too many requests outstanding */
+  unsigned queue_full : 1;       /* peer conn refusing requests */
   unsigned done : 1;             /* done? aka close? */
   unsigned dyn_mode : 1;         /* is a dyn connection? */
   unsigned same_dc : 1;  /* bit to indicate whether a peer conn is same DC */

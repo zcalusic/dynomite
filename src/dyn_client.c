@@ -779,6 +779,30 @@ rstatus_t req_forward_to_peer(struct context *ctx, struct conn *c_conn,
     goto error;
   }
 
+  // Refuse new requests to a peer that has too many queued; the queued ones
+  // carry on.
+  uint64_t queued = TAILQ_COUNT(&p_conn->imsg_q) + TAILQ_COUNT(&p_conn->omsg_q);
+  if (queued >= PEER_QUEUE_MAX) {
+    if (!p_conn->queue_full) {
+      log_warn("%s has %" PRIu64 " requests queued, refusing new ones",
+               print_obj(p_conn), queued);
+      p_conn->queue_full = 1;
+    }
+    if (same_dc) {
+      stats_pool_incr(ctx, peer_queue_full_requests);
+    } else {
+      stats_pool_incr(ctx, remote_peer_queue_full_requests);
+    }
+    status = DN_ERROR;
+    *dyn_error_code = PEER_QUEUE_FULL;
+    goto error;
+  }
+  if (p_conn->queue_full) {
+    log_warn("%s has %" PRIu64 " requests queued, accepting new ones again",
+             print_obj(p_conn), queued);
+    p_conn->queue_full = 0;
+  }
+
   // Finally, forward the message to a peer DNODE.
   status = dnode_peer_req_forward(
       ctx, c_conn, p_conn, rack_msg, key, keylen, dyn_error_code);

@@ -299,6 +299,7 @@ typedef enum dyn_error {
   PEER_TIMEOUT,
   STORAGE_TIMEOUT,
   STORAGE_NOT_CONNECTED,
+  PEER_QUEUE_FULL,
 } dyn_error_t;
 
 static inline char *dn_strerror(dyn_error_t err) {
@@ -329,6 +330,8 @@ static inline char *dn_strerror(dyn_error_t err) {
       return "Failed to achieve Quorum";
     case DYNOMITE_SCRIPT_SPANS_NODES:
       return "Keys in the script cannot span multiple nodes";
+    case PEER_QUEUE_FULL:
+      return "Peer Node has too many requests queued";
     default:
       return strerror(err);
   }
@@ -345,6 +348,7 @@ static inline char *dyn_error_source(dyn_error_t err) {
     case PEER_HOST_DOWN:
     case PEER_HOST_NOT_CONNECTED:
     case PEER_TIMEOUT:
+    case PEER_QUEUE_FULL:
       return "Peer:";
     case STORAGE_CONNECTION_REFUSE:
     case STORAGE_TIMEOUT:

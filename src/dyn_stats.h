@@ -70,6 +70,10 @@ struct server_pool;
          "# remote dc peer timedout requests")                                 \
   ACTION(remote_peer_failover_requests, STATS_COUNTER,                         \
          "# remote dc peer failover requests")                                 \
+  ACTION(peer_queue_full_requests, STATS_COUNTER,                              \
+         "# local dc peer requests refused, too many queued")                  \
+  ACTION(remote_peer_queue_full_requests, STATS_COUNTER,                       \
+         "# remote dc peer requests refused, too many queued")                 \
   ACTION(peer_eof, STATS_COUNTER, "# eof on peer connections")                 \
   ACTION(peer_err, STATS_COUNTER, "# errors on peer connections")              \
   ACTION(peer_timedout, STATS_COUNTER,                                         \
