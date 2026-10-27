@@ -816,18 +816,21 @@ static char *conf_add_dyn_server(struct conf *cf, struct command *cmd,
   pnamelen = namelen > 0 ? value->len - (namelen + 1) : value->len;
   status = string_copy(&field->pname, pname, pnamelen);
   if (status != DN_OK) {
+    conf_server_deinit(field);
     array_pop(a);
     return CONF_ERROR;
   }
 
   status = string_copy(&field->dc, dc, dclen);
   if (status != DN_OK) {
+    conf_server_deinit(field);
     array_pop(a);
     return CONF_ERROR;
   }
 
   status = string_copy(&field->rack, rack, racklen);
   if (status != DN_OK) {
+    conf_server_deinit(field);
     array_pop(a);
     return CONF_ERROR;
   }
@@ -835,6 +838,8 @@ static char *conf_add_dyn_server(struct conf *cf, struct command *cmd,
   uint8_t *t_end = tokens + tokenslen;
   status = derive_tokens(&field->tokens, tokens, t_end);
   if (status != DN_OK) {
+    /* a popped entry isn't freed by conf_pool_deinit() */
+    conf_server_deinit(field);
     array_pop(a);
     return "has an invalid token in \"hostname:port:rack:dc:tokens [name]\"";
   }
