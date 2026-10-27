@@ -485,6 +485,9 @@ struct msg {
                                or remote region or cross rack */
   uint32_t awaiting_rsps;
   struct msg *selected_rsp;
+  /* An error rsp made on this node for a peer in another DC: that peer's DC,
+   * so DC_EACH_SAFE_QUORUM counts the error for it. */
+  struct string *peer_dc;
 
   struct rbnode tmo_rbe; /* entry in rbtree */
 

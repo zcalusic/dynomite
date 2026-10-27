@@ -495,9 +495,15 @@ send_rsp_integer(struct context *ctx, struct conn *c_conn, struct msg *req)
 }
 */
 
-/* Expects req to be in the conn's outq already */
-void req_forward_error(struct context *ctx, struct conn *conn, struct msg *req,
-                       err_t error_code, err_t dyn_error_code) {
+/*
+ * Answers 'req' with an error. 'peer_dc' is the DC of the peer that 'req'
+ * couldn't be sent to, when that's another DC, or NULL.
+ * Expects req to be in the conn's outq already.
+ */
+static void req_forward_error_for_dc(struct context *ctx, struct conn *conn,
+                                     struct msg *req, err_t error_code,
+                                     err_t dyn_error_code,
+                                     struct string *peer_dc) {
   log_info("%s FORWARD FAILED %s len %" PRIu32 ": %d:%s", print_obj(conn),
            print_obj(req), req->mlen, error_code, dn_strerror(error_code));
 
@@ -517,6 +523,7 @@ void req_forward_error(struct context *ctx, struct conn *conn, struct msg *req,
     return;
   }
   rsp->peer = req;
+  rsp->peer_dc = peer_dc;
   // TODO: Check if this is required in response
   rsp->dmsg = dmsg_get();
   rsp->dmsg->id = req->id;
@@ -524,6 +531,12 @@ void req_forward_error(struct context *ctx, struct conn *conn, struct msg *req,
   rstatus_t status = conn_handle_response(ctx,
       conn, req->parent_id ? req->parent_id : req->id, rsp);
   IGNORE_RET_VAL(status);
+}
+
+/* Expects req to be in the conn's outq already */
+void req_forward_error(struct context *ctx, struct conn *conn, struct msg *req,
+                       err_t error_code, err_t dyn_error_code) {
+  req_forward_error_for_dc(ctx, conn, req, error_code, dyn_error_code, NULL);
 }
 
 static void req_redis_stats(struct context *ctx, struct msg *req) {
@@ -814,9 +827,14 @@ rstatus_t req_forward_to_peer(struct context *ctx, struct conn *c_conn,
   return status;
 
  error:
-  // Forward errors only if we failed to talk to the same DC. We currently ignore cross-DC
-  // errors.
-  if (same_dc) {
+  // Forward errors only if we failed to talk to the same DC, or under
+  // DC_EACH_SAFE_QUORUM, which waits for a quorum of every DC's racks: without
+  // this error the request would never complete. Other cross-DC errors are
+  // ignored.
+  if (!same_dc && req->consistency == DC_EACH_SAFE_QUORUM) {
+    req_forward_error_for_dc(ctx, c_conn, (rack_msg ? rack_msg : req), status,
+                             *dyn_error_code, &peer->dc);
+  } else if (same_dc) {
     // We forward the error if the target was in the same rack, or if it was in a remote
     // rack and we're expecting a quorum response.
     if ((!same_rack && req->consistency != DC_ONE) || same_rack) {
@@ -1129,6 +1147,9 @@ static void req_forward(struct context *ctx, struct conn *c_conn,
       req_forward_error(ctx, c_conn, req, s, DYNOMITE_UNKNOWN_ERROR);
       return;
     }
+    // Set the handler now: an error for a remote DC can come back while
+    // forwarding, before req_forward_local_dc() would set it.
+    req->rsp_handler = msg_each_quorum_rsp_handler;
   }
 
   /* forward the request based on other 'msg_routing' policies. */
@@ -1430,8 +1451,12 @@ static rstatus_t msg_each_quorum_rsp_handler(struct context *ctx, struct msg *re
   int rspmgr_idx = -1;
   struct conn *rsp_conn = rsp->owner;
   if (rsp_conn == NULL) {
-    // TODO: We should remove this case. Test and confirm.
-    rspmgr_idx = 0;
+    // An error made on this node: the local DC's, unless it names a peer's DC.
+    rspmgr_idx = rsp->peer_dc ? find_rspmgr_idx(req, rsp->peer_dc) : 0;
+    if (rspmgr_idx == -1) {
+      log_error("Could not find which DC response was from");
+      return swallow_extra_rsp(req, rsp);
+    }
   } else if (rsp_conn->type == CONN_DNODE_PEER_SERVER) {
     struct node *peer_instance = (struct node*) rsp_conn->owner;
     struct string *peer_dc_name = &peer_instance->dc;

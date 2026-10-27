@@ -26,17 +26,27 @@ class DynoNode(Node):
         # Write the configuration to a file according to 'self.spec'.
         config_filename = self.spec.write_config(self.seeds_list)
 
+        self.conf_file = config_filename
+
         # Launch the underlying data store process first.
         self.data_store_node.launch()
 
         # Launch the dynomite process
-        self.proc_future = dynomite_bin['-o', self.logfile, '-c', config_filename,
+        self.start_dynomite()
+
+    def start_dynomite(self):
+        """Starts the dynomite process alone, e.g. after stop_dynomite()."""
+        self.proc_future = dynomite_bin['-o', self.logfile, '-c', self.conf_file,
             '-v6'] & BG(-9)
+
+    def stop_dynomite(self):
+        """Kills the dynomite process alone; its datastore keeps running."""
+        self.proc_future.proc.kill()
+        self.proc_future.wait()
 
     def teardown(self):
         # First teardown the Dynomite node.
-        self.proc_future.proc.kill()
-        self.proc_future.wait()
+        self.stop_dynomite()
 
         # Lastly, teardown the storage node.
         self.data_store_node.teardown()

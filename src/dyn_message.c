@@ -334,6 +334,7 @@ done:
   msg->parent_id = 0;
   msg->peer = NULL;
   msg->owner = NULL;
+  msg->peer_dc = NULL;
   msg->stime_in_microsec = 0ULL;
   msg->request_send_time = 0L;
   msg->request_inqueue_enqueue_time_us = 0L;

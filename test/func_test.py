@@ -422,6 +422,65 @@ def run_rest_api_test(c):
     print("\t-%d paths, POST and a malformed request answered as expected"
           % len(expected))
 
+def run_each_safe_quorum_dc_down_test(c):
+    """Stops the dynomite nodes of one DC, one rack and then all of them, and
+    checks DC_EACH_SAFE_QUORUM writes and reads through a node of another DC:
+    they succeed while the DC's other racks still make a quorum, and get an
+    error reply at once when they don't. Before, a rack that couldn't be
+    reached left them without any reply. The nodes are started again
+    afterwards; the coordinator stays at DC_EACH_SAFE_QUORUM."""
+    print("Running EACH_SAFE_QUORUM_DC_DOWN test")
+    dyno_cluster = c.get_dynomite_cluster()
+    dcs = sorted(dyno_cluster.counts_by_dc)
+    if len(dcs) < 2:
+        print("\t-Skipped: the cluster has one DC")
+        return
+    coordinator = next(n for n in dyno_cluster.nodes if n.spec.dc == dcs[0])
+    down_dc = dcs[-1]
+    racks = sorted(dyno_cluster.counts_by_rack[down_dc])
+    base = 'http://{}:{}'.format(coordinator.ip, coordinator.spec.stats_port)
+    for kind in ('read', 'write'):
+        r = requests.get('{}/set_consistency/{}/DC_EACH_SAFE_QUORUM'.format(
+            base, kind))
+        assert r.status_code == 200, (kind, r.status_code, r.text)
+    key = create_key('EACH_SAFE_QUORUM_DC_DOWN', 'key')
+    stopped = []
+    try:
+        for racks_down in (1, len(racks)):
+            for node in dyno_cluster.nodes:
+                if (node.spec.dc == down_dc and node.spec.rack in
+                        racks[:racks_down] and node not in stopped):
+                    node.stop_dynomite()
+                    stopped.append(node)
+            # Let the coordinator see its peer connections close.
+            time.sleep(1)
+            racks_up = len(racks) - racks_down
+            quorum = racks_up >= len(racks) // 2 + 1
+            # Well below the 5 s request timeout: a reply only that timeout
+            # could give would still fail the test.
+            conn = redis.Redis(coordinator.ip, coordinator.port, db=0,
+                               socket_timeout=2)
+            value = 'value%d' % racks_down
+            for args in (('set', key, value), ('get', key)):
+                try:
+                    reply = conn.execute_command(*args)
+                except redis.exceptions.ResponseError as e:
+                    assert not quorum, (racks_down, args, e)
+                    reply = e
+                else:
+                    assert quorum, (racks_down, args, reply)
+                print("\t-%d of %d racks in %s down: %s answered %r"
+                      % (racks_down, len(racks), down_dc, args[0].upper(),
+                         reply))
+            if quorum:
+                assert reply == value.encode(), (value, reply)
+            conn.close()
+    finally:
+        for node in stopped:
+            node.start_dynomite()
+        # Let the restarted nodes open their ports for the stats check.
+        time.sleep(1)
+
 def comparison_test(redis, dynomite, debug):
     c = dual_run(redis, dynomite, debug)
     run_key_value_tests(c)
@@ -443,4 +502,6 @@ def comparison_test(redis, dynomite, debug):
     # Values larger than an mbuf (16 KB), in the requests, the replies and the
     # repairs
     run_read_repair_test(c, min_size=64*1024, max_size=100*1024)
+    # Stops and restarts one DC: last, so other tests don't run into it
+    run_each_safe_quorum_dc_down_test(c)
     print("All test ran fine")
