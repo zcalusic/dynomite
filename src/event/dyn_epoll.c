@@ -25,6 +25,7 @@
 #ifdef DN_HAVE_EPOLL
 
 #include <dyn_event.h>
+#include <dyn_signal.h>
 #include <sys/epoll.h>
 
 struct event_base *event_base_create(int nevent, event_cb_t cb) {
@@ -229,7 +230,8 @@ int event_wait(struct event_base *evb, int timeout) {
   for (;;) {
     int i, nsd;
 
-    nsd = epoll_wait(ep, event, nevent, timeout);
+    /* the main loop's signals are unblocked only here, see signal_block() */
+    nsd = epoll_pwait(ep, event, nevent, timeout, signal_wait_mask());
     if (nsd > 0) {
       for (i = 0; i < nsd; i++) {
         struct epoll_event *ev = &evb->event[i];
@@ -270,7 +272,8 @@ int event_wait(struct event_base *evb, int timeout) {
     }
 
     if (errno == EINTR) {
-      continue;
+      /* return to the main loop, which acts on the signal */
+      return 0;
     }
 
     log_error("epoll wait on e %d with %d events failed: %s", ep, nevent,

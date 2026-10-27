@@ -88,6 +88,8 @@ Then run them from the repository; this builds Dynomite with debug logs first (`
       -m, --mbuf-size=N       : set size of mbuf chunk in bytes (default: 16384 bytes, deprecated)
       -M, --max-msgs=N        : set max number of messages to allocate (default: 200000, deprecated)
 
+Signals: SIGTERM (`docker stop`, `kubectl delete pod`, systemd) and SIGINT make Dynomite exit cleanly at once, with exit status 0 and the pid file removed. SIGHUP reopens the log file, SIGTTIN and SIGTTOU raise and lower the logging level.
+
 ## Configuration
 
 Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible), given with the -c or --conf-file command-line argument on process start. The keys below go under a single top-level pool name, such as `dyn_o_mite:`. Dynomite understands the following keys:

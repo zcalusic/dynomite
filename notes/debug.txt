@@ -73,6 +73,7 @@
   SIGTTIN - To up the log level
   SIGTTOU - To down the log level
   SIGHUP  - To reopen log file
+  SIGTERM, SIGINT - To exit cleanly (exit status 0, pid file removed)
 
 - Error codes:
   http://www.cs.utah.edu/dept/old/texinfo/glibc-manual-0.02/library_2.html

@@ -20,22 +20,44 @@
  * limitations under the License.
  */
 
+#include "dyn_signal.h"
+
+#include <pthread.h>
 #include <signal.h>
 #include <stdlib.h>
 
 #include "dyn_core.h"
-#include "dyn_signal.h"
 
+static void signal_segv(int signo);
+
+/*
+ * signal_handler() only records that a signal came; signal_process() acts on
+ * it in the main loop, where anything may be done. These signals are blocked
+ * in every thread (see signal_block()) except while the main loop waits for
+ * events, so a signal always ends that wait, and is acted on at once.
+ *
+ * SIGTERM (docker stop, kubectl delete, systemd) and SIGINT exit cleanly.
+ * SIGQUIT keeps its default action, a core dump.
+ */
 static struct signal signals[] = {
-    {SIGUSR1, "SIGUSR1", 0, signal_handler},
-    {SIGUSR2, "SIGUSR2", 0, signal_handler},
-    {SIGTTIN, "SIGTTIN", 0, signal_handler},
-    {SIGTTOU, "SIGTTOU", 0, signal_handler},
-    {SIGHUP, "SIGHUP", 0, signal_handler},
-    {SIGINT, "SIGINT", 0, signal_handler},
-    {SIGSEGV, "SIGSEGV", (int)SA_RESETHAND, signal_handler},
-    {SIGPIPE, "SIGPIPE", 0, SIG_IGN},
-    {0, NULL, 0, NULL}};
+    {SIGUSR1, "SIGUSR1", 0, signal_handler, 0},
+    {SIGUSR2, "SIGUSR2", 0, signal_handler, 0},
+    {SIGTTIN, "SIGTTIN", 0, signal_handler, 0},
+    {SIGTTOU, "SIGTTOU", 0, signal_handler, 0},
+    {SIGHUP, "SIGHUP", 0, signal_handler, 0},
+    {SIGINT, "SIGINT", 0, signal_handler, 0},
+    {SIGTERM, "SIGTERM", 0, signal_handler, 0},
+    {SIGSEGV, "SIGSEGV", (int)SA_RESETHAND, signal_segv, 0},
+    {SIGPIPE, "SIGPIPE", 0, SIG_IGN, 0},
+    {0, NULL, 0, NULL, 0}};
+
+/* set by signal_handler(), when any signal's pending is */
+static volatile sig_atomic_t signal_pending_any;
+
+/* the signals signal_block() blocked, and the mask to wait for events with */
+static sigset_t handled;
+static sigset_t wait_mask;
+static bool blocked;
 
 /**
  * Initialize the list of POSIX signals that dynomite can respond to and map
@@ -66,67 +88,143 @@ rstatus_t signal_init(void) {
 
 void signal_deinit(void) {}
 
+/**
+ * Block the signals signal_handler() records, in the calling thread and so in
+ * every thread it starts afterwards: call it before any thread is started.
+ * The main loop unblocks them only while it waits for events, with
+ * signal_wait_mask(), so no other thread takes them, and none comes between
+ * checking for signals and starting to wait.
+ * @return status
+ */
+rstatus_t signal_block(void) {
+  struct signal *sig;
+
+  sigemptyset(&handled);
+  for (sig = signals; sig->signo != 0; sig++) {
+    if (sig->handler == signal_handler) {
+      sigaddset(&handled, sig->signo);
+    }
+  }
+
+  int err = pthread_sigmask(SIG_BLOCK, &handled, &wait_mask);
+  if (err != 0) {
+    log_error("pthread_sigmask failed: %s", strerror(err));
+    return DN_ERROR;
+  }
+
+  /* wait with them unblocked, even if they were blocked when we started */
+  for (sig = signals; sig->signo != 0; sig++) {
+    if (sig->handler == signal_handler) {
+      sigdelset(&wait_mask, sig->signo);
+    }
+  }
+  blocked = true;
+
+  return DN_OK;
+}
+
+/**
+ * The signal mask to wait for events with, or NULL before signal_block().
+ */
+const sigset_t *signal_wait_mask(void) { return blocked ? &wait_mask : NULL; }
+
+/**
+ * For event loops without a wait call that takes a signal mask: unblock the
+ * signals for the wait, and tell whether one is already pending, so the
+ * caller returns instead of waiting. A signal that comes between the check
+ * and the wait still ends the wait, only at its timeout. Call
+ * signal_wait_end() after the wait.
+ */
+bool signal_wait_begin(void) {
+  if (blocked) {
+    pthread_sigmask(SIG_SETMASK, &wait_mask, NULL);
+  }
+  return signal_pending_any != 0;
+}
+
+void signal_wait_end(void) {
+  if (blocked) {
+    pthread_sigmask(SIG_BLOCK, &handled, NULL);
+  }
+}
+
 void signal_handler(int signo) {
   struct signal *sig;
-  void (*action)(void);
-  char *actionstr;
-  bool done;
 
   for (sig = signals; sig->signo != 0; sig++) {
     if (sig->signo == signo) {
-      break;
+      sig->pending = 1;
+      signal_pending_any = 1;
+      return;
     }
   }
-  ASSERT(sig->signo != 0);
+}
 
-  actionstr = "";
-  action = NULL;
-  done = false;
+static void signal_segv(int signo) {
+  dn_stacktrace(1);
+  loga("signal %d (SIGSEGV) received, core dumping", signo);
+  raise(SIGSEGV);
+}
 
-  switch (signo) {
-    case SIGUSR1:
-      break;
+/**
+ * Act on the signals that came since the last call: log each, and change the
+ * log level, reopen the log file, or ask to exit.
+ * @return true if dynomite should exit
+ */
+bool signal_process(void) {
+  struct signal *sig;
+  bool done = false;
 
-    case SIGUSR2:
-      break;
+  if (signal_pending_any == 0) {
+    return false;
+  }
+  signal_pending_any = 0;
 
-    case SIGTTIN:
-      actionstr = ", up logging level";
-      action = log_level_up;
-      break;
+  for (sig = signals; sig->signo != 0; sig++) {
+    void (*action)(void) = NULL;
+    char *actionstr = "";
 
-    case SIGTTOU:
-      actionstr = ", down logging level";
-      action = log_level_down;
-      break;
+    if (sig->pending == 0) {
+      continue;
+    }
+    sig->pending = 0;
 
-    case SIGHUP:
-      actionstr = ", reopening log file";
-      action = log_reopen;
-      break;
+    switch (sig->signo) {
+      case SIGUSR1:
+      case SIGUSR2:
+        break;
 
-    case SIGINT:
-      done = true;
-      actionstr = ", exiting";
-      break;
+      case SIGTTIN:
+        actionstr = ", up logging level";
+        action = log_level_up;
+        break;
 
-    case SIGSEGV:
-      dn_stacktrace(1);
-      actionstr = ", core dumping";
-      raise(SIGSEGV);
-      break;
+      case SIGTTOU:
+        actionstr = ", down logging level";
+        action = log_level_down;
+        break;
 
-    default:
-      NOT_REACHED();
+      case SIGHUP:
+        actionstr = ", reopening log file";
+        action = log_reopen;
+        break;
+
+      case SIGINT:
+      case SIGTERM:
+        done = true;
+        actionstr = ", exiting";
+        break;
+
+      default:
+        NOT_REACHED();
+    }
+
+    loga("signal %d (%s) received%s", sig->signo, sig->signame, actionstr);
+
+    if (action != NULL) {
+      action();
+    }
   }
 
-  loga("signal %d (%s) received%s", signo, sig->signame, actionstr);
-
-  if (action != NULL) {
-    action();
-  }
-
-  if (done) {
-    exit(1);
-  }
+  return done;
 }

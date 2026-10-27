@@ -25,6 +25,7 @@
 #ifdef DN_HAVE_KQUEUE
 
 #include <dyn_event.h>
+#include <dyn_signal.h>
 #include <sys/event.h>
 
 struct event_base *event_base_create(int nevent, event_cb_t cb) {
@@ -258,8 +259,17 @@ int event_wait(struct event_base *evb, int timeout) {
      * by a (kq, ident, filter) tuple. This means that there can be only
      * one (ident, filter) pair for a given kqueue.
      */
+    /* the main loop's signals are unblocked only here, see signal_block() */
+    if (signal_wait_begin()) {
+      /* one is pending already: return to the main loop, which acts on it */
+      signal_wait_end();
+      return 0;
+    }
     evb->nreturned =
         kevent(kq, evb->change, evb->nchange, evb->event, evb->nevent, tsp);
+    int err = errno;
+    signal_wait_end();
+    errno = err;
     evb->nchange = 0;
     if (evb->nreturned > 0) {
       for (evb->nprocessed = 0; evb->nprocessed < evb->nreturned;
@@ -326,7 +336,8 @@ int event_wait(struct event_base *evb, int timeout) {
     }
 
     if (errno == EINTR) {
-      continue;
+      /* return to the main loop, which acts on the signal */
+      return 0;
     }
 
     log_error("kevent on kq %d with %d events failed: %s", kq, evb->nevent,

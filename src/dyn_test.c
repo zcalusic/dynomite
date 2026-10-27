@@ -7,7 +7,6 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <limits.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -17,7 +16,6 @@
 #include "dyn_conf.h"
 #include "dyn_core.h"
 #include "dyn_dnode_peer.h"
-#include "dyn_signal.h"
 #include "proto/dyn_proto.h"
 
 #define TEST_CONF_PATH "conf/dynomite.yml"
@@ -67,11 +65,6 @@ static rstatus_t test_pre_run(struct instance *nci) {
   rstatus_t status;
 
   status = log_init(nci->log_level, nci->log_filename);
-  if (status != DN_OK) {
-    return status;
-  }
-
-  status = signal_init();
   if (status != DN_OK) {
     return status;
   }

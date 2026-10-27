@@ -23,6 +23,9 @@
 #ifndef _DYN_SIGNAL_H_
 #define _DYN_SIGNAL_H_
 
+#include <signal.h>
+#include <stdbool.h>
+
 #include "dyn_types.h"
 
 /**
@@ -33,10 +36,16 @@ struct signal {
   char *signame;
   int flags;
   void (*handler)(int signo);
+  volatile sig_atomic_t pending; /* set by signal_handler() */
 };
 
 rstatus_t signal_init(void);
 void signal_deinit(void);
+rstatus_t signal_block(void);
+const sigset_t *signal_wait_mask(void);
+bool signal_wait_begin(void);
+void signal_wait_end(void);
 void signal_handler(int signo);
+bool signal_process(void);
 
 #endif

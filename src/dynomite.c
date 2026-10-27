@@ -560,6 +560,9 @@ static void dn_post_run(struct instance *nci) {
 static rstatus_t dn_run(struct instance *nci) {
   rstatus_t status;
 
+  /* before core_start() starts the stats and gossip threads */
+  THROW_STATUS(signal_block());
+
   THROW_STATUS(core_start(nci));
 
   struct context *ctx = nci->ctx;
@@ -573,10 +576,18 @@ static rstatus_t dn_run(struct instance *nci) {
     if (status != DN_OK) {
       break;
     }
+
+    if (signal_process()) {
+      /*
+       * Exit without core_stop(): the stats and gossip threads still use
+       * what it frees. Exiting closes every connection.
+       */
+      return DN_OK;
+    }
   }
 
   core_stop(ctx);
-  return DN_OK;
+  return DN_ERROR;
 }
 
 /**
@@ -628,9 +639,8 @@ int main(int argc, char **argv) {
   }
 
   status = dn_run(&nci);
-  IGNORE_RET_VAL(status);
 
   dn_post_run(&nci);
 
-  exit(1);
+  exit(status == DN_OK ? 0 : 1);
 }

@@ -21,6 +21,7 @@
  */
 
 #include <dyn_core.h>
+#include <dyn_signal.h>
 
 #ifdef DN_HAVE_EVENT_PORTS
 
@@ -252,9 +253,22 @@ int event_wait(struct event_base *evb, int timeout) {
      * actually placed in event[] is saved in nreturned, which may be
      * more than what we asked for but less than nevent.
      */
+    /* the main loop's signals are unblocked only here, see signal_block() */
+    if (signal_wait_begin()) {
+      /* one is pending already: return to the main loop, which acts on it */
+      signal_wait_end();
+      return 0;
+    }
     status = port_getn(evp, event, nevent, &nreturned, tsp);
+    int err = errno;
+    signal_wait_end();
+    errno = err;
     if (status < 0) {
-      if (errno == EINTR || errno == EAGAIN) {
+      if (errno == EINTR) {
+        /* return to the main loop, which acts on the signal */
+        return 0;
+      }
+      if (errno == EAGAIN) {
         continue;
       }
 
