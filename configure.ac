@@ -74,6 +74,21 @@ AC_CHECK_HEADER([yaml.h], [],
   [AC_MSG_ERROR([libyaml headers not found (Debian: libyaml-dev)])])
 AC_CHECK_LIB([yaml], [yaml_parser_initialize], [],
   [AC_MSG_ERROR([libyaml not found (Debian: libyaml-dev)])])
+AC_CHECK_HEADER([openssl/ssl.h], [],
+  [AC_MSG_ERROR([OpenSSL headers not found (Debian: libssl-dev)])])
+AC_CHECK_LIB([crypto], [ERR_reason_error_string], [],
+  [AC_MSG_ERROR([libcrypto not found (Debian: libssl-dev)])])
+AC_CHECK_LIB([ssl], [SSL_CTX_new], [],
+  [AC_MSG_ERROR([libssl not found (Debian: libssl-dev)])])
+AC_MSG_CHECKING([for OpenSSL 3 or newer])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <openssl/opensslv.h>]], [[
+#if !defined(OPENSSL_VERSION_MAJOR) || OPENSSL_VERSION_MAJOR < 3
+#error OpenSSL 3 or newer is required
+#endif
+  ]])],
+  [AC_MSG_RESULT([yes])],
+  [AC_MSG_RESULT([no])
+   AC_MSG_ERROR([OpenSSL 3 or newer is required (Debian: libssl-dev)])])
 
 
 # Checks for library functions

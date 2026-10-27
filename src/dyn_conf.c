@@ -239,6 +239,11 @@ static rstatus_t conf_pool_init(struct conf_pool *cp, struct string *name) {
 
   cp->read_repairs_enabled = CONF_UNSET_NUM;
 
+  cp->peer_tls = CONF_UNSET_NUM;
+  string_init(&cp->peer_tls_cert);
+  string_init(&cp->peer_tls_key);
+  string_init(&cp->peer_tls_ca);
+
   log_debug(LOG_VVERB, "init conf pool %p, '%.*s'", cp, name->len, name->data);
 
   return DN_OK;
@@ -272,6 +277,9 @@ static void conf_pool_deinit(struct conf_pool *cp) {
   string_deinit(&cp->rack);
   string_deinit(&cp->dc);
   string_deinit(&cp->env);
+  string_deinit(&cp->peer_tls_cert);
+  string_deinit(&cp->peer_tls_key);
+  string_deinit(&cp->peer_tls_ca);
 
   while (array_n(&cp->dyn_seeds) != 0) {
     conf_server_deinit(array_pop(&cp->dyn_seeds));
@@ -363,6 +371,13 @@ static void conf_dump(struct conf *cf) {
             cp->local_peer_connections);
   log_debug(LOG_VVERB, "  remote_peer_connections: %d",
             cp->remote_peer_connections);
+  log_debug(LOG_VVERB, "  peer_tls: %s", cp->peer_tls ? "true" : "false");
+  log_debug(LOG_VVERB, "  peer_tls_cert: %.*s", cp->peer_tls_cert.len,
+            cp->peer_tls_cert.data);
+  log_debug(LOG_VVERB, "  peer_tls_key: %.*s", cp->peer_tls_key.len,
+            cp->peer_tls_key.data);
+  log_debug(LOG_VVERB, "  peer_tls_ca: %.*s", cp->peer_tls_ca.len,
+            cp->peer_tls_ca.data);
 }
 
 static rstatus_t conf_yaml_init(struct conf *cf) {
@@ -1142,6 +1157,17 @@ static struct command conf_commands[] = {
 
     {string("read_repairs_enabled"), conf_set_bool,
      offsetof(struct conf_pool, read_repairs_enabled)},
+
+    {string("peer_tls"), conf_set_bool, offsetof(struct conf_pool, peer_tls)},
+
+    {string("peer_tls_cert"), conf_set_string,
+     offsetof(struct conf_pool, peer_tls_cert)},
+
+    {string("peer_tls_key"), conf_set_string,
+     offsetof(struct conf_pool, peer_tls_key)},
+
+    {string("peer_tls_ca"), conf_set_string,
+     offsetof(struct conf_pool, peer_tls_ca)},
     null_command};
 
 static rstatus_t conf_handler(struct conf *cf, void *data) {
@@ -1961,6 +1987,25 @@ static rstatus_t conf_validate_pool(struct conf *cf, struct conf_pool *cp) {
   }
   THROW_STATUS(conf_check_num("remote_peer_connections",
                               cp->remote_peer_connections, 1, UINT8_MAX));
+
+  if (cp->peer_tls == CONF_UNSET_NUM) {
+    cp->peer_tls = false;
+  }
+  /* the files are opened and checked when the TLS context is created */
+  if (cp->peer_tls) {
+    if (string_empty(&cp->peer_tls_cert)) {
+      log_error("conf: directive \"peer_tls_cert:\" is missing");
+      return DN_ERROR;
+    }
+    if (string_empty(&cp->peer_tls_key)) {
+      log_error("conf: directive \"peer_tls_key:\" is missing");
+      return DN_ERROR;
+    }
+    if (string_empty(&cp->peer_tls_ca)) {
+      log_error("conf: directive \"peer_tls_ca:\" is missing");
+      return DN_ERROR;
+    }
+  }
 
   status = conf_validate_server(cf, cp);
   if (status != DN_OK) {

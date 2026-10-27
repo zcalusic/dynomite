@@ -11,6 +11,7 @@
 #include "dyn_dnode_peer.h"
 #include "dyn_dnode_proxy.h"
 #include "dyn_server.h"
+#include "dyn_tls.h"
 
 static void dnode_ref(struct conn *conn, void *owner) {
   struct server_pool *pool = owner;
@@ -196,6 +197,15 @@ static rstatus_t dnode_accept(struct context *ctx, struct conn *p) {
               print_obj(c), strerror(errno));
     conn_close(ctx, c);
     return status;
+  }
+
+  /* the peer talks only after the handshake, see core_core() */
+  if (ctx->tls != NULL) {
+    status = tls_conn_start(ctx, c, true);
+    if (status != DN_OK) {
+      conn_close(ctx, c);
+      return status;
+    }
   }
 
   log_notice("%s accepted %s", print_obj(p), print_obj(c));

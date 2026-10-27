@@ -140,6 +140,7 @@ struct conn *_conn_get(void) {
   conn_set_read_consistency(conn, g_read_consistency);
   conn_set_write_consistency(conn, g_write_consistency);
   conn->type = CONN_UNSPECIFIED;
+  conn->tls = NULL;
 
   return conn;
 }

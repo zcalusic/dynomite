@@ -13,6 +13,7 @@
 #include "dyn_node_snitch.h"
 #include "dyn_server.h"
 #include "dyn_task.h"
+#include "dyn_tls.h"
 #include "dyn_token.h"
 #include "dyn_vnode.h"
 
@@ -439,6 +440,7 @@ static void dnode_peer_close(struct context *ctx, struct conn *conn) {
 
   conn_unref(conn);
 
+  tls_conn_close(conn);
   status = close(conn->sd);
   if (status < 0) {
     log_error("dyn: close s %d failed, ignored: %s", conn->sd, strerror(errno));

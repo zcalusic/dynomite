@@ -8,6 +8,7 @@
 #include "dyn_dict_msg_id.h"
 #include "dyn_response_mgr.h"
 #include "dyn_server.h"
+#include "dyn_tls.h"
 
 static void dnode_client_ref(struct conn *conn, void *owner) {
   struct server_pool *pool = owner;
@@ -192,6 +193,7 @@ static void dnode_client_close(struct context *ctx, struct conn *conn) {
   }
   ASSERT(TAILQ_EMPTY(&conn->omsg_q));
 
+  tls_conn_close(conn);
   status = close(conn->sd);
   if (status < 0) {
     log_error("dyn: close c %d failed, ignored: %s", conn->sd, strerror(errno));

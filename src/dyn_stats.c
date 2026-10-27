@@ -38,6 +38,7 @@
 #include "dyn_node_snitch.h"
 #include "dyn_ring_queue.h"
 #include "dyn_server.h"
+#include "dyn_tls.h"
 #include "event/dyn_event.h"
 
 struct stats_desc {
@@ -507,6 +508,11 @@ static rstatus_t stats_add_header(struct stats *st) {
                              (int64_t)st->payload_size_histo.val_95th));
   THROW_STATUS(stats_add_num(&st->buf, &st->payload_size_mean_str,
                              (int64_t)st->payload_size_histo.mean));
+
+  if (st->ctx->tls != NULL) {
+    THROW_STATUS(stats_add_num_str(&st->buf, "peer_tls_cert_days_left",
+                                   tls_cert_days_left(st->ctx->tls)));
+  }
 
   THROW_STATUS(stats_add_num_str(&st->buf, "average_cross_region_rtt",
                                  (int64_t)st->cross_region_latency_histo.mean));

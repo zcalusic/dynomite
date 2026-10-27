@@ -77,6 +77,12 @@ struct server_pool;
   ACTION(remote_peer_timedout, STATS_COUNTER,                                  \
          "# timeouts on remote dc peer connections")                           \
   ACTION(peer_connections, STATS_GAUGE, "# active peer connections")           \
+  ACTION(peer_tls_handshakes, STATS_COUNTER,                                   \
+         "# TLS handshakes with peers that succeeded")                         \
+  ACTION(peer_tls_handshake_errors, STATS_COUNTER,                             \
+         "# TLS handshakes with peers that failed or timed out")               \
+  ACTION(peer_tls_plaintext_rejected, STATS_COUNTER,                           \
+         "# peer connections closed for not speaking TLS")                     \
   ACTION(peer_forward_error, STATS_GAUGE,                                      \
          "# times we encountered a peer forwarding error")                     \
   ACTION(peer_requests, STATS_COUNTER, "# peer requests")                      \

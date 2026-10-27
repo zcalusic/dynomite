@@ -27,7 +27,7 @@ All development happens on the `master` branch, the only branch in this fork. Re
 
 Install the build dependencies (Debian package names):
 
-    $ sudo apt-get install automake gcc git libc6-dev libyaml-dev make
+    $ sudo apt-get install automake gcc git libc6-dev libssl-dev libyaml-dev make
 
 Build from a git clone: the version is taken from `git describe`, which needs the history and tags.
 
@@ -61,7 +61,7 @@ The unit tests (`src/dyn_test.c`) need no extra dependencies; run them after bui
 
 The functional tests start a local cluster of Dynomite and Redis nodes and compare the results of the same commands against Dynomite and a standalone Redis. Install their dependencies (Debian package names):
 
-    $ sudo apt-get install redis-server python3 python3-plumbum python3-redis python3-requests python3-yaml
+    $ sudo apt-get install openssl redis-server python3 python3-plumbum python3-redis python3-requests python3-yaml
 
 Then run them from the repository; this builds Dynomite with debug logs first (`-n` skips the build):
 
@@ -121,14 +121,46 @@ Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible)
 + **local_peer_connections**: Maximum number of connections to a local DC peer. Defaults to 1; 1 to 255.
 + **remote_peer_connections**: Maximum number of connections to a remote DC peer. Defaults to 1; 1 to 255.
 + **conn_msg_rate**: The maximum number of messages per second sent on each connection to a node in a remote datacenter. Defaults to 50000; must be at least 1.
++ **peer_tls**: A boolean value that turns on mutual TLS 1.3 for the traffic between nodes, in both directions; see [Securing traffic between nodes](#securing-traffic-between-nodes). Defaults to false.
++ **peer_tls_cert**: The node's certificate in PEM format, followed by any intermediate CA certificates. Required with `peer_tls: true`.
++ **peer_tls_key**: The node's private key in PEM format, unencrypted. Required with `peer_tls: true`.
++ **peer_tls_ca**: The cluster CA certificate(s) in PEM format, the only certificates peers are trusted with. Required with `peer_tls: true`.
 
 The keys **client_connections**, **distribution**, **server_connections**, **dyn_port**, **dyn_connections**, **dyn_read_timeout**, **dyn_write_timeout**, **recon_key_file**, **recon_iv_file**, **auto_eject_hosts**, **server_failure_limit**, **preconnect** and **pem_key_file** are still accepted for compatibility, but are ignored. The inter-node port comes from **dyn_listen**. Dynomite always connects to the datastore and to its peers at startup.
 
-The built-in encryption of traffic between nodes was removed: it crashed with RSA keys over 1024 bits, lost writes with `all`, still accepted unencrypted messages, and gave no integrity or forward secrecy. Traffic between nodes is now always unencrypted, so keep it on a trusted network or in a VPN. **secure_server_option** is still accepted with the value `none` and ignored; any other value is a configuration error, so that a node doesn't quietly run unencrypted when its configuration asks for encryption. All nodes of a cluster that used encryption have to switch to `none` together: a node closes peer connections that send encrypted messages. Mutual TLS between nodes is planned as a replacement.
+The built-in encryption of traffic between nodes was removed: it crashed with RSA keys over 1024 bits, lost writes with `all`, still accepted unencrypted messages, and gave no integrity or forward secrecy. Mutual TLS replaces it, see the next section. **secure_server_option** is still accepted with the value `none` and ignored; any other value is a configuration error, so that a node doesn't quietly run unencrypted when its configuration asks for encryption. All nodes of a cluster that used encryption have to switch to `none` together: a node closes peer connections that send encrypted messages.
 
 See [conf/dynomite.yml](conf/dynomite.yml) for an example; [conf/](conf/) has more, such as [conf/redis_single.yml](conf/redis_single.yml).
 
-Finally, to make writing syntactically correct configuration files easier, dynomite provides a command-line argument -t or --test-conf that can be used to test the YAML configuration file for any syntax error.
+Finally, to make writing syntactically correct configuration files easier, dynomite provides a command-line argument -t or --test-conf that can be used to test the YAML configuration file for any syntax error. With `peer_tls: true` it also loads the certificate, key and CA files and reports what is wrong with them.
+
+## Securing traffic between nodes
+
+With `peer_tls: true`, every connection between nodes (the `dyn_listen` port, gossip included) is mutual TLS 1.3: each node presents its certificate when connecting and when accepting, and both sides accept only certificates issued by the CA(s) in `peer_tls_ca`. A connection without a valid client certificate is closed before any message is read, so nothing but the cluster's own nodes can talk to the peer port, whatever network it is on. Nodes are verified by the CA only: the names and addresses in the certificates are not checked, so one certificate can be reused on another node, and a node can be reached under any address. OpenSSL's defaults apply otherwise: the TLS 1.3 ciphersuites, and the hybrid post-quantum key exchange (X25519MLKEM768) on OpenSSL 3.5 and later. Session resumption is off, every connection does a full handshake. A handshake that does not finish within 10 seconds is closed.
+
+What stays unencrypted: the client port (`listen`), the stats port (`stats_listen`) and the connection to the datastore. Keep those on a trusted network.
+
+Use one private CA per cluster, never a shared company CA and never a public one: anything that CA signs can join the cluster. OpenSSL is enough to run it; this makes a CA and a certificate for one node, both Ed25519 (ECDSA P-256 or RSA 2048+ work the same way), the certificate valid for a year:
+
+    $ openssl req -x509 -newkey ed25519 -nodes -keyout ca.key -out ca.pem -days 3650 -subj /CN=dynomite-ca
+    $ openssl req -newkey ed25519 -nodes -keyout node1.key -out node1.csr -subj /CN=node1
+    $ printf 'subjectAltName=DNS:node1,IP:10.0.0.1\nextendedKeyUsage=serverAuth,clientAuth\n' > node1.ext
+    $ openssl x509 -req -in node1.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 365 -extfile node1.ext -out node1.pem
+
+Each certificate needs the `serverAuth` and `clientAuth` extended key usages (or none at all), since the same certificate serves both directions. Keep `ca.key` off the nodes; give each node its `node1.pem`, `node1.key` (mode 0600) and `ca.pem`:
+
+    peer_tls: true
+    peer_tls_cert: /etc/dynomite/node1.pem
+    peer_tls_key: /etc/dynomite/node1.key
+    peer_tls_ca: /etc/dynomite/ca.pem
+
+In the Docker image, mount the files read-only and point the configuration at them, for example `-v /etc/dynomite/tls:/tls:ro` with `peer_tls_cert: /tls/node1.pem` and so on.
+
+All nodes of a cluster switch together: a node with `peer_tls: true` closes plaintext peers, and a node with it off closes TLS peers, so a mixed cluster doesn't replicate until the last node is switched. When new certificates are needed, replace the files and restart the node (a rolling restart, one node at a time, keeps the cluster serving); there is no reload. To rotate the CA, put the old and the new CA certificate into `peer_tls_ca` on every node and restart, then reissue the node certificates from the new CA, and finally drop the old CA from the file.
+
+At startup, a node checks its own certificate the way its peers will and logs a warning when it doesn't verify with `peer_tls_ca`, has expired or is not valid yet; it starts anyway, the handshake failures show up on the peers. It warns daily when the certificate expires within 14 days. Missing or unreadable files, a key that doesn't match the certificate or a CA file without a certificate are configuration errors and the node doesn't start. The stats REST endpoint (`/info`) has `peer_tls_cert_days_left`, and the counters `peer_tls_handshakes`, `peer_tls_handshake_errors` and `peer_tls_plaintext_rejected`; every failed handshake is logged with the peer's address and the reason. To check a node from outside, connect with a node certificate (it must fail without one):
+
+    $ openssl s_client -connect node1:8101 -CAfile ca.pem -cert node2.pem -key node2.key
 
 
 ## License

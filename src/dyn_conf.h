@@ -120,6 +120,12 @@ struct conf_pool {
 
   /* repairs enabled */
   int read_repairs_enabled;
+
+  /* mutual TLS between peers, see dyn_tls.c */
+  int peer_tls;                /* peer_tls: */
+  struct string peer_tls_cert; /* peer_tls_cert: node cert (+ chain) PEM */
+  struct string peer_tls_key;  /* peer_tls_key: node private key PEM */
+  struct string peer_tls_ca;   /* peer_tls_ca: cluster CA cert(s) PEM */
 };
 
 struct conf {

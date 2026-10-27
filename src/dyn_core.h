@@ -241,9 +241,12 @@ struct server_pool {
  * the event base, timeout, dynomite state, gossip and whether or not the admin
  * functionality is enabled/disabled.
  */
+struct tls_ctx;
+
 struct context {
   struct instance *instance; /* back pointer to instance */
   struct conf *cf;           /* configuration */
+  struct tls_ctx *tls;       /* peer TLS context, NULL when peer_tls is off */
   struct stats *stats;       /* stats */
   struct server_pool pool;   /* server_pool[] */
   struct event_base *evb;    /* event base */
@@ -257,6 +260,7 @@ struct context {
 rstatus_t core_start(struct instance *nci);
 void core_stop(struct context *ctx);
 rstatus_t core_core(void *arg, uint32_t events);
+void core_close_conn(struct context *ctx, struct conn *conn);
 rstatus_t core_loop(struct context *ctx);
 void core_debug(struct context *ctx);
 void core_set_local_state(struct context *ctx, dyn_state_t state);

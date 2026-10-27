@@ -31,6 +31,7 @@
 #include "dyn_proxy.h"
 #include "dyn_server.h"
 #include "dyn_task.h"
+#include "dyn_tls.h"
 #include "event/dyn_event.h"
 
 uint32_t admin_opt = 0;
@@ -77,6 +78,7 @@ static rstatus_t core_init_last(struct context *ctx) {
   preselect_remote_rack_for_replication(ctx);
   // Print the network health once after 30 secs
   schedule_task_1(core_print_peer_status, ctx, 30000);
+  tls_schedule_expiry_check(ctx);
   return DN_OK;
 }
 
@@ -199,6 +201,18 @@ static rstatus_t core_ctx_create(struct instance *nci) {
   ctx->max_timeout = (msec_t)cp->stats_interval;
   ctx->timeout = ctx->max_timeout;
 
+  ctx->tls = NULL;
+  if (cp->peer_tls) {
+    ctx->tls = tls_ctx_create(cp);
+    if (ctx->tls == NULL) {
+      loga("Failed to set up TLS between peers!!!");
+      conf_destroy(ctx->cf);
+      dn_free(ctx);
+      nci->ctx = NULL;
+      return DN_ERROR;
+    }
+  }
+
   return DN_OK;
 }
 
@@ -208,6 +222,7 @@ static void core_ctx_destroy(struct context *ctx) {
   event_base_destroy(ctx->evb);
   stats_destroy(ctx->stats);
   server_pool_deinit(&ctx->pool);
+  tls_ctx_destroy(ctx->tls);
   conf_destroy(ctx->cf);
   dn_free(ctx);
 }
@@ -320,6 +335,7 @@ error:
     if (ctx->evb) event_base_destroy(ctx->evb);
     if (ctx->stats) stats_destroy(ctx->stats);
     server_pool_deinit(&ctx->pool);
+    tls_ctx_destroy(ctx->tls);
     if (ctx->cf) conf_destroy(ctx->cf);
     dn_free(ctx);
     nci->ctx = NULL;
@@ -391,6 +407,11 @@ static void core_close(struct context *ctx, struct conn *conn) {
   }
 
   conn_close(ctx, conn);
+}
+
+/* for closing a connection from outside the event dispatch, e.g. a task */
+void core_close_conn(struct context *ctx, struct conn *conn) {
+  core_close(ctx, conn);
 }
 
 static void core_error(struct context *ctx, struct conn *conn) {
@@ -481,6 +502,28 @@ rstatus_t core_core(void *arg, uint32_t events) {
     core_error(ctx, conn);
 
     return DN_ERROR;
+  }
+
+  /*
+   * A peer connection in its TLS handshake: no messages until it's done.
+   * Then handle both directions at once: the first message may already be
+   * in the socket buffer behind the handshake (edge-triggered, no new
+   * event for it), and the send side has to run once to drop EPOLLOUT.
+   */
+  if (tls_conn_handshaking(conn)) {
+    status = tls_conn_handshake(ctx, conn);
+    if (status == DN_EAGAIN) {
+      return DN_OK;
+    }
+    if (status != DN_OK) {
+      core_close(ctx, conn);
+      return DN_ERROR;
+    }
+    if (conn->type == CONN_DNODE_PEER_SERVER) {
+      dnode_peer_connected(ctx, conn);
+    }
+    events |= EVENT_READ | EVENT_WRITE;
+    conn->events = events;
   }
 
   /* read takes precedence over write */

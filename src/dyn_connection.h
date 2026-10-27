@@ -143,6 +143,7 @@ struct conn {
   consistency_t write_consistency;
   dict *outstanding_msgs_dict;
   connection_type_t type;
+  struct tls_conn *tls; /* peer TLS state, NULL for plaintext (dyn_tls.c) */
 };
 
 static inline rstatus_t conn_cant_handle_response(struct context *ctx, struct conn *conn,

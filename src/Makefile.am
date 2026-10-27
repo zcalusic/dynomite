@@ -69,9 +69,10 @@ dynomite_SOURCES =			                          \
         dyn_vnode.c dyn_vnode.h                                   \
         dyn_queue.h			                          \
         dyn_task.h dyn_task.c									  \
+        dyn_tls.c dyn_tls.h                                       \
         dyn_gossip.c dyn_gossip.h                                 \
         dyn_dict.c dyn_dict.h                                     \
-        dynomite.c 
+        dynomite.c
 
 dynomite_LDADD = $(top_builddir)/src/hashkit/libhashkit.a
 dynomite_LDADD += $(top_builddir)/src/proto/libproto.a
@@ -115,6 +116,7 @@ dynomite_test_SOURCES =                                           \
         dyn_util.c dyn_util.h                                     \
         dyn_queue.h                                               \
         dyn_task.h dyn_task.c									  \
+        dyn_tls.c dyn_tls.h                                       \
         dyn_vnode.c dyn_vnode.h                                   \
         dyn_gossip.c dyn_gossip.h                                 \
         dyn_dict.c dyn_dict.h                                     \

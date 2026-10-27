@@ -34,6 +34,7 @@
 #include "dyn_conf.h"
 #include "dyn_core.h"
 #include "dyn_signal.h"
+#include "dyn_tls.h"
 
 #include "proto/dyn_proto.h"
 
@@ -484,6 +485,16 @@ static bool dn_test_conf(struct instance *nci) {
   cf = conf_create(nci->conf_filename);
   if (cf == NULL) {
     return false;
+  }
+
+  // With peer_tls, the cert, key and CA files are loaded and checked too.
+  if (cf->pool.peer_tls) {
+    struct tls_ctx *tls = tls_ctx_create(&cf->pool);
+    if (tls == NULL) {
+      conf_destroy(cf);
+      return false;
+    }
+    tls_ctx_destroy(tls);
   }
 
   conf_destroy(cf);

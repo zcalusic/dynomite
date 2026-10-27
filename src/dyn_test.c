@@ -7,6 +7,9 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <limits.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/x509v3.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -16,6 +19,7 @@
 #include "dyn_conf.h"
 #include "dyn_core.h"
 #include "dyn_dnode_peer.h"
+#include "dyn_tls.h"
 #include "proto/dyn_proto.h"
 
 #define TEST_CONF_PATH "conf/dynomite.yml"
@@ -1664,6 +1668,24 @@ static const struct conf_case conf_cases[] = {
     CONF_INVALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:99999999999\n"),
     CONF_INVALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:abc\n"),
     CONF_INVALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:1,\n"),
+    /* peer_tls needs the three files; off, they are ignored */
+    CONF_VALID("", peer_tls, false),
+    CONF_VALID("  peer_tls: false\n  peer_tls_cert: /nonexistent/node.pem\n",
+               peer_tls, false),
+    CONF_VALID("  peer_tls: true\n  peer_tls_cert: /nonexistent/node.pem\n"
+               "  peer_tls_key: /nonexistent/node.key\n"
+               "  peer_tls_ca: /nonexistent/ca.pem\n",
+               peer_tls, true),
+    CONF_INVALID("  peer_tls: true\n"),
+    CONF_INVALID("  peer_tls: true\n  peer_tls_key: /nonexistent/node.key\n"
+                 "  peer_tls_ca: /nonexistent/ca.pem\n"),
+    CONF_INVALID("  peer_tls: true\n  peer_tls_cert: /nonexistent/node.pem\n"
+                 "  peer_tls_ca: /nonexistent/ca.pem\n"),
+    CONF_INVALID("  peer_tls: true\n  peer_tls_cert: /nonexistent/node.pem\n"
+                 "  peer_tls_key: /nonexistent/node.key\n"),
+    CONF_INVALID("  peer_tls: yes\n"),
+    CONF_INVALID("  peer_tls: false\n  peer_tls: true\n"),
+    CONF_INVALID("  peer_tls_ca: /a.pem\n  peer_tls_ca: /b.pem\n"),
 };
 
 /* servers comes last, so a case can add entries to its list */
@@ -1879,6 +1901,299 @@ static rstatus_t test_config(void) {
   return DN_OK;
 }
 
+/*
+ * Peer TLS: a CA, a second CA and node certs are generated here (Ed25519,
+ * in a temp dir, removed afterwards; nothing is committed), then the TLS
+ * context is created from them like at startup, and two contexts shake
+ * hands in memory.
+ */
+static X509 *tls_test_cert(const char *cn, EVP_PKEY *key, X509 *issuer,
+                           EVP_PKEY *issuer_key, long not_before,
+                           long not_after, bool ca) {
+  static long serial = 1;
+  X509 *x = X509_new();
+  X509V3_CTX v3;
+  X509_EXTENSION *ext;
+
+  if (x == NULL) return NULL;
+  X509_set_version(x, X509_VERSION_3);
+  ASN1_INTEGER_set(X509_get_serialNumber(x), serial++);
+  X509_gmtime_adj(X509_getm_notBefore(x), not_before);
+  X509_gmtime_adj(X509_getm_notAfter(x), not_after);
+  X509_NAME_add_entry_by_txt(X509_get_subject_name(x), "CN", MBSTRING_ASC,
+                             (const unsigned char *)cn, -1, -1, 0);
+  X509_set_issuer_name(x, issuer != NULL ? X509_get_subject_name(issuer)
+                                         : X509_get_subject_name(x));
+  X509_set_pubkey(x, key);
+
+  X509V3_set_ctx_nodb(&v3);
+  X509V3_set_ctx(&v3, issuer != NULL ? issuer : x, x, NULL, NULL, 0);
+  ext = X509V3_EXT_conf_nid(NULL, &v3, NID_basic_constraints,
+                            ca ? "critical,CA:TRUE" : "CA:FALSE");
+  X509_add_ext(x, ext, -1);
+  X509_EXTENSION_free(ext);
+  if (!ca) {
+    ext = X509V3_EXT_conf_nid(NULL, &v3, NID_ext_key_usage,
+                              "serverAuth,clientAuth");
+    X509_add_ext(x, ext, -1);
+    X509_EXTENSION_free(ext);
+  }
+  /* Ed25519 signs without a digest */
+  if (X509_sign(x, issuer_key != NULL ? issuer_key : key, NULL) == 0) {
+    X509_free(x);
+    return NULL;
+  }
+  return x;
+}
+
+static bool tls_test_write(const char *path, X509 *cert, EVP_PKEY *key) {
+  FILE *fh = fopen(path, "w");
+  bool ok = fh != NULL;
+
+  if (ok && cert != NULL) ok = PEM_write_X509(fh, cert) == 1;
+  if (ok && key != NULL) {
+    ok = PEM_write_PrivateKey(fh, key, NULL, NULL, 0, NULL, NULL) == 1;
+  }
+  if (fh != NULL) fclose(fh);
+  if (!ok) log_error("tls: writing %s failed", path);
+  return ok;
+}
+
+struct tls_case {
+  const char *name;
+  const char *cert, *key, *ca;
+  bool want_ctx;  /* the context is created */
+  bool want_warn; /* the self-check warned */
+  int64_t min_days, max_days;
+};
+
+static struct tls_ctx *tls_test_ctx(const char *dir, const char *cert,
+                                    const char *key, const char *ca) {
+  struct conf_pool cp;
+  char cert_path[PATH_MAX], key_path[PATH_MAX], ca_path[PATH_MAX];
+
+  memset(&cp, 0, sizeof(cp));
+  cp.peer_tls = true;
+  snprintf(cert_path, sizeof(cert_path), "%s/%s", dir, cert);
+  snprintf(key_path, sizeof(key_path), "%s/%s", dir, key);
+  snprintf(ca_path, sizeof(ca_path), "%s/%s", dir, ca);
+  string_set_raw(&cp.peer_tls_cert, cert_path);
+  string_set_raw(&cp.peer_tls_key, key_path);
+  string_set_raw(&cp.peer_tls_ca, ca_path);
+  return tls_ctx_create(&cp);
+}
+
+static rstatus_t tls_run(const char *dir, const struct tls_case *tc) {
+  struct tls_ctx *tls = tls_test_ctx(dir, tc->cert, tc->key, tc->ca);
+
+  if (!tc->want_ctx) {
+    if (tls != NULL) {
+      log_error("tls %s: context created, should be refused", tc->name);
+      tls_ctx_destroy(tls);
+      return DN_ERROR;
+    }
+    return DN_OK;
+  }
+  if (tls == NULL) {
+    log_error("tls %s: context refused, should be created", tc->name);
+    return DN_ERROR;
+  }
+  rstatus_t status = DN_OK;
+  if (tls_ctx_cert_warned(tls) != tc->want_warn) {
+    log_error("tls %s: self-check %s, should %s", tc->name,
+              tc->want_warn ? "passed" : "warned",
+              tc->want_warn ? "warn" : "pass");
+    status = DN_ERROR;
+  }
+  int64_t days = tls_cert_days_left(tls);
+  if (days < tc->min_days || days > tc->max_days) {
+    log_error("tls %s: %" PRId64 " days left, want %" PRId64 " to %" PRId64,
+              tc->name, days, tc->min_days, tc->max_days);
+    status = DN_ERROR;
+  }
+  tls_ctx_destroy(tls);
+  return status;
+}
+
+struct tls_handshake_case {
+  const char *name;
+  const char *client_cert, *client_key, *client_ca; /* NULL: no cert */
+  const char *server_cert, *server_key, *server_ca;
+  bool want_ok;
+};
+
+static rstatus_t tls_run_handshake(const char *dir,
+                                   const struct tls_handshake_case *tc) {
+  struct tls_ctx *client = NULL, *server;
+  const char *detail;
+  rstatus_t status = DN_OK;
+
+  server = tls_test_ctx(dir, tc->server_cert, tc->server_key, tc->server_ca);
+  if (tc->client_cert != NULL) {
+    client = tls_test_ctx(dir, tc->client_cert, tc->client_key, tc->client_ca);
+  }
+  if (server == NULL || (tc->client_cert != NULL && client == NULL)) {
+    log_error("tls handshake %s: creating the contexts failed", tc->name);
+    status = DN_ERROR;
+    goto out;
+  }
+
+  rstatus_t hs = tls_test_handshake(client, server, &detail);
+  if (tc->want_ok && hs != DN_OK) {
+    log_error("tls handshake %s: failed (%s), should succeed", tc->name,
+              detail);
+    status = DN_ERROR;
+  } else if (!tc->want_ok && hs == DN_OK) {
+    log_error("tls handshake %s: succeeded, should fail", tc->name);
+    status = DN_ERROR;
+  } else if (tc->want_ok && strcmp(detail, "TLSv1.3") != 0) {
+    log_error("tls handshake %s: negotiated %s, want TLSv1.3", tc->name,
+              detail);
+    status = DN_ERROR;
+  } else {
+    loga("tls handshake %s: %s", tc->name, detail);
+  }
+
+out:
+  tls_ctx_destroy(client);
+  tls_ctx_destroy(server);
+  return status;
+}
+
+static rstatus_t test_tls(void) {
+  const long day = 24 * 60 * 60;
+  char dir[] = "/tmp/dynomite-test-tls-XXXXXX";
+  EVP_PKEY *ca_key = NULL, *ca2_key = NULL, *node_key = NULL, *other_key = NULL;
+  X509 *ca = NULL, *ca2 = NULL, *node = NULL, *bad = NULL, *expired = NULL,
+       *future = NULL;
+  size_t nfailed = 0;
+  rstatus_t status = DN_ERROR;
+  const char *files[] = {"ca.pem",     "ca2.pem",   "both.pem", "node.pem",
+                         "node.key",   "other.key", "bad.pem",  "expired.pem",
+                         "future.pem", "empty.pem"};
+
+  print_banner("TLS");
+
+  if (mkdtemp(dir) == NULL) {
+    log_error("tls: mkdtemp failed: %s", strerror(errno));
+    return DN_ERROR;
+  }
+
+  ca_key = EVP_PKEY_Q_keygen(NULL, NULL, "ED25519");
+  ca2_key = EVP_PKEY_Q_keygen(NULL, NULL, "ED25519");
+  node_key = EVP_PKEY_Q_keygen(NULL, NULL, "ED25519");
+  other_key = EVP_PKEY_Q_keygen(NULL, NULL, "ED25519");
+  if (ca_key == NULL || ca2_key == NULL || node_key == NULL ||
+      other_key == NULL) {
+    log_error("tls: key generation failed");
+    goto out;
+  }
+  ca = tls_test_cert("test CA", ca_key, NULL, NULL, -day, 10 * day, true);
+  ca2 = tls_test_cert("other CA", ca2_key, NULL, NULL, -day, 10 * day, true);
+  node = tls_test_cert("node", node_key, ca, ca_key, -day, 365 * day, false);
+  bad = tls_test_cert("node", node_key, ca2, ca2_key, -day, 365 * day, false);
+  /* expired half a day ago: -1 day left, with a margin for a slow run */
+  expired =
+      tls_test_cert("node", node_key, ca, ca_key, -3 * day, -day / 2, false);
+  future = tls_test_cert("node", node_key, ca, ca_key, day, 365 * day, false);
+  if (ca == NULL || ca2 == NULL || node == NULL || bad == NULL ||
+      expired == NULL || future == NULL) {
+    log_error("tls: certificate generation failed");
+    goto out;
+  }
+
+  char path[PATH_MAX];
+#define TLS_FILE(name, cert, key)                     \
+  do {                                                \
+    snprintf(path, sizeof(path), "%s/%s", dir, name); \
+    if (!tls_test_write(path, cert, key)) goto out;   \
+  } while (0)
+  TLS_FILE("ca.pem", ca, NULL);
+  TLS_FILE("ca2.pem", ca2, NULL);
+  TLS_FILE("node.pem", node, NULL);
+  TLS_FILE("node.key", NULL, node_key);
+  TLS_FILE("other.key", NULL, other_key);
+  TLS_FILE("bad.pem", bad, NULL);
+  TLS_FILE("expired.pem", expired, NULL);
+  TLS_FILE("future.pem", future, NULL);
+  TLS_FILE("empty.pem", NULL, NULL);
+#undef TLS_FILE
+  /* both CAs in one file, as during a CA rotation */
+  snprintf(path, sizeof(path), "%s/both.pem", dir);
+  FILE *fh = fopen(path, "w");
+  if (fh == NULL || PEM_write_X509(fh, ca2) != 1 ||
+      PEM_write_X509(fh, ca) != 1 || fclose(fh) != 0) {
+    log_error("tls: writing %s failed", path);
+    goto out;
+  }
+
+  const struct tls_case cases[] = {
+      {"ok", "node.pem", "node.key", "ca.pem", true, false, 364, 365},
+      {"two CAs", "node.pem", "node.key", "both.pem", true, false, 364, 365},
+      {"key mismatch", "node.pem", "other.key", "ca.pem", false, false, 0, 0},
+      {"missing cert", "nonexistent.pem", "node.key", "ca.pem", false, false, 0,
+       0},
+      {"missing key", "node.pem", "nonexistent.key", "ca.pem", false, false, 0,
+       0},
+      {"missing ca", "node.pem", "node.key", "nonexistent.pem", false, false, 0,
+       0},
+      {"empty ca", "node.pem", "node.key", "empty.pem", false, false, 0, 0},
+      {"key as cert", "node.key", "node.key", "ca.pem", false, false, 0, 0},
+      /* the self-check warns, the node still starts */
+      {"other CA", "bad.pem", "node.key", "ca.pem", true, true, 364, 365},
+      {"expired", "expired.pem", "node.key", "ca.pem", true, true, -1, -1},
+      {"not yet valid", "future.pem", "node.key", "ca.pem", true, true, 364,
+       365},
+  };
+  for (size_t i = 0; i < NELEMS(cases); i++) {
+    if (tls_run(dir, &cases[i]) != DN_OK) nfailed++;
+  }
+
+  const struct tls_handshake_case handshakes[] = {
+      {"same CA", "node.pem", "node.key", "ca.pem", "node.pem", "node.key",
+       "ca.pem", true},
+      {"CA rotation", "node.pem", "node.key", "both.pem", "bad.pem", "node.key",
+       "both.pem", true},
+      {"client from another CA", "bad.pem", "node.key", "ca.pem", "node.pem",
+       "node.key", "ca.pem", false},
+      {"server from another CA", "node.pem", "node.key", "ca.pem", "bad.pem",
+       "node.key", "ca.pem", false},
+      {"expired client cert", "expired.pem", "node.key", "ca.pem", "node.pem",
+       "node.key", "ca.pem", false},
+      {"no client cert", NULL, NULL, NULL, "node.pem", "node.key", "ca.pem",
+       false},
+  };
+  for (size_t i = 0; i < NELEMS(handshakes); i++) {
+    if (tls_run_handshake(dir, &handshakes[i]) != DN_OK) nfailed++;
+  }
+
+  if (nfailed != 0) {
+    log_error("%zu of %zu tls cases failed", nfailed,
+              NELEMS(cases) + NELEMS(handshakes));
+  } else {
+    loga("%zu tls cases passed", NELEMS(cases) + NELEMS(handshakes));
+    status = DN_OK;
+  }
+
+out:
+  for (size_t i = 0; i < NELEMS(files); i++) {
+    snprintf(path, sizeof(path), "%s/%s", dir, files[i]);
+    unlink(path);
+  }
+  rmdir(dir);
+  X509_free(ca);
+  X509_free(ca2);
+  X509_free(node);
+  X509_free(bad);
+  X509_free(expired);
+  X509_free(future);
+  EVP_PKEY_free(ca_key);
+  EVP_PKEY_free(ca2_key);
+  EVP_PKEY_free(node_key);
+  EVP_PKEY_free(other_key);
+  return status;
+}
+
 /**
  * I recently added a counter to the tailQ in dyn_queue.h
  * This is a function to test the counter.
@@ -2081,6 +2396,12 @@ int main(int argc, char **argv) {
   ret = test_config();
   if (ret != DN_OK) {
     loga("Error in testing the configuration!!!");
+    goto err_out;
+  }
+
+  ret = test_tls();
+  if (ret != DN_OK) {
+    loga("Error in testing peer TLS!!!");
     goto err_out;
   }
 

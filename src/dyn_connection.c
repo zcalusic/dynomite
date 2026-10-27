@@ -22,6 +22,7 @@
 
 #include "dyn_connection_internal.h"
 #include "dyn_core.h"
+#include "dyn_tls.h"
 #include "event/dyn_event.h"
 
 /*
@@ -184,6 +185,7 @@ struct conn *conn_get(void *owner, func_conn_init_t func_conn_init) {
 void conn_put(struct conn *conn) {
   ASSERT(conn->sd < 0);
   ASSERT(conn->owner == NULL);
+  ASSERT(conn->tls == NULL);
   log_debug(LOG_VVERB, "putting %s", print_obj(conn));
   _conn_put(conn);
 }
@@ -314,16 +316,31 @@ rstatus_t conn_connect(struct context *ctx, struct conn *conn) {
 
   status = connect(conn->sd, conn->addr, conn->addrlen);
 
-  if (status != DN_OK) {
-    if (errno == EINPROGRESS) {
-      conn->connecting = 1;
-      return DN_OK;
-    }
-
+  if (status != DN_OK && errno != EINPROGRESS) {
     log_error("connect on s %d to '%.*s' failed: %s", conn->sd, conn->pname.len,
               conn->pname.data, strerror(errno));
 
     goto error;
+  }
+
+  /*
+   * A peer connection with TLS stays connecting until the handshake is done,
+   * which core_core() drives from the first writable event on, also when
+   * connect() succeeded at once.
+   */
+  if (conn->type == CONN_DNODE_PEER_SERVER && ctx->tls != NULL) {
+    conn->connecting = 1;
+    status = tls_conn_start(ctx, conn, false);
+    if (status != DN_OK) {
+      conn->err = EPROTO;
+      return status;
+    }
+    return DN_OK;
+  }
+
+  if (status != DN_OK) {
+    conn->connecting = 1;
+    return DN_OK;
   }
 
   ASSERT(!conn->connecting);
@@ -345,6 +362,10 @@ ssize_t conn_recv_data(struct conn *conn, void *buf, size_t size) {
   ASSERT(buf != NULL);
   ASSERT(size > 0);
   ASSERT(conn->recv_ready);
+
+  if (conn->tls != NULL) {
+    return tls_conn_recv(conn, buf, size);
+  }
 
   for (;;) {
     n = dn_read(conn->sd, buf, size);
@@ -393,6 +414,10 @@ ssize_t conn_sendv_data(struct conn *conn, struct array *sendv, size_t nsend) {
   ASSERT(array_n(sendv) > 0);
   ASSERT(nsend != 0);
   ASSERT(conn->send_ready);
+
+  if (conn->tls != NULL) {
+    return tls_conn_sendv(conn, sendv, nsend);
+  }
 
   for (;;) {
     n = dn_writev(conn->sd, sendv->elem, sendv->nelem);
