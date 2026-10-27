@@ -129,6 +129,7 @@ struct conn *_conn_get(void) {
   conn->eof = 0;
   conn->done = 0;
   conn->waiting_to_unref = 0;
+  conn->recv_paused = 0;
 
   /* for dynomite */
   conn->dyn_mode = 0;

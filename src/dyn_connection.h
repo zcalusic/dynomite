@@ -44,6 +44,12 @@
 #include "dyn_types.h"
 
 #define MAX_CONN_QUEUE_SIZE 20000
+/*
+ * A client or peer with this many requests waiting for their replies isn't
+ * read until it is down to CONN_RECV_RESUME: TCP pushes back on it.
+ */
+#define CONN_RECV_PAUSE 20000
+#define CONN_RECV_RESUME 10000
 #define MAX_CONN_ALLOWABLE_NON_RECV 5
 #define MAX_CONN_ALLOWABLE_NON_SEND 5
 
@@ -132,6 +138,7 @@ struct conn {
   unsigned connected : 1;        /* connected? */
   unsigned eof : 1;              /* eof? aka passive close? */
   unsigned waiting_to_unref : 1; /* eof? aka passive close? */
+  unsigned recv_paused : 1;      /* too many requests outstanding */
   unsigned done : 1;             /* done? aka close? */
   unsigned dyn_mode : 1;         /* is a dyn connection? */
   unsigned same_dc : 1;  /* bit to indicate whether a peer conn is same DC */
@@ -212,6 +219,8 @@ void conn_deinit(void);
 bool conn_is_req_first_in_outqueue(struct conn *conn, struct msg *req);
 rstatus_t conn_event_add_conn(struct conn *conn);
 rstatus_t conn_event_add_out(struct conn *conn);
+bool conn_recv_pause(struct conn *conn);
+bool conn_recv_resume(struct conn *conn);
 rstatus_t conn_event_del_conn(struct conn *conn);
 rstatus_t conn_event_del_out(struct conn *conn);
 #endif

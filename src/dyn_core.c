@@ -387,6 +387,24 @@ static rstatus_t core_send(struct context *ctx, struct conn *conn) {
   return status;
 }
 
+static void core_close(struct context *ctx, struct conn *conn);
+
+/* After a read that failed or finished the conn: close it. */
+static rstatus_t core_recv_end(struct context *ctx, struct conn *conn) {
+  if (conn->dyn_mode) {
+    if (conn->err) {
+      loga("conn err on dnode EVENT_READ: %d", conn->err);
+      core_close(ctx, conn);
+      return DN_ERROR;
+    }
+    core_close(ctx, conn);
+    return DN_OK;
+  }
+
+  core_close(ctx, conn);
+  return DN_ERROR;
+}
+
 static void core_close(struct context *ctx, struct conn *conn) {
   rstatus_t status;
 
@@ -529,20 +547,8 @@ rstatus_t core_core(void *arg, uint32_t events) {
   /* read takes precedence over write */
   if (events & EVENT_READ) {
     status = core_recv(ctx, conn);
-
     if (status != DN_OK || conn->done || conn->err) {
-      if (conn->dyn_mode) {
-        if (conn->err) {
-          loga("conn err on dnode EVENT_READ: %d", conn->err);
-          core_close(ctx, conn);
-          return DN_ERROR;
-        }
-        core_close(ctx, conn);
-        return DN_OK;
-      }
-
-      core_close(ctx, conn);
-      return DN_ERROR;
+      return core_recv_end(ctx, conn);
     }
   }
 
@@ -560,6 +566,18 @@ rstatus_t core_core(void *arg, uint32_t events) {
 
       core_close(ctx, conn);
       return DN_ERROR;
+    }
+  }
+
+  /*
+   * A conn paused for too many outstanding requests, whose replies just went
+   * out: read what it sent meanwhile. Data already in the socket brings no
+   * new event (edge-triggered).
+   */
+  if (conn_recv_resume(conn)) {
+    status = core_recv(ctx, conn);
+    if (status != DN_OK || conn->done || conn->err) {
+      return core_recv_end(ctx, conn);
     }
   }
 

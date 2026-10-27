@@ -1099,6 +1099,10 @@ rstatus_t msg_recv(struct context *ctx, struct conn *conn) {
   conn->recv_ready = 1;
 
   do {
+    if (conn_recv_pause(conn)) {
+      return DN_OK;
+    }
+
     msg = conn_recv_next(ctx, conn, true);
     if (msg == NULL) {
       return DN_OK;
@@ -1252,7 +1256,8 @@ rstatus_t msg_send(struct context *ctx, struct conn *conn) {
       return status;
     }
 
-    if (TAILQ_COUNT(&conn->omsg_q) > MAX_CONN_QUEUE_SIZE) {
+    if ((conn->type == CONN_SERVER || conn->type == CONN_DNODE_PEER_SERVER) &&
+        TAILQ_COUNT(&conn->omsg_q) > MAX_CONN_QUEUE_SIZE) {
       conn->send_ready = 0;
       conn->err = ENOTRECOVERABLE;
       log_error("%s Setting ENOTRECOVERABLE happens here!", print_obj(conn));

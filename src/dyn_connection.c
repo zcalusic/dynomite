@@ -139,6 +139,36 @@ inline consistency_t conn_get_write_consistency(struct conn *conn) {
   return conn->write_consistency;
 }
 
+/*
+ * Whether conn, a client or a peer sending requests, has CONN_RECV_PAUSE
+ * requests waiting for their replies; if so, it is paused: msg_recv() reads
+ * no more from its socket. A request read in part stays in conn->rmsg.
+ */
+bool conn_recv_pause(struct conn *conn) {
+  if ((conn->type != CONN_CLIENT && conn->type != CONN_DNODE_PEER_CLIENT) ||
+      conn->eof || TAILQ_COUNT(&conn->omsg_q) < CONN_RECV_PAUSE) {
+    return false;
+  }
+  if (!conn->recv_paused) {
+    log_info("%s paused, %" PRIu64 " requests outstanding", print_obj(conn),
+             TAILQ_COUNT(&conn->omsg_q));
+    conn->recv_paused = 1;
+  }
+  return true;
+}
+
+/*
+ * Whether conn was paused and is now down to CONN_RECV_RESUME outstanding
+ * requests; if so, it isn't paused anymore.
+ */
+bool conn_recv_resume(struct conn *conn) {
+  if (!conn->recv_paused || TAILQ_COUNT(&conn->omsg_q) >= CONN_RECV_RESUME) {
+    return false;
+  }
+  conn->recv_paused = 0;
+  return true;
+}
+
 rstatus_t conn_event_del_conn(struct conn *conn) {
   struct context *ctx = conn_to_ctx(conn);
   _remove_from_ready_q(ctx, conn);
