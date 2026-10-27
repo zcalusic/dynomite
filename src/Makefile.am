@@ -34,7 +34,6 @@ TESTS = dynomite-test
 
 dynomite_SOURCES =			                          \
         dyn_array.c dyn_array.h		                          \
-        dyn_asciilogo.h                                           \
         dyn_cbuf.h                                                \
         dyn_client.c dyn_client.h                                 \
         dyn_conf.c dyn_conf.h		                          \
@@ -120,7 +119,6 @@ dynomite_test_SOURCES =                                           \
         dyn_vnode.c dyn_vnode.h                                   \
         dyn_gossip.c dyn_gossip.h                                 \
         dyn_dict.c dyn_dict.h                                     \
-        dyn_asciilogo.h                                           \
         dyn_test.c
 
 

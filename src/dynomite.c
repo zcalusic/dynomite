@@ -30,7 +30,6 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 
-#include "dyn_asciilogo.h"
 #include "dyn_conf.h"
 #include "dyn_core.h"
 #include "dyn_signal.h"
@@ -202,16 +201,9 @@ static void dn_print_run(struct instance *nci) {
     loga("dynomite-%s built for %s %s %s started on pid %d", VERSION,
          name.sysname, name.release, name.machine, nci->pid);
   }
-
-  loga(
-      "run, rabbit run / dig that hole, forget the sun / "
-      "and when at last the work is done / don't sit down / "
-      "it's time to dig another one");
-
-  loga("%s", ascii_logo);
 }
 
-static void dn_print_done(void) { loga("done, rabbit done"); }
+static void dn_print_done(void) { loga("dynomite stopped"); }
 
 static void dn_show_usage(void) {
   log_stderr(
