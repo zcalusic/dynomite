@@ -29,6 +29,13 @@ struct msg *req_get(struct conn *conn) {
 
   ASSERT((conn->type == CONN_CLIENT) || (conn->type == CONN_DNODE_PEER_CLIENT));
 
+  if (conn->type == CONN_CLIENT && msg_limit_reached()) {
+    log_warn("%s closed: max_msgs %zu reached", print_obj(conn),
+             msg_alloc_msgs());
+    conn->err = ENOMEM;
+    return NULL;
+  }
+
   req = msg_get(conn, true, __FUNCTION__);
   if (req == NULL) {
     conn->err = errno;

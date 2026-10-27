@@ -1443,8 +1443,8 @@ static rstatus_t take_free_msgs(struct conn *conn, struct msg ***taken,
 
 /*
  * Replicas that disagree under DC_SAFE_QUORUM: the client gets a "no quorum"
- * error, also when no msg can be allocated (alloc_msgs_max reached, the free
- * list empty). This used to return NULL, which the client code dereferenced.
+ * error, also with max_msgs reached and the free list empty. The error used
+ * to count against max_msgs, and the client code dereferenced the NULL.
  */
 static rstatus_t no_quorum_run(struct conn *conn, data_store_t store) {
   static char buf[256];
@@ -1516,6 +1516,69 @@ static rstatus_t test_no_quorum(struct conn *conn) {
     if (no_quorum_run(conn, stores[i]) != DN_OK) nfailed++;
   }
   loga("no quorum runs: %zu, failed: %zu", sizeof(stores) / sizeof(stores[0]),
+       nfailed);
+  return nfailed == 0 ? DN_OK : DN_ERROR;
+}
+
+/*
+ * At max_msgs with the free list empty, only a new client request is refused,
+ * with ENOMEM: replies from the datastore and from peers, and requests from
+ * peers, are still read. A refused reply used to stop reading the datastore
+ * connection, with a stale errno as its error.
+ */
+static rstatus_t test_msg_limit(struct conn *conn) {
+  static const struct {
+    const char *name;
+    connection_type_t type;
+    bool request;
+    bool refused;
+  } cases[] = {
+      {"client request", CONN_CLIENT, true, true},
+      {"datastore reply", CONN_SERVER, false, false},
+      {"peer reply", CONN_DNODE_PEER_SERVER, false, false},
+      {"peer request", CONN_DNODE_PEER_CLIENT, true, false},
+  };
+  connection_type_t type = conn->type;
+  struct msg **taken = NULL;
+  size_t ntaken = 0, nfailed = 0;
+
+  print_banner("MSG LIMIT");
+  g_data_store = DATA_REDIS;
+  if (take_free_msgs(conn, &taken, &ntaken) != DN_OK) return DN_ERROR;
+  msg_init(msg_alloc_msgs());
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    struct msg *msg;
+
+    conn->type = cases[i].type;
+    conn->err = 0;
+    msg = cases[i].request ? req_get(conn) : rsp_get(conn);
+    if (cases[i].refused ? msg != NULL || conn->err != ENOMEM : msg == NULL) {
+      log_error("%s: %s, err '%s'", cases[i].name,
+                msg != NULL ? "allocated" : "refused", strerror(conn->err));
+      nfailed++;
+    }
+    if (msg != NULL) {
+      /* keep it, so the free list stays empty for the next case */
+      struct msg **all = dn_realloc(taken, (ntaken + 1) * sizeof(*all));
+      if (all == NULL) {
+        msg_put(msg);
+        nfailed++;
+        break;
+      }
+      taken = all;
+      taken[ntaken++] = msg;
+    }
+  }
+  conn->type = type;
+  conn->err = 0;
+
+  if (take_free_msgs(conn, &taken, &ntaken) != DN_OK) nfailed++;
+  msg_init(TEST_ALLOC_MSGS_MAX);
+  for (size_t i = 0; i < ntaken; i++) msg_put(taken[i]);
+  dn_free(taken);
+
+  loga("msg limit runs: %zu, failed: %zu", sizeof(cases) / sizeof(cases[0]),
        nfailed);
   return nfailed == 0 ? DN_OK : DN_ERROR;
 }
@@ -2465,6 +2528,12 @@ int main(int argc, char **argv) {
   ret = test_no_quorum(conn);
   if (ret != DN_OK) {
     loga("Error in testing replies without quorum!!!");
+    goto err_out;
+  }
+
+  ret = test_msg_limit(conn);
+  if (ret != DN_OK) {
+    loga("Error in testing the msg limit!!!");
     goto err_out;
   }
 

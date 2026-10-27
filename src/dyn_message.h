@@ -610,6 +610,7 @@ rstatus_t msg_recv(struct context *ctx, struct conn *conn);
 rstatus_t msg_send(struct context *ctx, struct conn *conn);
 uint64_t msg_gen_frag_id(void);
 size_t msg_alloc_msgs(void);
+bool msg_limit_reached(void);
 uint32_t msg_payload_crc32(struct msg *msg);
 struct msg *msg_get_rsp_integer(struct conn *conn);
 struct mbuf *msg_ensure_mbuf(struct msg *msg, size_t len);

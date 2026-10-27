@@ -308,14 +308,6 @@ static struct msg *_msg_get(struct conn *conn, bool request,
     goto done;
   }
 
-  // protect our server in the slow network and high traffics.
-  // we drop client requests but still honor our peer requests
-  if (alloc_msg_count >= alloc_msgs_max) {
-    log_debug(LOG_WARN, "allocated #msgs %lu hit max allowable limit",
-              alloc_msg_count);
-    return NULL;
-  }
-
   alloc_msg_count++;
 
   if (alloc_msg_count % 1000 == 0)
@@ -441,6 +433,16 @@ done:
 }
 
 size_t msg_alloc_msgs() { return alloc_msg_count; }
+
+/*
+ * Whether a new client request would go over max_msgs. Only those are
+ * limited: replies answer requests already in flight, which are freed only
+ * once their replies are in, and requests from peers and rewrites belong to
+ * requests that were already accepted.
+ */
+bool msg_limit_reached(void) {
+  return TAILQ_EMPTY(&free_msgq) && alloc_msg_count >= alloc_msgs_max;
+}
 
 size_t msg_free_queue_size(void) { return TAILQ_COUNT(&free_msgq); }
 

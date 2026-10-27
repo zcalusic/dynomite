@@ -309,7 +309,7 @@ struct msg *rspmgr_get_response(struct context *ctx, struct response_mgr *rspmgr
 /*
  * The error for replicas that don't agree. It replaces all their responses,
  * so they are freed first: the msg and the mbufs they give back are what
- * msg_get_error() takes, which can't then fail on alloc_msgs_max or memory.
+ * msg_get_error() takes, which can't then fail for lack of memory.
  */
 struct msg *rspmgr_no_quorum_error(struct response_mgr *rspmgr) {
   int i;
