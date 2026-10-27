@@ -206,6 +206,14 @@ int event_del_conn(struct event_base *evb, struct conn *c) {
   ASSERT(c != NULL);
   ASSERT(c->sd > 0);
 
+  /*
+   * Already removed: core_close() removes a conn, then the unref in its
+   * close handler tries again for datastore and peer conns.
+   */
+  if (!c->recv_active && !c->send_active) {
+    return 0;
+  }
+
   log_debug(LOG_DEBUG, "removing conn %s from active", print_obj(c));
   status = epoll_ctl(ep, EPOLL_CTL_DEL, c->sd, NULL);
   if (status < 0) {
