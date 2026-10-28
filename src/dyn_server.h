@@ -79,6 +79,7 @@ rstatus_t server_connect(struct context *ctx, struct datastore *server,
 struct datacenter *server_get_dc(struct server_pool *pool,
                                  struct string *dcname);
 struct rack *server_get_rack(struct datacenter *dc, struct string *rackname);
+bool server_has_rack(struct datacenter *dc, struct string *rackname);
 struct rack *server_get_rack_by_dc_rack(struct server_pool *sp,
                                         struct string *rackname,
                                         struct string *dcname);

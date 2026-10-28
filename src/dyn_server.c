@@ -546,6 +546,15 @@ struct datacenter *server_get_dc(struct server_pool *pool,
   return dc;
 }
 
+/* Whether dc has a rack by that name already. */
+bool server_has_rack(struct datacenter *dc, struct string *rackname) {
+  for (uint32_t i = 0; i < array_n(&dc->racks); i++) {
+    struct rack *rack = array_get(&dc->racks, i);
+    if (string_compare(rack->name, rackname) == 0) return true;
+  }
+  return false;
+}
+
 struct rack *server_get_rack(struct datacenter *dc, struct string *rackname) {
   ASSERT(dc != NULL);
   ASSERT(dc->dict_rack != NULL);

@@ -1559,6 +1559,170 @@ static rstatus_t take_free_msgs(struct conn *conn, struct msg ***taken,
 }
 
 /*
+ * Quorum over the replies of 1 to MAX_REPLICAS_PER_DC racks: a GET and an
+ * MGET, its replies submitted to a response manager in the order given until
+ * it's done, then the reply the client gets under DC_SAFE_QUORUM and under
+ * DC_QUORUM (which falls back to the first reply). A quorum is more than half
+ * the racks agreeing; with more than 3 racks, only the first 3 replies used
+ * to be compared and the 4th was written past the arrays.
+ */
+struct quorum_case {
+  const char *replies[MAX_REPLICAS_PER_DC + 1]; /* NULL-terminated, by rack */
+  size_t done_after; /* replies the response manager waits for */
+  const char *safe;  /* what the client gets, NULL for the no quorum error */
+  const char *lenient;
+};
+
+#define Q_GET(v) "$1\r\n" v "\r\n"
+#define Q_MGET(a, b) "*2\r\n$1\r\n" a "\r\n$1\r\n" b "\r\n"
+
+static const struct quorum_case quorum_cases[] = {
+    {{Q_GET("A")}, 1, Q_GET("A"), Q_GET("A")},
+    {{Q_GET("A"), Q_GET("A")}, 2, Q_GET("A"), Q_GET("A")},
+    {{Q_GET("A"), Q_GET("B")}, 2, NULL, Q_GET("A")},
+    {{Q_GET("A"), Q_GET("A"), Q_GET("B")}, 2, Q_GET("A"), Q_GET("A")},
+    {{Q_GET("A"), Q_GET("B"), Q_GET("A")}, 3, Q_GET("A"), Q_GET("A")},
+    {{Q_GET("B"), Q_GET("A"), Q_GET("A")}, 3, Q_GET("A"), Q_GET("A")},
+    {{Q_GET("A"), Q_GET("B"), Q_GET("C")}, 3, NULL, Q_GET("A")},
+    {{Q_GET("A"), Q_GET("A"), Q_GET("A"), Q_GET("B")},
+     3,
+     Q_GET("A"),
+     Q_GET("A")},
+    {{Q_GET("A"), Q_GET("A"), Q_GET("B"), Q_GET("B")}, 4, NULL, Q_GET("A")},
+    {{Q_GET("A"), Q_GET("B"), Q_GET("C"), Q_GET("A")}, 4, NULL, Q_GET("A")},
+    {{Q_GET("B"), Q_GET("A"), Q_GET("A"), Q_GET("A")},
+     4,
+     Q_GET("A"),
+     Q_GET("A")},
+    {{Q_GET("A"), Q_GET("A"), Q_GET("B"), Q_GET("B"), Q_GET("B")},
+     5,
+     Q_GET("B"),
+     Q_GET("B")},
+    {{Q_GET("B"), Q_GET("C"), Q_GET("A"), Q_GET("A"), Q_GET("A")},
+     5,
+     Q_GET("A"),
+     Q_GET("A")},
+    {{Q_GET("A"), Q_GET("B"), Q_GET("C"), Q_GET("D"), Q_GET("E")},
+     5,
+     NULL,
+     Q_GET("A")},
+    {{Q_GET("A"), Q_GET("A"), Q_GET("A"), Q_GET("A"), Q_GET("B"), Q_GET("B"),
+      Q_GET("B"), Q_GET("B")},
+     8,
+     NULL,
+     Q_GET("A")},
+    {{Q_GET("B"), Q_GET("A"), Q_GET("A"), Q_GET("A"), Q_GET("A"), Q_GET("B"),
+      Q_GET("A"), Q_GET("B")},
+     7,
+     Q_GET("A"),
+     Q_GET("A")},
+    /* MGET: without a quorum on the whole reply, one per element */
+    {{Q_MGET("x", "y"), Q_MGET("x", "y"), Q_MGET("x", "y"), Q_MGET("w", "z")},
+     3,
+     Q_MGET("x", "y"),
+     Q_MGET("x", "y")},
+    {{Q_MGET("x", "y"), Q_MGET("x", "z"), Q_MGET("w", "y"), Q_MGET("x", "y")},
+     4,
+     Q_MGET("x", "y"),
+     Q_MGET("x", "y")},
+    {{Q_MGET("x", "y"), Q_MGET("x", "y"), Q_MGET("x", "z"), Q_MGET("w", "z")},
+     4,
+     NULL,
+     Q_MGET("x", "y")},
+    {{Q_MGET("x", "y"), Q_MGET("x", "z"), Q_MGET("x", "y"), Q_MGET("w", "z"),
+      Q_MGET("x", "y")},
+     5,
+     Q_MGET("x", "y"),
+     Q_MGET("x", "y")},
+};
+
+static rstatus_t quorum_run(struct conn *conn, const struct quorum_case *qc,
+                            consistency_t consistency) {
+  static char buf[256];
+  const char *want = consistency == DC_SAFE_QUORUM ? qc->safe : qc->lenient;
+  bool mget = qc->replies[0][0] == '*';
+  struct response_mgr rspmgr;
+  struct msg *req, *rsp = NULL;
+  size_t nracks = 0, submitted = 0;
+  uint8_t first;
+  rstatus_t status = DN_ERROR;
+
+  while (qc->replies[nracks] != NULL) nracks++;
+  req = repair_parse(conn, true,
+                     mget ? "*3\r\n$4\r\nMGET\r\n$1\r\na\r\n$1\r\nb\r\n"
+                          : "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n");
+  if (req == NULL) return DN_ERROR;
+  req->consistency = consistency;
+  init_response_mgr(req, &rspmgr, (uint8_t)nracks, conn);
+  while (submitted < nracks && !rspmgr.done) {
+    struct msg *r = repair_parse(conn, false, qc->replies[submitted]);
+    if (r == NULL) goto out;
+    rspmgr_submit_response(&rspmgr, r);
+    submitted++;
+    rspmgr_check_is_done(&rspmgr);
+  }
+  if (!rspmgr.done || submitted != qc->done_after) {
+    log_error("quorum case %zu racks (%s): done %s after %zu replies, want %zu",
+              nracks, get_consistency_string(consistency),
+              rspmgr.done ? "" : "not even", submitted, qc->done_after);
+    goto out;
+  }
+  /*
+   * Without a quorum, rspmgr_get_response() counts it in the pool's stats,
+   * which this test has none of: call what it then calls.
+   */
+  if (rspmgr_largest_agreement(rspmgr.checksums, rspmgr.good_responses,
+                               &first) >= rspmgr.quorum_responses) {
+    rsp = rspmgr_get_response(ctx, &rspmgr);
+  } else {
+    rsp = redis_reconcile_responses(&rspmgr);
+  }
+  repair_data(rsp, buf, sizeof(buf));
+  if (want == NULL ? strstr(buf, "Failed to achieve Quorum") == NULL
+                   : strcmp(buf, want) != 0) {
+    log_error("quorum case %zu racks (%s): got '%s', want '%s'", nracks,
+              get_consistency_string(consistency), buf,
+              want == NULL ? "no quorum" : want);
+    goto out;
+  }
+  status = DN_OK;
+
+out:
+  /* the MGET reply is a new msg, the others are the response manager's */
+  for (size_t i = 0; rsp != NULL && i < rspmgr.good_responses; i++) {
+    if (rspmgr.responses[i] == rsp) rsp = NULL;
+  }
+  if (rsp != rspmgr.err_rsp) rsp_put(rsp);
+  rspmgr_free_other_responses(&rspmgr, NULL);
+  /* the replies a request done early still awaits would be dropped later */
+  req->awaiting_rsps = 0;
+  msg_put(req);
+  return status;
+}
+
+static rstatus_t test_quorum(struct conn *conn) {
+  static const consistency_t levels[] = {DC_SAFE_QUORUM, DC_QUORUM};
+  size_t nruns = 0, nfailed = 0;
+
+  print_banner("QUORUM");
+  g_data_store = DATA_REDIS;
+  set_datastore_ops();
+  conn->dyn_mode = 0;
+  /* a response manager's conn is the client's: rsp_get() checks the type */
+  connection_type_t type = conn->type;
+  conn->type = CONN_CLIENT;
+  for (size_t i = 0; i < NELEMS(quorum_cases); i++) {
+    for (size_t j = 0; j < NELEMS(levels); j++) {
+      nruns++;
+      if (quorum_run(conn, &quorum_cases[i], levels[j]) != DN_OK) nfailed++;
+    }
+  }
+  conn->type = type;
+  loga("quorum runs: %zu, failed: %zu", nruns, nfailed);
+  return nfailed == 0 ? DN_OK : DN_ERROR;
+}
+
+/*
  * Replicas that disagree under DC_SAFE_QUORUM: the client gets a "no quorum"
  * error, also with max_msgs reached and the free list empty. The error used
  * to count against max_msgs, and the client code dereferenced the NULL.
@@ -2760,6 +2924,12 @@ int main(int argc, char **argv) {
   ret = test_no_quorum(conn);
   if (ret != DN_OK) {
     loga("Error in testing replies without quorum!!!");
+    goto err_out;
+  }
+
+  ret = test_quorum(conn);
+  if (ret != DN_OK) {
+    loga("Error in testing quorum replies!!!");
     goto err_out;
   }
 

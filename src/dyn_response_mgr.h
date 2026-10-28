@@ -3,12 +3,15 @@
 
 #include "dyn_string.h"
 
-#define MAX_REPLICAS_PER_DC 3
+/*
+ * The most racks a datacenter may have: a request under DC_QUORUM or a
+ * stricter level gets a reply from each, and a response manager holds them
+ * all. vnode_update() refuses a rack beyond it.
+ */
+#define MAX_REPLICAS_PER_DC 8
 struct response_mgr {
   bool is_read;
   bool done;
-  /* we could use the dynamic array
-     here. But we have only 3 ASGs */
   struct msg *responses[MAX_REPLICAS_PER_DC];
   uint32_t checksums[MAX_REPLICAS_PER_DC];
   // Number of non-error responses received. (nil) is not an error.
@@ -37,6 +40,8 @@ void init_response_mgr(struct msg *req, struct response_mgr *rspmgr,
 // DN_OK if response was accepted
 rstatus_t rspmgr_submit_response(struct response_mgr *rspmgr, struct msg *rsp);
 bool rspmgr_check_is_done(struct response_mgr *rspmgr);
+uint8_t rspmgr_largest_agreement(const uint32_t *checksums, uint8_t n,
+                                 uint8_t *first);
 struct msg *rspmgr_get_response(struct context *ctx, struct response_mgr *rspmgr);
 void rspmgr_free_response(struct response_mgr *rspmgr, struct msg *dont_free);
 struct msg *rspmgr_no_quorum_error(struct response_mgr *rspmgr);

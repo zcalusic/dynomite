@@ -84,6 +84,18 @@ rstatus_t vnode_update(struct server_pool *sp) {
     peer->processed = 1;
 
     struct datacenter *dc = server_get_dc(sp, &peer->dc);
+    // A request gets a reply from every rack of a datacenter, and a response
+    // manager holds at most MAX_REPLICAS_PER_DC of them: refuse a rack beyond
+    // that. At startup this stops the node; a peer added later is left out.
+    if (array_n(&dc->racks) >= MAX_REPLICAS_PER_DC &&
+        !server_has_rack(dc, &peer->rack)) {
+      log_error(
+          "peer '%.*s': datacenter '%.*s' would have more than %d "
+          "racks, rack '%.*s' refused",
+          peer->name.len, peer->name.data, dc->name->len, dc->name->data,
+          MAX_REPLICAS_PER_DC, peer->rack.len, peer->rack.data);
+      return DN_ERROR;
+    }
     struct rack *rack = server_get_rack(dc, &peer->rack);
 
     ASSERT(rack != NULL);

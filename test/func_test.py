@@ -763,6 +763,51 @@ def run_optional_args_test(c):
     print("\t-14 commands with optional args answered as by Redis, 10 with "
           "the wrong number of args and 3 CLIENT SETINFO too")
 
+def run_quorum_majority_test(c, num_keys=10):
+    """Under DC_SAFE_QUORUM and DC_EACH_SAFE_QUORUM, writes values that
+    disagree straight into the racks' datastores, the same in every DC, and
+    reads them through one node: with more than half the racks of each DC
+    holding one value, the read returns it; without, it's refused. Each key
+    puts the values on the racks in another order. With more than 3 racks
+    in a DC, only the first 3 replies used to be compared: reads returned a
+    minority's value, or hung."""
+    dyno_cluster = c.get_dynomite_cluster()
+    consistency = dyno_cluster.request['conf']['read_consistency']
+    if consistency not in ('DC_SAFE_QUORUM', 'DC_EACH_SAFE_QUORUM'):
+        return
+    print("Running QUORUM_MAJORITY test")
+    rng = random.Random(1)
+    conn = dyno_cluster.nodes[0].get_connection()
+    sizes = sorted({len(racks) for racks in dyno_cluster.counts_by_rack.values()})
+    for majority in (True, False):
+        for i in range(num_keys):
+            key = create_key('QUORUM_MAJORITY', '%s_%d' % (majority, i))
+            for dc, racks in dyno_cluster.counts_by_rack.items():
+                n = len(racks)
+                quorum = n // 2 + 1
+                if majority:
+                    values = ['A'] * quorum + ['B'] * (n - quorum)
+                elif n % 2 == 0:
+                    values = ['A'] * (n // 2) + ['B'] * (n // 2)
+                else:
+                    values = [string.ascii_uppercase[j] for j in range(n)]
+                rng.shuffle(values)
+                by_rack = dict(zip(sorted(racks), values))
+                for node in dyno_cluster.nodes:
+                    if node.spec.dc == dc:
+                        node.get_data_store_connection().set(
+                            key, by_rack[node.spec.rack])
+            try:
+                reply = conn.get(key)
+            except redis.exceptions.ResponseError as e:
+                assert not majority and 'Failed to achieve Quorum' in str(e), \
+                    (key, e)
+                continue
+            assert majority and reply == b'A', (key, reply)
+    print("\t-%d keys with a majority of the racks (%s per DC) answered with "
+          "its value, %d without one refused"
+          % (num_keys, '/'.join(str(n) for n in sizes), num_keys))
+
 def run_dbsize_test(c):
     """Checks DBSIZE, which counts the keys of the node's own datastore
     only, like KEYS and SCAN: through each node it must match that node's
@@ -856,6 +901,7 @@ def comparison_test(redis, dynomite, debug):
     run_dbsize_test(c)
     run_unsupported_test(c)
     run_optional_args_test(c)
+    run_quorum_majority_test(c)
 
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM

@@ -4168,34 +4168,22 @@ static rstatus_t get_next_response_fragment(struct msg *rsp,
   return DN_OK;
 }
 
-// Returns a quorum response.
+// Returns the fragment a quorum of the responses agree on, or NULL.
 static struct msg *redis_get_fragment_quorum(
-    struct array *fragment_from_responses) {
+    struct array *fragment_from_responses, uint8_t quorum) {
   uint32_t total = array_n(fragment_from_responses);
-  ASSERT(total <= 3);
+  ASSERT(total <= MAX_REPLICAS_PER_DC);
   uint32_t checksums[MAX_REPLICAS_PER_DC];
   uint32_t fragment_iter;
   for (fragment_iter = 0; fragment_iter < total; fragment_iter++) {
     checksums[fragment_iter] = msg_payload_crc32(
         *(struct msg **)array_get(fragment_from_responses, fragment_iter));
   }
-  switch (total) {
-    case 2:
-      if (checksums[0] == checksums[1])
-        return *(struct msg **)array_get(fragment_from_responses, 0);
-      else
-        return NULL;
-    case 3:
-      if (checksums[0] == checksums[1])
-        return *(struct msg **)array_get(fragment_from_responses, 0);
-      if (checksums[0] == checksums[2])
-        return *(struct msg **)array_get(fragment_from_responses, 0);
-      if (checksums[1] == checksums[2])
-        return *(struct msg **)array_get(fragment_from_responses, 1);
-      return NULL;
-    default:
-      return NULL;
+  uint8_t first;
+  if (rspmgr_largest_agreement(checksums, (uint8_t)total, &first) < quorum) {
+    return NULL;
   }
+  return *(struct msg **)array_get(fragment_from_responses, first);
 }
 
 static rstatus_t free_rsp_each(void *elem) {
@@ -4279,8 +4267,8 @@ static struct msg *redis_reconcile_multikey_responses(
 
     // Now that we have 1 fragment from each good response, try to get a quorum
     // on them
-    struct msg *quorum_fragment =
-        redis_get_fragment_quorum(&cloned_rsp_fragment_array);
+    struct msg *quorum_fragment = redis_get_fragment_quorum(
+        &cloned_rsp_fragment_array, rspmgr->quorum_responses);
     if (quorum_fragment == NULL) {
       if (rspmgr->msg->consistency == DC_QUORUM) {
         log_info(

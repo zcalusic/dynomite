@@ -116,20 +116,36 @@ void init_response_mgr(struct msg *req, struct response_mgr *rspmgr,
   req->rspmgrs_inited = true;
 }
 
-static bool rspmgr_is_quorum_achieved(struct response_mgr *rspmgr) {
-  if (rspmgr->quorum_responses == 1 &&
-      rspmgr->good_responses == rspmgr->quorum_responses)
-    return true;
-  if (rspmgr->good_responses < rspmgr->quorum_responses) return false;
+/*
+ * The size of the largest group of equal checksums among the first n, and in
+ * *first the index of its first member; of groups the same size, the one
+ * whose first member came first.
+ */
+uint8_t rspmgr_largest_agreement(const uint32_t *checksums, uint8_t n,
+                                 uint8_t *first) {
+  uint8_t best = 0;
 
-  uint32_t chk0, chk1, chk2;
-  chk0 = rspmgr->checksums[0];
-  chk1 = rspmgr->checksums[1];
-  if (chk0 == chk1) return true;
-  if (rspmgr->good_responses < 3) return false;
-  chk2 = rspmgr->checksums[2];
-  if ((chk1 == chk2) || (chk0 == chk2)) return true;
-  return false;
+  *first = 0;
+  for (uint8_t i = 0; i < n; i++) {
+    uint8_t same = 0;
+    for (uint8_t j = i; j < n; j++) {
+      if (checksums[j] == checksums[i]) same++;
+    }
+    if (same > best) {
+      best = same;
+      *first = i;
+    }
+  }
+  return best;
+}
+
+/* A quorum of the replicas sent the same response. */
+static bool rspmgr_is_quorum_achieved(struct response_mgr *rspmgr) {
+  uint8_t first;
+
+  if (rspmgr->good_responses < rspmgr->quorum_responses) return false;
+  return rspmgr_largest_agreement(rspmgr->checksums, rspmgr->good_responses,
+                                  &first) >= rspmgr->quorum_responses;
 }
 
 // Wait for all responses before responding
@@ -277,25 +293,12 @@ struct msg *rspmgr_get_response(struct context *ctx, struct response_mgr *rspmgr
     }
   }
 
-  // A quorum of one (a single rack) has nothing to compare against, like in
-  // rspmgr_is_quorum_achieved(). Without this, the checksum matching below
-  // would compare against an unused slot and treat the response as a mismatch.
-  if (rspmgr->quorum_responses == 1 && rspmgr->good_responses == 1) {
-    return rspmgr->responses[0];
-  }
-
-  // If we did not perform any repairs, we fall back to checksum matching.
-  uint32_t chk0, chk1, chk2;
-  chk0 = rspmgr->checksums[0];
-  chk1 = rspmgr->checksums[1];
-  if (chk0 == chk1) {
-    return rspmgr->responses[0];
-  } else if (rspmgr->good_responses == 3) {
-    chk2 = rspmgr->checksums[2];
-    if (chk1 == chk2)
-      return rspmgr->responses[1];
-    else if (chk0 == chk2)
-      return rspmgr->responses[0];
+  // If we did not perform any repairs, we fall back to checksum matching: the
+  // response a quorum of the replicas sent.
+  uint8_t first;
+  if (rspmgr_largest_agreement(rspmgr->checksums, rspmgr->good_responses,
+                               &first) >= rspmgr->quorum_responses) {
+    return rspmgr->responses[first];
   }
   rspmgr_incr_non_quorum_responses_stats(rspmgr);
   if (log_loggable(LOG_DEBUG)) {
@@ -303,13 +306,9 @@ struct msg *rspmgr_get_response(struct context *ctx, struct response_mgr *rspmgr
     msg_dump(LOG_DEBUG, rspmgr->msg);
   }
   if (log_loggable(LOG_VVERB)) {
-    log_error("Response 0: ");
-    msg_dump(LOG_VVERB, rspmgr->responses[0]);
-    log_error("Response 1: ");
-    msg_dump(LOG_VVERB, rspmgr->responses[1]);
-    if (rspmgr->good_responses == 3) {
-      log_error("Response 2: ");
-      msg_dump(LOG_VVERB, rspmgr->responses[2]);
+    for (uint8_t i = 0; i < rspmgr->good_responses; i++) {
+      log_error("Response %u: ", i);
+      msg_dump(LOG_VVERB, rspmgr->responses[i]);
     }
   }
   return g_reconcile_responses(rspmgr);
@@ -359,6 +358,14 @@ rstatus_t rspmgr_submit_response(struct response_mgr *rspmgr, struct msg *rsp) {
       rspmgr->err_rsp = rsp;
     else
       rsp_put(rsp);
+  } else if (rspmgr->good_responses >= MAX_REPLICAS_PER_DC) {
+    // vnode_update() keeps a datacenter to MAX_REPLICAS_PER_DC racks, so
+    // this can't happen; were it to, don't write past the arrays.
+    ASSERT(rspmgr->good_responses < MAX_REPLICAS_PER_DC);
+    log_error("req %" PRIu64 ": more responses than %d racks, dropped one",
+              rspmgr->msg->id, MAX_REPLICAS_PER_DC);
+    rspmgr->error_responses++;
+    rsp_put(rsp);
   } else {
     rspmgr->checksums[rspmgr->good_responses] = msg_payload_crc32(rsp);
     log_debug(LOG_VERB, "Good response %" PRIu64 ":%" PRIu64 " checksum %u",
