@@ -869,6 +869,46 @@ def run_keepalive_test(c):
     print("\t-%d connections (peers, datastore, client) probe within %d s"
           % (len(conns), KEEPALIVE_IDLE_S))
 
+def run_ping_test(c):
+    """Checks the stats endpoint's /ping on one node: OK while its datastore
+    is connected, 503 "Datastore is not connected" after the datastore dies,
+    and OK again on its own once the datastore is back, without any client
+    traffic (the reconnect backoff is at most server_retry_timeout, 10 s).
+    Before, /ping answered OK whatever the datastore did. Also: clients
+    that drop stats requests unanswered log one line now and then, not one
+    each."""
+    print("Running PING test")
+    node = c.get_dynomite_cluster().nodes[-1]
+    url = 'http://%s:%d/ping' % (node.ip, node.spec.stats_port)
+    def ping():
+        r = requests.get(url, timeout=3)
+        return r.status_code, r.text.strip()
+    def wait_for(status, seconds):
+        for _ in range(seconds * 10):
+            if ping()[0] == status:
+                return
+            time.sleep(0.1)
+        assert False, (status, ping())
+    assert ping() == (200, 'OK'), ping()
+    node.data_store_node.teardown()
+    wait_for(503, 3)
+    assert ping() == (503, 'Datastore is not connected'), ping()
+    node.data_store_node.launch()
+    wait_for(200, 15)
+    assert node.get_connection().set(create_key('PING', 'key'), 'v')
+
+    with open(node.logfile) as f:
+        offset = len(f.read())
+    for _ in range(50):
+        with socket.create_connection((node.ip, node.spec.stats_port)) as s:
+            s.sendall(b'GET /info HTTP/1.0\r\n\r\n')
+    time.sleep(0.5)
+    with open(node.logfile) as f:
+        lines = f.read()[offset:].count('send stats on sd')
+    assert lines <= 1, lines
+    print("\t-/ping OK, 503 with the datastore down, OK again on its own; "
+          "50 dropped stats requests logged %d line(s)" % lines)
+
 def run_dbsize_test(c):
     """Checks DBSIZE, which counts the keys of the node's own datastore
     only, like KEYS and SCAN: through each node it must match that node's
@@ -964,6 +1004,7 @@ def comparison_test(redis, dynomite, debug):
     run_optional_args_test(c)
     run_quorum_majority_test(c)
     run_keepalive_test(c)
+    run_ping_test(c)
 
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM

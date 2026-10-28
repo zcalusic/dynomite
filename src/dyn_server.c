@@ -20,6 +20,7 @@
  * limitations under the License.
  */
 
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -213,11 +214,30 @@ static void server_ack_err(struct context *ctx, struct conn *conn,
   if (req->swallow) req_put(req);
 }
 
+/*
+ * Connected datastore connections. The main thread counts them, the stats
+ * thread reads the count for /ping: it can't look at the connections.
+ */
+static atomic_uint datastore_conns_connected;
+
+bool server_datastore_connected(void) {
+  return atomic_load(&datastore_conns_connected) > 0;
+}
+
+/* Count a datastore connection that just got connected. */
+void server_count_connected(void) {
+  atomic_fetch_add(&datastore_conns_connected, 1);
+}
+
 static void server_close(struct context *ctx, struct conn *conn) {
   struct msg *req, *nmsg; /* current and next message */
 
   ASSERT(conn->type == CONN_SERVER);
   struct datastore *datastore = conn->owner;
+
+  if (conn->connected) {
+    atomic_fetch_sub(&datastore_conns_connected, 1);
+  }
 
   if (ctx->stats) {
     server_close_stats(ctx, datastore, conn->err, conn->eof, conn->connected);
@@ -296,6 +316,7 @@ static void server_connected(struct context *ctx, struct conn *conn) {
 
   conn->connecting = 0;
   conn->connected = 1;
+  server_count_connected();
   conn_pool_connected(conn->conn_pool, conn);
 
   log_notice("%s connected ", print_obj(conn));

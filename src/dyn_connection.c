@@ -22,6 +22,7 @@
 
 #include "dyn_connection_internal.h"
 #include "dyn_core.h"
+#include "dyn_server.h"
 #include "dyn_tls.h"
 #include "event/dyn_event.h"
 
@@ -377,6 +378,9 @@ rstatus_t conn_connect(struct context *ctx, struct conn *conn) {
 
   ASSERT(!conn->connecting);
   conn->connected = 1;
+  if (conn->type == CONN_SERVER) {
+    server_count_connected();
+  }
   conn_pool_connected(conn->conn_pool, conn);
   log_debug(LOG_WARN, "%s connected to '%.*s'", print_obj(conn),
             conn->pname.len, conn->pname.data);

@@ -1128,6 +1128,9 @@ static rstatus_t stats_http_send(int sd, int status, const char *content_type,
       reason = "Method Not Allowed";
       extra = "Allow: GET\r\n";
       break;
+    case 503:
+      reason = "Service Unavailable";
+      break;
     default:
       status = 500;
       reason = "Internal Server Error";
@@ -1143,14 +1146,17 @@ static rstatus_t stats_http_send(int sd, int status, const char *content_type,
     return DN_ERROR;
   }
 
-  if (dn_sendn(sd, http_header, (size_t)n) < 0) {
-    log_error("send http headers on sd %d failed: %s", sd, strerror(errno));
-    close(sd);
-    return DN_ERROR;
-  }
-
-  if (dn_sendn(sd, content, len) < 0) {
-    log_error("send stats on sd %d failed: %s", sd, strerror(errno));
+  // A client that goes away before the reply, as health checks often do,
+  // is no fault of ours: one line now and then, not one each time.
+  if (dn_sendn(sd, http_header, (size_t)n) < 0 ||
+      dn_sendn(sd, content, len) < 0) {
+    static struct log_ratelimit send_log;
+    uint64_t suppressed;
+    if (log_ratelimit(&send_log, &suppressed)) {
+      log_warn("send stats on sd %d failed: %s; %" PRIu64
+               " more since last logged",
+               sd, strerror(errno), suppressed);
+    }
     close(sd);
     return DN_ERROR;
   }
@@ -1218,6 +1224,15 @@ static rstatus_t stats_send_rsp(struct stats *st) {
       log_debug(LOG_VERB, "send stats on sd %d %zu bytes", sd, st->buf.len);
       return stats_http_rsp(sd, st->buf.data, st->buf.len);
     }
+  } else if (cmd == CMD_PING) {
+    // OK when Dynomite answers and is connected to its datastore, which is
+    // what a health check needs to know.
+    if (!server_datastore_connected()) {
+      static const char down[] = "Datastore is not connected\r\n";
+      return stats_http_send(sd, 503, "text/plain; charset=utf-8",
+                             (const uint8_t *)down, sizeof(down) - 1);
+    }
+    return stats_http_rsp(sd, ok.data, ok.len);
   } else if (cmd == CMD_HELP) {
     static const char help[] =
         "/info\n/help\n/ping\n/cluster_describe\n"
