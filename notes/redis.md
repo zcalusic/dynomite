@@ -195,11 +195,11 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      SCARD        |    Yes     | SCARD key                                                                                                           |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
-    |      SDIFF        |    Yes*    | SDIFF key [key ...]                                                                                                 |
+    |      SDIFF        |    Yes*/** | SDIFF key [key ...]                                                                                                 |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |     SDIFFSTORE    |    Yes*    | SDIFFSTORE destination key [key ...]                                                                                |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
-    |      SINTER       |    Yes*    | SINTER key [key ...]                                                                                                |
+    |      SINTER       |    Yes*/** | SINTER key [key ...]                                                                                                |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |    SINTERSTORE    |    Yes*    | SINTERSTORE destination key [key ...]                                                                               |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -215,7 +215,7 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      SREM         |    Yes     | SREM key member [member ...]                                                                                        |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
-    |     SUNION        |    Yes*    | SUNION key [key ...]                                                                                                |
+    |     SUNION        |    Yes*/** | SUNION key [key ...]                                                                                                |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |   SUNIONSTORE     |    Yes*    | SUNIONSTORE destination key [key ...]                                                                               |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -224,7 +224,7 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
 
 * SDIFF, SDIFFSTORE, SINTER, SINTERSTORE, SMOVE, SUNION and SUNIONSTORE need all their keys on the same node, see [Commands with more than one key](#commands-with-more-than-one-key).
 
-** SSCAN scans only sets in the local node.
+** SSCAN scans only sets in the local node. SDIFF, SINTER and SUNION read from the keys' node in the local rack only, whatever the consistency level: replicas list a set's members in their own orders, so their replies can't be compared for a quorum.
 
 *** SPOP is refused with an error when the cluster has more than one rack: each replica would pop other, random members, and the racks' copies of the set would no longer agree. Use SRANDMEMBER and then SREM the members, which every replica removes alike. SRANDMEMBER reads from the key's node in the local rack only, whatever the consistency level, since replicas give different random replies.
 

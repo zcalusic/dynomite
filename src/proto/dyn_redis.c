@@ -1105,6 +1105,9 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
 
             if (str5icmp(m, 's', 'd', 'i', 'f', 'f')) {
               r->type = MSG_REQ_REDIS_SDIFF;
+              // An unordered set: replicas list it in their own orders, so
+              // their replies can't be compared. One of them is enough.
+              r->msg_routing = ROUTING_TOKEN_OWNER_LOCAL_RACK_ONLY;
               r->is_read = 1;
               break;
             }
@@ -1277,6 +1280,9 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
 
             if (str6icmp(m, 's', 'i', 'n', 't', 'e', 'r')) {
               r->type = MSG_REQ_REDIS_SINTER;
+              // An unordered set: replicas list it in their own orders, so
+              // their replies can't be compared. One of them is enough.
+              r->msg_routing = ROUTING_TOKEN_OWNER_LOCAL_RACK_ONLY;
               r->is_read = 1;
               break;
             }
@@ -1289,6 +1295,9 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
 
             if (str6icmp(m, 's', 'u', 'n', 'i', 'o', 'n')) {
               r->type = MSG_REQ_REDIS_SUNION;
+              // An unordered set: replicas list it in their own orders, so
+              // their replies can't be compared. One of them is enough.
+              r->msg_routing = ROUTING_TOKEN_OWNER_LOCAL_RACK_ONLY;
               r->is_read = 1;
               break;
             }

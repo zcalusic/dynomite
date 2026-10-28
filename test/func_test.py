@@ -488,26 +488,14 @@ def multikey_setup(conn, k):
     conn.pfadd(k(9), 'c')
     conn.geoadd(k(10), (13.361389, 38.115556, 'Palermo'))
 
-# Replies that are unordered sets: each replica lists the members in its own
-# hash order, so quorum reads of them fail, whatever the routing.
-SET_REPLIES = ('sdiff', 'sinter', 'sunion')
-
 def multikey_verify(c, plain):
-    """run_verify() for each command, the ones with unordered set replies
-    at DC_ONE, on a connection of their own to the same node."""
-    kwargs = c.dyno_conn.connection_pool.connection_kwargs
-    dc_one = redis.Redis(kwargs['host'], kwargs['port'],
-                         single_connection_client=True)
-    dc_one.execute_command('dyno_config:conn_consistency', 'DC_ONE')
+    """run_verify() for each command, at the cluster's consistency level:
+    SDIFF, SINTER and SUNION read one rack, since replicas list a set in
+    their own orders; before, quorum reads of them always failed."""
     c.set_sort_before_compare(True)
     for name, args, _ in plain:
-        if name in SET_REPLIES:
-            assert getattr(c.redis_conn, name)(*args) == \
-                getattr(dc_one, name)(*args), name
-        else:
-            c.run_verify(name, *args)
+        c.run_verify(name, *args)
     c.set_sort_before_compare(False)
-    dc_one.close()
 
 def run_multikey_routing_test(c):
     """Checks the commands with more than one key that go where their first
