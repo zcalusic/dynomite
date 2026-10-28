@@ -1979,6 +1979,69 @@ static rstatus_t test_hash(void) {
     }
   }
 
+  /*
+   * Every hash, pinned: the tokens of keys of 0 to 99 bytes, of any byte
+   * values, folded into one number per hash. They are what the hashes gave
+   * on x86, where Dynomite has always run, and every other architecture must
+   * give the same, or its nodes would put keys elsewhere. Each key is hashed
+   * at four alignments as well, which must not change its token.
+   */
+  static const char *hash_names[] = {
+#define DEFINE_ACTION(_hash, _name) #_name,
+      HASH_CODEC(DEFINE_ACTION)
+#undef DEFINE_ACTION
+  };
+  static const uint32_t pinned[HASH_INVALID] = {
+      1743589392U, /* one_at_a_time */
+      771082704U,  /* md5 */
+      3710636580U, /* crc16 */
+      1552019961U, /* crc32 */
+      1044422394U, /* crc32a */
+      1928472711U, /* fnv1_64 */
+      195830139U,  /* fnv1a_64 */
+      894196391U,  /* fnv1_32 */
+      2294510939U, /* fnv1a_32 */
+      129322226U,  /* hsieh */
+      2887510485U, /* murmur */
+      3657973923U, /* jenkins */
+  };
+  enum { PIN_KEY_MAX = 100 };
+  uint8_t key[PIN_KEY_MAX], buf[PIN_KEY_MAX + sizeof(uint32_t)];
+  memset(buf, 0, sizeof(buf));
+  for (int h = 0; h < HASH_INVALID; h++) {
+    hash_func_t hash = get_hash_func((hash_type_t)h);
+    uint32_t x = 2463534242U; /* xorshift32: the same keys for every hash */
+    uint32_t digest = 2166136261U;
+    bool aligned = true;
+    for (size_t len = 0; len < PIN_KEY_MAX; len++) {
+      uint32_t first = 0;
+      for (size_t i = 0; i < len; i++) {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        key[i] = (uint8_t)x;
+      }
+      for (size_t off = 0; off < sizeof(uint32_t); off++) {
+        memcpy(buf + off, key, len);
+        if (hash(buf + off, len, &t) != DN_OK || t.len != 1) {
+          aligned = false;
+        } else if (off == 0) {
+          first = t.mag[0];
+        } else if (t.mag[0] != first) {
+          aligned = false;
+        }
+      }
+      digest = (digest ^ first) * 16777619U;
+    }
+    nruns++;
+    if (!aligned || digest != pinned[h]) {
+      log_error("hash %s: keys fold to %uU, want %uU%s", hash_names[h], digest,
+                pinned[h],
+                aligned ? "" : "; tokens change with the key's alignment");
+      nfailed++;
+    }
+  }
+
   if (nfailed != 0) {
     log_error("%zu of %zu hash runs failed", nfailed, nruns);
     return DN_ERROR;
