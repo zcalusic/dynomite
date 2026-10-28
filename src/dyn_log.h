@@ -156,6 +156,7 @@ struct log_ratelimit {
     }                                               \
   } while (0)
 
+int log_open(const char *name);
 int log_init(int level, char *filename);
 void log_deinit(void);
 void log_level_up(void);

@@ -143,8 +143,8 @@ static rstatus_t dn_daemonize(int dump_core) {
     }
   }
 
-  /* clear file mode creation mask */
-  umask(0);
+  /* files the daemon creates are never writable by group or others */
+  umask(022);
 
   /* redirect stdin, stdout and stderr to "/dev/null" */
 

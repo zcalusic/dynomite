@@ -39,6 +39,14 @@ static struct logger logger;
  * @param[in] name Full path to the log file.
  * @return
  */
+/*
+ * Open the log file for appending, created readable by all and writable by
+ * the owner only, as log_init() and log_reopen() both do.
+ */
+int log_open(const char *name) {
+  return open(name, O_WRONLY | O_APPEND | O_CREAT, 0644);
+}
+
 int log_init(int level, char *name) {
   struct logger *l = &logger;
 
@@ -47,7 +55,7 @@ int log_init(int level, char *name) {
   if (name == NULL || !strlen(name)) {
     l->fd = STDERR_FILENO;
   } else {
-    l->fd = open(name, O_WRONLY | O_APPEND | O_CREAT, 0666);
+    l->fd = log_open(name);
     if (l->fd < 0) {
       log_stderr("opening log file '%s' failed: %s", name, strerror(errno));
       return -1;
@@ -75,7 +83,7 @@ void log_reopen(void) {
 
   if (l->fd != STDERR_FILENO) {
     close(l->fd);
-    l->fd = open(l->name, O_WRONLY | O_APPEND | O_CREAT, 0644);
+    l->fd = log_open(l->name);
     if (l->fd < 0) {
       log_stderr("reopening log file '%s' failed, ignored: %s", l->name,
                  strerror(errno));

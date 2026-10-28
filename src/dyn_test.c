@@ -2330,6 +2330,40 @@ static rstatus_t test_hash(void) {
  * don't, and the next one after it logs with their count. Moving rl.next back
  * stands in for the time passing.
  */
+/*
+ * The log file is created readable by all and writable by its owner only,
+ * whatever the umask: a daemonized node clears it to 022, but one started
+ * with umask 0 used to get a world-writable log.
+ */
+static rstatus_t test_log_file_mode(void) {
+  char dir[] = "/tmp/dynomite-test-log-XXXXXX", path[64];
+  struct stat st;
+  rstatus_t status = DN_ERROR;
+
+  print_banner("LOG FILE MODE");
+  if (mkdtemp(dir) == NULL) {
+    log_error("log file mode: mkdtemp failed: %s", strerror(errno));
+    return DN_ERROR;
+  }
+  dn_snprintf(path, sizeof(path), "%s/dynomite.log", dir);
+  mode_t mask = umask(0);
+  int fd = log_open(path);
+  umask(mask);
+  if (fd < 0 || fstat(fd, &st) < 0) {
+    log_error("log file mode: %s: %s", path, strerror(errno));
+  } else if ((st.st_mode & 0777) != 0644) {
+    log_error("log file mode: %s created %03o, want 644", path,
+              (unsigned)(st.st_mode & 0777));
+  } else {
+    loga("log file created %03o with umask 0", (unsigned)(st.st_mode & 0777));
+    status = DN_OK;
+  }
+  if (fd >= 0) close(fd);
+  unlink(path);
+  rmdir(dir);
+  return status;
+}
+
 static rstatus_t test_log_ratelimit(void) {
   struct log_ratelimit rl = {0};
   uint64_t suppressed = 99;
@@ -3052,6 +3086,12 @@ int main(int argc, char **argv) {
   ret = test_token();
   if (ret != DN_OK) {
     loga("Error in testing the token parser!!!");
+    goto err_out;
+  }
+
+  ret = test_log_file_mode();
+  if (ret != DN_OK) {
+    loga("Error in testing the log file mode!!!");
     goto err_out;
   }
 
