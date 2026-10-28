@@ -384,6 +384,36 @@ def run_incr_replicas_test(c, incrs_per_dc=3):
     assert all(v == expected for v in replicas), (expected, values)
     print("\t-%d replicas, each incremented %d times" % (num_racks, expected))
 
+def run_list_pop_test(c):
+    """Checks LPOP, RPOP and SRANDMEMBER with a count against Redis, and
+    that each rack's redis holds one replica of the list, with the same
+    elements left. Before, a count made Dynomite reject them."""
+    print("Running LIST_POP test")
+    key = create_key('LIST_POP', 'list')
+    c.run_verify('rpush', key, *[str(i) for i in range(10)])
+    c.run_verify('lpop', key, 3)
+    c.run_verify('rpop', key, 2)
+    c.run_verify('lpop', key)
+    c.run_verify('lpop', create_key('LIST_POP', 'missing'), 2)
+    expected = c.run_verify('lrange', key, 0, -1)
+    set_key = create_key('LIST_POP', 'set')
+    c.run_verify('sadd', set_key, 'x')
+    c.run_verify('srandmember', set_key, 2)
+    dyno_cluster = c.get_dynomite_cluster()
+    num_racks = sum(len(racks) for racks in dyno_cluster.counts_by_rack.values())
+    # Replication to other DCs is asynchronous: give it a few seconds.
+    for _ in range(50):
+        replicas = [node.get_data_store_connection().lrange(key, 0, -1)
+                    for node in dyno_cluster.nodes]
+        replicas = [r for r in replicas if r]
+        if len(replicas) == num_racks and all(r == expected for r in replicas):
+            break
+        time.sleep(0.1)
+    assert len(replicas) == num_racks, (num_racks, replicas)
+    assert all(r == expected for r in replicas), (expected, replicas)
+    print("\t-%d replicas, each with %d elements left" %
+          (num_racks, len(expected)))
+
 def run_rest_api_test(c):
     """Checks the stats REST API's HTTP statuses: unknown paths, bad
     arguments, other methods and malformed requests get errors, not OK."""
@@ -526,6 +556,7 @@ def comparison_test(redis, dynomite, debug):
     run_script_tests(c)
     run_encrypted_peer_msg_test(c)
     run_incr_replicas_test(c)
+    run_list_pop_test(c)
     run_rest_api_test(c)
     run_select_test(c)
 

@@ -80,12 +80,9 @@ static bool redis_arg0(struct msg *r) {
     case MSG_REQ_REDIS_HVALS:
 
     case MSG_REQ_REDIS_LLEN:
-    case MSG_REQ_REDIS_LPOP:
-    case MSG_REQ_REDIS_RPOP:
 
     case MSG_REQ_REDIS_SCARD:
     case MSG_REQ_REDIS_SMEMBERS:
-    case MSG_REQ_REDIS_SRANDMEMBER:
 
     case MSG_REQ_REDIS_ZCARD:
 
@@ -250,7 +247,9 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_HSET:
     case MSG_REQ_REDIS_HSCAN:
 
+    case MSG_REQ_REDIS_LPOP: /* key [count] */
     case MSG_REQ_REDIS_LPUSH:
+    case MSG_REQ_REDIS_RPOP: /* key [count] */
     case MSG_REQ_REDIS_RPUSH:
 
     case MSG_REQ_REDIS_SADD:
@@ -263,6 +262,7 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_SUNIONSTORE:
     case MSG_REQ_REDIS_SSCAN:
     case MSG_REQ_REDIS_SPOP:
+    case MSG_REQ_REDIS_SRANDMEMBER: /* key [count] */
 
     case MSG_REQ_REDIS_ZADD:
     case MSG_REQ_REDIS_ZINTERSTORE:

@@ -235,7 +235,7 @@ struct parse_req {
 };
 
 #define PARSE_DATA_MAX 81920
-#define PARSE_REQS_MAX 32
+#define PARSE_REQS_MAX 64
 
 /* A stream of requests or responses, and what the parser should make of it. */
 struct parse_case {
@@ -654,6 +654,11 @@ static void parse_cases_init(void) {
   parse_add(tc, MSG_REQ_REDIS_CLIENT_SETINFO, "",
             "CLIENT SETINFO lib-name test");
   parse_add(tc, MSG_REQ_REDIS_HELLO, "", "HELLO 3");
+  parse_add(tc, MSG_REQ_REDIS_LPOP, "list", "LPOP list");
+  parse_add(tc, MSG_REQ_REDIS_LPOP, "list", "LPOP list 2");
+  parse_add(tc, MSG_REQ_REDIS_RPOP, "list", "rpop list 3");
+  parse_add(tc, MSG_REQ_REDIS_SRANDMEMBER, "set", "SRANDMEMBER set");
+  parse_add(tc, MSG_REQ_REDIS_SRANDMEMBER, "set", "SRANDMEMBER set -5");
   parse_add_args(tc, MSG_REQ_REDIS_SELECT, "", "0", "SELECT 0");
   parse_add_args(tc, MSG_REQ_REDIS_SELECT, "", "15", "select 15");
   parse_add_args(tc, MSG_HACK_SETTING_CONN_CONSISTENCY, "", "dc_Quorum",
@@ -761,6 +766,8 @@ static void parse_cases_init(void) {
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_CLIENT_SETINFO, "",
                         "CLIENT SETINFO lib-name");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_SELECT, "", "SELECT");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_LPOP, "", "LPOP");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SRANDMEMBER, "", "SRANDMEMBER");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_SELECT, "", "SELECT 0 1");
   parse_add(tc, MSG_REQ_REDIS_PING, "", "PING");
   parse_add(tc, MSG_REQ_REDIS_PING, "", "PING hi");
