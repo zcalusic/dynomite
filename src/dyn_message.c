@@ -176,8 +176,9 @@ static char *print_req(struct object *obj) {
   struct msg *req = (struct msg *)obj;
   struct string *req_type = msg_type_string(req->type);
   snprintf(obj->print_buff, PRINT_BUF_SIZE,
-           "<REQ %p %lu:%lu::%lu %.*s, len:%u>", req, req->id, req->parent_id,
-           req->frag_id, req_type->len, req_type->data, req->mlen);
+           "<REQ %p %" PRIu64 ":%" PRIu64 "::%" PRIu64 " %.*s, len:%u>", req,
+           req->id, req->parent_id, req->frag_id, req_type->len, req_type->data,
+           req->mlen);
   return obj->print_buff;
 }
 
@@ -185,8 +186,9 @@ static char *print_rsp(struct object *obj) {
   ASSERT(obj->type == OBJ_RSP);
   struct msg *rsp = (struct msg *)obj;
   struct string *rsp_type = msg_type_string(rsp->type);
-  snprintf(obj->print_buff, PRINT_BUF_SIZE, "<RSP %p %lu:%lu %.*s len:%u>", rsp,
-           rsp->id, rsp->parent_id, rsp_type->len, rsp_type->data, rsp->mlen);
+  snprintf(obj->print_buff, PRINT_BUF_SIZE,
+           "<RSP %p %" PRIu64 ":%" PRIu64 " %.*s len:%u>", rsp, rsp->id,
+           rsp->parent_id, rsp_type->len, rsp_type->data, rsp->mlen);
   return obj->print_buff;
 }
 
@@ -219,11 +221,6 @@ void set_datastore_ops(void) {
     default:
       return;
   }
-}
-
-static inline rstatus_t msg_cant_handle_response(struct msg *req,
-                                                 struct msg *rsp) {
-  return DN_ENO_IMPL;
 }
 
 static struct msg *msg_from_rbe(struct rbnode *node) {
@@ -311,10 +308,10 @@ static struct msg *_msg_get(struct conn *conn, bool request,
   alloc_msg_count++;
 
   if (alloc_msg_count % 1000 == 0)
-    log_warn("alloc_msg_count: %lu caller: %s %s", alloc_msg_count, caller,
+    log_warn("alloc_msg_count: %zu caller: %s %s", alloc_msg_count, caller,
              print_obj(conn));
   else
-    log_info("alloc_msg_count: %lu caller: %s %s", alloc_msg_count, caller,
+    log_info("alloc_msg_count: %zu caller: %s %s", alloc_msg_count, caller,
              print_obj(conn));
 
   msg = dn_alloc(sizeof(*msg));
@@ -433,7 +430,7 @@ done:
   return msg;
 }
 
-size_t msg_alloc_msgs() { return alloc_msg_count; }
+size_t msg_alloc_msgs(void) { return alloc_msg_count; }
 
 /*
  * Whether a new client request would go over max_msgs. Only those are
@@ -445,7 +442,8 @@ bool msg_limit_reached(void) {
   return TAILQ_EMPTY(&free_msgq) && alloc_msg_count >= alloc_msgs_max;
 }
 
-size_t msg_free_queue_size(void) { return TAILQ_COUNT(&free_msgq); }
+/* The count can't exceed max_msgs, which fits a size_t. */
+size_t msg_free_queue_size(void) { return (size_t)TAILQ_COUNT(&free_msgq); }
 
 struct msg *msg_get(struct conn *conn, bool request, const char *const caller) {
   struct msg *msg;

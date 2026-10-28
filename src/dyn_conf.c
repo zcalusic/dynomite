@@ -1504,7 +1504,7 @@ static rstatus_t conf_validate_document(struct conf *cf) {
 static rstatus_t conf_validate_tokens(struct conf *cf) {
   rstatus_t status;
   bool done, error;
-  int type;
+  yaml_token_type_t type;
 
   status = conf_yaml_init(cf);
   if (status != DN_OK) {
@@ -1621,7 +1621,8 @@ static rstatus_t conf_validate_tokens(struct conf *cf) {
 
 static rstatus_t conf_validate_structure(struct conf *cf) {
   rstatus_t status;
-  int type, depth;
+  yaml_event_type_t type;
+  int depth;
   uint32_t i, count[CONF_MAX_DEPTH + 1];
   bool done, error, seq;
 

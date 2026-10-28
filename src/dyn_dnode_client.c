@@ -398,7 +398,7 @@ static struct msg *dnode_rsp_send_next(struct context *ctx, struct conn *conn) {
     dmsg_type_t msg_type = DMSG_RES;
     // write dnode header
     log_debug(LOG_VERB, "sending dnode response with msg_id %" PRIu64, msg_id);
-    dmsg_write(header_buf, msg_id, msg_type, conn, msg_length(rsp));
+    dmsg_write(header_buf, msg_id, (uint8_t)msg_type, conn, msg_length(rsp));
 
     rsp->dnode_header_prepended = 1;
     mbuf_insert_head(&rsp->mhdr, header_buf);

@@ -97,7 +97,7 @@ rstatus_t ring_msg_deinit(struct ring_msg *msg) {
   return DN_OK;
 }
 
-struct gossip_node *create_node() {
+struct gossip_node *create_node(void) {
   struct gossip_node *result = dn_alloc(sizeof(*result));
   node_init(result);
 

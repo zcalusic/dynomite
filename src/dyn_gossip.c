@@ -795,7 +795,8 @@ static void *gossip_loop(void *arg) {
 
   seeds_buf = mbuf_alloc(SEED_BUF_SIZE);
 
-  log_debug(LOG_VVERB, "gossip_interval : %lu msecs", gn_pool.g_interval);
+  log_debug(LOG_VVERB, "gossip_interval : %" PRIu64 " msecs",
+            gn_pool.g_interval);
   for (;;) {
     usleep((useconds_t)gossip_interval);
 
@@ -946,7 +947,7 @@ rstatus_t gossip_pool_init(struct context *ctx) {
     gnode->is_local = peer->is_local;
 
     if (i == 0) {                         // Don't override its own state
-      gnode->state = sp->ctx->dyn_state;  // likely it is JOINING state
+      gnode->state = (uint8_t)sp->ctx->dyn_state;  // likely it is JOINING state
       gnode->ts = (uint64_t)time(NULL);
       current_node = gnode;
       unsigned char *b_address = get_broadcast_address(sp);

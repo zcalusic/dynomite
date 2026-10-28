@@ -561,7 +561,7 @@ rstatus_t dnode_peer_handshake_announcing(void *rmsg) {
   int64_t cur_ts = (int64_t)time(NULL);
   mbuf_write_uint64(mbuf, (uint64_t)cur_ts);
   mbuf_write_char(mbuf, ',');
-  mbuf_write_uint8(mbuf, sp->ctx->dyn_state);
+  mbuf_write_uint8(mbuf, (uint8_t)sp->ctx->dyn_state);
   mbuf_write_char(mbuf, ',');
 
   unsigned char *broadcast_addr = get_broadcast_address(sp);

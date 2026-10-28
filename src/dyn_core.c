@@ -701,7 +701,7 @@ rstatus_t core_loop(struct context *ctx) {
 }
 
 // TODO: Does this belong here?
-bool is_read_repairs_enabled() {
+bool is_read_repairs_enabled(void) {
   return g_read_repairs_enabled &&
         (g_read_consistency > DC_ONE) &&
         (g_write_consistency > DC_ONE);

@@ -24,7 +24,7 @@ hash_type_t get_hash_type(struct string *hash_name) {
       continue;
     }
 
-    return hash_iter - hash_strings;
+    return (hash_type_t)(hash_iter - hash_strings);
   }
   return HASH_INVALID;
 }

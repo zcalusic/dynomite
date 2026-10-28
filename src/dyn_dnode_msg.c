@@ -125,7 +125,10 @@ static bool dyn_parse_core(struct msg *r) {
           num = num * 10 + (uint64_t)(ch - '0');
         } else if (ch == ' ' && isdigit(*(p - 1))) {
           log_debug(LOG_VERB, "Type Id: %" PRIu64, num);
-          dmsg->type = num;
+          // A number past the last type would wrap into a valid one: make
+          // it a type no parser accepts.
+          dmsg->type =
+              num <= GOSSIP_SHUTDOWN ? (dmsg_type_t)num : DMSG_PARSE_ERROR;
           dyn_state = DYN_BIT_FIELD;
           num = 0;
         } else {
@@ -161,7 +164,8 @@ static bool dyn_parse_core(struct msg *r) {
           num = num * 10 + (uint64_t)(ch - '0');
         } else if (ch == ' ' && isdigit(*(p - 1))) {
           log_debug(LOG_VERB, "VERSION : %" PRIu64, num);
-          dmsg->version = num;
+          // Only logged: keep it in range.
+          dmsg->version = (dmsg_version_t)MIN(num, UINT32_MAX);
           dyn_state = DYN_SAME_DC;
           num = 0;
         } else {
@@ -829,8 +833,8 @@ static struct ring_msg *dmsg_parse(struct dmsg *dmsg) {
     // host_id = dmsg->data;
     // host_id_len = dmsg->mlen - (host_addr_len + node_state_len + ts_len + 3);
     host_id = pipe_p;
-    host_id_len = (uint32_t)(end - pipe_p -
-                             (host_addr_len + node_state_len + ts_len + 3) + 1);
+    host_id_len = (uint32_t)(end - pipe_p + 1) -
+                  (host_addr_len + node_state_len + ts_len + 3);
 
     end = p;
 

@@ -1026,8 +1026,8 @@ static int parse_path(char *path, struct stats_cmd *st_cmd) {
   if ((arg = stats_path_arg(path, "/set_consistency/read")) != NULL ||
       (arg = stats_path_arg(path, "/set_consistency/write")) != NULL) {
     log_notice("Setting consistency parameters: %s", path);
-    consistency_t cons = get_consistency_enum_from_string(arg);
-    if (cons == (consistency_t)-1) {
+    consistency_t cons;
+    if (!consistency_from_string(arg, &cons)) {
       return 400;
     }
     if (path[dn_strlen("/set_consistency/")] == 'r') {

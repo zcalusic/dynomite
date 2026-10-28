@@ -2614,6 +2614,50 @@ out:
 }
 
 /*
+ * The message type in a peer's dnode header, a decimal number: one past the
+ * last type, or one that wraps around 32 bits, must not become a valid type
+ * (2^32 + 3 was a request).
+ */
+static rstatus_t test_dnode_type(struct conn *conn) {
+  static const struct {
+    const char *type;
+    dmsg_type_t want;
+  } cases[] = {
+      {"3", DMSG_REQ},
+      {"13", GOSSIP_SHUTDOWN},
+      {"14", DMSG_PARSE_ERROR},
+      {"4294967299", DMSG_PARSE_ERROR},
+      {"18446744073709551615", DMSG_PARSE_ERROR},
+  };
+  size_t nfailed = 0;
+  bool dyn_mode = conn->dyn_mode;
+
+  print_banner("DNODE TYPE");
+  g_data_store = DATA_REDIS;
+  conn->dyn_mode = 1;
+  for (size_t i = 0; i < NELEMS(cases); i++) {
+    char data[128];
+    int n = dn_snprintf(data, sizeof(data),
+                        "$2014$ 1 %s 0 1 1 *1 d *0\r\n"
+                        "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n",
+                        cases[i].type);
+    struct msg *msg = msg_get(conn, true, __FUNCTION__);
+    if (msg == NULL) return DN_ERROR;
+    IGNORE_RET_VAL(msg_parse_data(ctx, msg, (const uint8_t *)data, (size_t)n));
+    if (msg->dmsg == NULL || msg->dmsg->type != cases[i].want) {
+      log_error("dnode type '%s': got %d, want %d", cases[i].type,
+                msg->dmsg == NULL ? -1 : (int)msg->dmsg->type,
+                (int)cases[i].want);
+      nfailed++;
+    }
+    msg_put(msg);
+  }
+  conn->dyn_mode = dyn_mode ? 1 : 0;
+  loga("dnode type cases: %zu, failed: %zu", NELEMS(cases), nfailed);
+  return nfailed == 0 ? DN_OK : DN_ERROR;
+}
+
+/*
  * TCP keepalive on a socket as dn_set_keepalive() sets it for peer,
  * datastore and client connections: the timing, not just SO_KEEPALIVE. The
  * timing used to be left to the system (on Linux, the first probe after 2
@@ -2814,7 +2858,7 @@ static rstatus_t test_tailq(void) {
     struct test *test = dn_zalloc(sizeof(struct test));
     TAILQ_INSERT_TAIL(&test_q1, test, test_tqe);
     if ((i + 1) != TAILQ_COUNT(&test_q1)) {
-      log_error("Count mismatch expected %d, got %lu", i + 1,
+      log_error("Count mismatch expected %d, got %" PRIu64, i + 1,
                 TAILQ_COUNT(&test_q1));
       return DN_ERROR;
     }
@@ -2833,8 +2877,8 @@ static rstatus_t test_tailq(void) {
   // CONCATENATE
   TAILQ_CONCAT(&test_q1, &test_q2, test_tqe);
   if ((10 != TAILQ_COUNT(&test_q1)) || (0 != TAILQ_COUNT(&test_q2))) {
-    log_error("Count mismatch: q1: %lu, q2: %lu", TAILQ_COUNT(&test_q1),
-              TAILQ_COUNT(&test_q2));
+    log_error("Count mismatch: q1: %" PRIu64 ", q2: %" PRIu64,
+              TAILQ_COUNT(&test_q1), TAILQ_COUNT(&test_q2));
     return DN_ERROR;
   }
   // REMOVE HEAD
@@ -2842,7 +2886,7 @@ static rstatus_t test_tailq(void) {
   TAILQ_REMOVE(&test_q1, test, test_tqe);
   dn_free(test);
   if (9 != TAILQ_COUNT(&test_q1)) {
-    log_error("Count mismatch expected 9, got %lu", TAILQ_COUNT(&test_q1));
+    log_error("Count mismatch expected 9, got %" PRIu64, TAILQ_COUNT(&test_q1));
     return DN_ERROR;
   }
   // REMOVE TAIL
@@ -2850,23 +2894,23 @@ static rstatus_t test_tailq(void) {
   TAILQ_REMOVE(&test_q1, test, test_tqe);
   dn_free(test);
   if (8 != TAILQ_COUNT(&test_q1)) {
-    log_error("Count mismatch expected 8, got %lu", TAILQ_COUNT(&test_q1));
+    log_error("Count mismatch expected 8, got %" PRIu64, TAILQ_COUNT(&test_q1));
     return DN_ERROR;
   }
 
   // SWAP TAILQ
   TAILQ_SWAP(&test_q1, &test_q2, test, test_tqe);
   if ((0 != TAILQ_COUNT(&test_q1)) || (8 != TAILQ_COUNT(&test_q2))) {
-    log_error("Count mismatch: q1: %lu, q2: %lu", TAILQ_COUNT(&test_q1),
-              TAILQ_COUNT(&test_q2));
+    log_error("Count mismatch: q1: %" PRIu64 ", q2: %" PRIu64,
+              TAILQ_COUNT(&test_q1), TAILQ_COUNT(&test_q2));
     return DN_ERROR;
   }
 
   // SWAP BACK
   TAILQ_SWAP(&test_q1, &test_q2, test, test_tqe);
   if ((8 != TAILQ_COUNT(&test_q1)) || (0 != TAILQ_COUNT(&test_q2))) {
-    log_error("Count mismatch: q1: %lu, q2: %lu", TAILQ_COUNT(&test_q1),
-              TAILQ_COUNT(&test_q2));
+    log_error("Count mismatch: q1: %" PRIu64 ", q2: %" PRIu64,
+              TAILQ_COUNT(&test_q1), TAILQ_COUNT(&test_q2));
     return DN_ERROR;
   }
 
@@ -3020,6 +3064,12 @@ int main(int argc, char **argv) {
   ret = test_config();
   if (ret != DN_OK) {
     loga("Error in testing the configuration!!!");
+    goto err_out;
+  }
+
+  ret = test_dnode_type(conn);
+  if (ret != DN_OK) {
+    loga("Error in testing dnode message types!!!");
     goto err_out;
   }
 

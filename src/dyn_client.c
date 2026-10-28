@@ -683,10 +683,10 @@ send_rsp_integer(struct context *ctx, struct conn *c_conn, struct msg *req)
  */
 static void req_forward_error_for_dc(struct context *ctx, struct conn *conn,
                                      struct msg *req, err_t error_code,
-                                     err_t dyn_error_code,
+                                     dyn_error_t dyn_error_code,
                                      struct string *peer_dc) {
   log_info("%s FORWARD FAILED %s len %" PRIu32 ": %d:%s", print_obj(conn),
-           print_obj(req), req->mlen, error_code, dn_strerror(error_code));
+           print_obj(req), req->mlen, error_code, dn_strerror(dyn_error_code));
 
   // Nothing to do if request is not expecting a reply.
   // The higher layer will take care of freeing the request
@@ -716,7 +716,7 @@ static void req_forward_error_for_dc(struct context *ctx, struct conn *conn,
 
 /* Expects req to be in the conn's outq already */
 void req_forward_error(struct context *ctx, struct conn *conn, struct msg *req,
-                       err_t error_code, err_t dyn_error_code) {
+                       err_t error_code, dyn_error_t dyn_error_code) {
   req_forward_error_for_dc(ctx, conn, req, error_code, dyn_error_code, NULL);
 }
 
@@ -1273,8 +1273,9 @@ static void req_forward(struct context *ctx, struct conn *c_conn,
   // Make sure that this is a valid request according to Dynomite.
   s = g_verify_request(req, pool);
   if (s != DN_OK) {
-    // If this was an invalid request, we forward an error.
-    req_forward_error(ctx, c_conn, req, DN_OK, s);
+    // If this was an invalid request, we forward an error: the verify
+    // functions return DN_OK or a dyn_error_t.
+    req_forward_error(ctx, c_conn, req, DN_OK, (dyn_error_t)s);
     return;
   }
 
@@ -1491,7 +1492,7 @@ error:
     // wouldn't find it.
     dictAdd(conn->outstanding_msgs_dict, &req->id, req);
   }
-  req_forward_error(ctx, conn, req, DN_OK, status);  // TODO: Check error code
+  req_forward_error(ctx, conn, req, status, DYNOMITE_UNKNOWN_ERROR);
   return;
 }
 

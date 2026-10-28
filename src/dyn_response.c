@@ -49,7 +49,8 @@ static struct msg *rsp_make_error(struct context *ctx, struct conn *conn,
   struct msg *rsp;         /* peer message (response) */
   struct msg *cmsg, *nmsg; /* current and next message (request) */
   uint64_t id;
-  err_t error_code = 0, dyn_error_code = 0;
+  err_t error_code = 0;
+  dyn_error_t dyn_error_code = DYNOMITE_OK;
 
   ASSERT((conn->type == CONN_CLIENT) || (conn->type == CONN_DNODE_PEER_CLIENT));
   ASSERT(req->is_request && req_error(conn, req));

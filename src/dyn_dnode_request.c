@@ -99,7 +99,7 @@ rstatus_t dnode_peer_req_forward(struct context *ctx, struct conn *c_conn,
     msg_type = DMSG_REQ;
   }
   // write dnode header
-  dmsg_write(header_buf, req->id, msg_type, p_conn, msg_length(req));
+  dmsg_write(header_buf, req->id, (uint8_t)msg_type, p_conn, msg_length(req));
 
   mbuf_insert_head(&req->mhdr, header_buf);
 

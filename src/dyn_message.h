@@ -338,7 +338,7 @@ static inline char *dn_strerror(dyn_error_t err) {
     case PEER_QUEUE_FULL:
       return "Peer Node has too many requests queued";
     default:
-      return strerror(err);
+      return strerror((int)err);
   }
 }
 
@@ -388,17 +388,18 @@ static inline char *get_consistency_string(consistency_t cons) {
   return "INVALID CONSISTENCY";
 }
 
-static inline consistency_t get_consistency_enum_from_string(char *cons) {
-  if (strcasecmp(cons, "DC_ONE") == 0) {
-    return DC_ONE;
-  } else if (strcasecmp(cons, "DC_QUORUM") == 0) {
-    return DC_QUORUM;
-  } else if (strcasecmp(cons, "DC_SAFE_QUORUM") == 0) {
-    return DC_SAFE_QUORUM;
-  } else if (strcasecmp(cons, "DC_EACH_SAFE_QUORUM") == 0) {
-    return DC_EACH_SAFE_QUORUM;
+/* The consistency level named cons, case-insensitive; false if none is. */
+static inline bool consistency_from_string(const char *cons,
+                                           consistency_t *level) {
+  static const consistency_t levels[] = {DC_ONE, DC_QUORUM, DC_SAFE_QUORUM,
+                                         DC_EACH_SAFE_QUORUM};
+  for (size_t i = 0; i < sizeof(levels) / sizeof(levels[0]); i++) {
+    if (strcasecmp(cons, get_consistency_string(levels[i])) == 0) {
+      *level = levels[i];
+      return true;
+    }
   }
-  return -1;
+  return false;
 }
 
 #define DEFAULT_READ_CONSISTENCY DC_ONE
@@ -500,7 +501,7 @@ struct msg {
   struct mhdr mhdr; /* message mbuf header */
   uint32_t mlen;    /* message length */
 
-  int state;      /* current parser state */
+  uint32_t state; /* current parser state */
   uint8_t *pos;   /* parser position marker */
   uint8_t *token; /* token marker */
   uint8_t *arg_start;    /* start of the arg being parsed (redis) */
@@ -670,7 +671,7 @@ void dnode_rsp_gos_syn(struct context *ctx, struct conn *p_conn,
                        struct msg *msg);
 
 void req_forward_error(struct context *ctx, struct conn *conn, struct msg *req,
-                       err_t error_code, err_t dyn_error_code);
+                       err_t error_code, dyn_error_t dyn_error_code);
 void req_forward_all_racks_for_dc(struct context *ctx, struct conn *c_conn,
                                  struct msg *req, struct mbuf *orig_mbuf,
                                  uint8_t *key, uint32_t keylen,

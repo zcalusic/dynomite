@@ -203,7 +203,7 @@ struct server_pool {
 
   struct string name; /* pool name (ref in conf_pool) */
   struct endpoint proxy_endpoint;
-  int key_hash_type;              /* key hash type (hash_type_t) */
+  hash_type_t key_hash_type;      /* key hash type */
   hash_func_t key_hash;           /* key hasher */
   struct string hash_tag;         /* key hash tag (ref in conf_pool) */
   msec_t timeout;                 /* timeout in msec */

@@ -626,7 +626,7 @@ int count_digits(uint64_t arg) {
   return snprintf(NULL, 0, "%" PRIu64, arg);
 }
 
-uint64_t current_timestamp_in_millis() {
+uint64_t current_timestamp_in_millis(void) {
   struct timeval t;
   // Get the current time.
   gettimeofday(&t, NULL);

@@ -393,7 +393,7 @@ rstatus_t server_pool_init(struct server_pool *sp, struct conf_pool *cp,
   sp->key_hash = get_hash_func(cp->hash);
   sp->hash_tag = cp->hash_tag;
 
-  g_data_store = cp->data_store;
+  g_data_store = (data_store_t)cp->data_store; /* checked: 0 or 1 */
   if ((g_data_store != DATA_REDIS) && (g_data_store != DATA_MEMCACHE)) {
     log_error("Invalid datastore in conf file");
     return DN_ERROR;

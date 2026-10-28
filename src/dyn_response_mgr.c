@@ -170,7 +170,7 @@ bool rspmgr_check_is_done(struct response_mgr *rspmgr) {
   if (rspmgr->good_responses >= rspmgr->quorum_responses) {
     // We received enough good responses but do their checksums match?
     if (rspmgr_is_quorum_achieved(rspmgr)) {
-      log_info("req %lu quorum achieved", rspmgr->msg->id);
+      log_info("req %" PRIu64 " quorum achieved", rspmgr->msg->id);
       rspmgr->done = true;
     } else if (pending_responses) {
       // There's a mismatch in checksum. Wait for any pending responses

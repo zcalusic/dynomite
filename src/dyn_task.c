@@ -35,7 +35,7 @@ struct task {
   void *arg1;
 };
 
-rstatus_t task_mgr_init() {
+rstatus_t task_mgr_init(void) {
   rbtree_init(&task_rbt, &task_rbs);
   return DN_OK;
 }

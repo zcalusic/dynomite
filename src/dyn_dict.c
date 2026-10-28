@@ -133,9 +133,9 @@ unsigned int dictGenHashFunction(const void *key, uint32_t len) {
   /* Handle the last few bytes of the input array  */
   switch (len) {
     case 3:
-      h ^= data[2] << 16;
+      h ^= (uint32_t)data[2] << 16;
     case 2:
-      h ^= data[1] << 8;
+      h ^= (uint32_t)data[1] << 8;
     case 1:
       h ^= data[0];
       h *= m;
