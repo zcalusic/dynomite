@@ -1520,6 +1520,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             if (str11icmp(m, 's', 'r', 'a', 'n', 'd', 'm', 'e', 'm', 'b', 'e',
                           'r')) {
               r->type = MSG_REQ_REDIS_SRANDMEMBER;
+              // Random, so replicas' replies differ: one of them is enough.
+              r->msg_routing = ROUTING_TOKEN_OWNER_LOCAL_RACK_ONLY;
               r->is_read = 1;
               break;
             }

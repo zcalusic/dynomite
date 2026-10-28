@@ -414,6 +414,46 @@ def run_list_pop_test(c):
     print("\t-%d replicas, each with %d elements left" %
           (num_racks, len(expected)))
 
+def run_random_set_test(c):
+    """Checks the set commands that pick random members, with more than one
+    rack: SPOP is refused, since each replica would pop other members, and
+    SRANDMEMBER reads one rack only, so even DC_SAFE_QUORUM gets one random
+    reply instead of disagreeing replicas. SREM, the replacement for SPOP,
+    leaves every replica alike."""
+    print("Running RANDOM_SET test")
+    dyno_cluster = c.get_dynomite_cluster()
+    num_racks = sum(len(racks) for racks in dyno_cluster.counts_by_rack.values())
+    assert num_racks > 1, num_racks
+    node = dyno_cluster.nodes[0]
+    key = create_key('RANDOM_SET', 'set')
+    members = [b'm%d' % i for i in range(50)]
+    conn = redis.Redis(node.ip, node.port, single_connection_client=True)
+    conn.execute_command('dyno_config:conn_consistency', 'DC_SAFE_QUORUM')
+    conn.sadd(key, *members)
+    try:
+        conn.spop(key)
+        assert False, "SPOP wasn't refused"
+    except redis.exceptions.ResponseError as e:
+        assert 'SPOP is not supported with more than one rack' in str(e), e
+    for _ in range(20):
+        assert conn.srandmember(key) in members
+        assert len(conn.srandmember(key, 3)) == 3
+    picked = conn.srandmember(key, 5)
+    assert conn.srem(key, *picked) == 5
+    left = set(members) - set(picked)
+    # Replication to other DCs is asynchronous: give it a few seconds.
+    for _ in range(50):
+        replicas = [node.get_data_store_connection().smembers(key)
+                    for node in dyno_cluster.nodes]
+        replicas = [r for r in replicas if r]
+        if len(replicas) == num_racks and all(r == left for r in replicas):
+            break
+        time.sleep(0.1)
+    assert len(replicas) == num_racks, (num_racks, replicas)
+    assert all(r == left for r in replicas), (left, replicas)
+    print("\t-SPOP refused, SRANDMEMBER answered under DC_SAFE_QUORUM, "
+          "%d replicas alike after SREM" % num_racks)
+
 def run_rest_api_test(c):
     """Checks the stats REST API's HTTP statuses: unknown paths, bad
     arguments, other methods and malformed requests get errors, not OK."""
@@ -600,6 +640,7 @@ def comparison_test(redis, dynomite, debug):
     run_encrypted_peer_msg_test(c)
     run_incr_replicas_test(c)
     run_list_pop_test(c)
+    run_random_set_test(c)
     run_rest_api_test(c)
     run_select_test(c)
     run_dbsize_test(c)

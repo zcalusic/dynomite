@@ -486,6 +486,17 @@ static void redis_unsupported_rsp(struct msg *req, char *buf) {
   dn_snprintf(buf + n, RSP_UNSUPPORTED_SIZE - n, CRLF);
 }
 
+/* The number of racks in the pool, in all its DCs. */
+static uint32_t pool_rack_count(struct server_pool *pool) {
+  uint32_t n = 0;
+
+  for (uint32_t i = 0; i < array_n(&pool->datacenters); i++) {
+    struct datacenter *dc = array_get(&pool->datacenters, i);
+    n += array_n(&dc->racks);
+  }
+  return n;
+}
+
 static bool req_filter(struct context *ctx, struct conn *conn,
                        struct msg *req) {
   ASSERT(conn->type == CONN_CLIENT);
@@ -559,6 +570,18 @@ static bool req_filter(struct context *ctx, struct conn *conn,
               print_obj(req));
     redis_unsupported_rsp(req, rsp);
     IGNORE_RET_VAL(simulate_rsp(ctx, conn, req, rsp));
+    return true;
+  }
+
+  // Each replica would pop its own random members, and the racks' copies of
+  // the set would no longer agree: SPOP works with one rack only.
+  if (req->type == MSG_REQ_REDIS_SPOP &&
+      pool_rack_count((struct server_pool *)conn->owner) > 1) {
+    log_debug(LOG_VERB, "%s filter spop %s", print_obj(conn), print_obj(req));
+    IGNORE_RET_VAL(simulate_rsp(
+        ctx, conn, req,
+        "-ERR SPOP is not supported with more than one rack, since each "
+        "replica would pop other members: use SRANDMEMBER and SREM" CRLF));
     return true;
   }
 

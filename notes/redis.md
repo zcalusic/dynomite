@@ -199,9 +199,9 @@ A command that isn't supported, or isn't listed here, gets the error Redis gives
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      SMOVE        |    Yes*    | SMOVE source destination member                                                                                     |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
-    |      SPOP         |    Yes     | SPOP key [count]                                                                                                    |
+    |      SPOP         |    Yes***  | SPOP key [count]                                                                                                    |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
-    |    SRANDMEMBER    |    Yes     | SRANDMEMBER key [count]                                                                                             |
+    |    SRANDMEMBER    |    Yes***  | SRANDMEMBER key [count]                                                                                             |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      SREM         |    Yes     | SREM key member [member ...]                                                                                        |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -215,6 +215,8 @@ A command that isn't supported, or isn't listed here, gets the error Redis gives
 * SDIFF, SDIFFSTORE, SINTER, SINTERSTORE, SMOVE, SUNION and SUNIONSTORE support requires that the supplied keys hash to the same server. You can ensure this by using the same [hashtag](recommendation.md#hash-tags) for all keys in the command. Dynomite does no checking on its end to verify that all the keys hash to the same server, and the given command is forwarded to the server that the first key hashes to.
 
 ** SSCAN scans only sets in the local node.
+
+*** SPOP is refused with an error when the cluster has more than one rack: each replica would pop other, random members, and the racks' copies of the set would no longer agree. Use SRANDMEMBER and then SREM the members, which every replica removes alike. SRANDMEMBER reads from the key's node in the local rack only, whatever the consistency level, since replicas give different random replies.
 
 ### Sorted Sets
 
