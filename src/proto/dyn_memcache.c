@@ -1397,8 +1397,7 @@ rstatus_t memcache_fragment(struct msg *r, struct server_pool *pool,
   return DN_OK;
 }
 
-rstatus_t memcache_verify_request(struct msg *r, struct server_pool *pool,
-                                  struct rack *rack) {
+rstatus_t memcache_verify_request(struct msg *r, struct server_pool *pool) {
   return DN_OK;
 }
 /*

@@ -454,6 +454,159 @@ def run_random_set_test(c):
     print("\t-SPOP refused, SRANDMEMBER answered under DC_SAFE_QUORUM, "
           "%d replicas alike after SREM" % num_racks)
 
+def multikey_commands(k):
+    """The commands with more than one key that go where their first key
+    goes, for the keys k(0), k(1), ...: (name, args, destination or None)."""
+    return [
+        ('rpoplpush', (k(0), k(1)), k(1)),
+        ('smove', (k(2), k(3), 'a'), k(3)),
+        ('sdiff', ([k(2), k(3)],), None),
+        ('sinter', ([k(2), k(3)],), None),
+        ('sunion', ([k(2), k(3)],), None),
+        ('sdiffstore', (k(4), [k(2), k(3)]), k(4)),
+        ('sinterstore', (k(4), [k(2), k(3)]), k(4)),
+        ('sunionstore', (k(4), [k(2), k(3)]), k(4)),
+        ('zunionstore', (k(7), [k(5), k(6)]), k(7)),
+        ('zinterstore', (k(7), [k(5), k(6)]), k(7)),
+        ('pfcount', (k(8), k(9)), None),
+        ('sort', (k(0),), None),
+        ('georadius', (k(10), 15, 37, 200), None),
+    ], [
+        # The extra keys are in their options.
+        ('sort', (k(0),), {'alpha': True, 'store': k(1)}, k(1)),
+        ('georadius', (k(10), 15, 37, 200), {'unit': 'km', 'store': k(11)},
+         k(11)),
+    ]
+
+def multikey_setup(conn, k):
+    conn.rpush(k(0), '3', '1', '2')
+    conn.sadd(k(2), 'a', 'b', 'c')
+    conn.sadd(k(3), 'b', 'c', 'd')
+    conn.zadd(k(5), {'a': 1, 'b': 2})
+    conn.zadd(k(6), {'b': 3, 'c': 4})
+    conn.pfadd(k(8), 'a', 'b')
+    conn.pfadd(k(9), 'c')
+    conn.geoadd(k(10), (13.361389, 38.115556, 'Palermo'))
+
+# Replies that are unordered sets: each replica lists the members in its own
+# hash order, so quorum reads of them fail, whatever the routing.
+SET_REPLIES = ('sdiff', 'sinter', 'sunion')
+
+def multikey_verify(c, plain):
+    """run_verify() for each command, the ones with unordered set replies
+    at DC_ONE, on a connection of their own to the same node."""
+    kwargs = c.dyno_conn.connection_pool.connection_kwargs
+    dc_one = redis.Redis(kwargs['host'], kwargs['port'],
+                         single_connection_client=True)
+    dc_one.execute_command('dyno_config:conn_consistency', 'DC_ONE')
+    c.set_sort_before_compare(True)
+    for name, args, _ in plain:
+        if name in SET_REPLIES:
+            assert getattr(c.redis_conn, name)(*args) == \
+                getattr(dc_one, name)(*args), name
+        else:
+            c.run_verify(name, *args)
+    c.set_sort_before_compare(False)
+    dc_one.close()
+
+def run_multikey_routing_test(c):
+    """Checks the commands with more than one key that go where their first
+    key goes, whole (RPOPLPUSH, SMOVE, SDIFF, SINTER, SUNION and their STORE
+    forms, ZUNIONSTORE, ZINTERSTORE, PFCOUNT, SORT and GEORADIUS with STORE,
+    EVAL): with keys sharing a hash tag they answer as Redis does, and so do
+    keys on the same node in every rack, as in clusters with one node per
+    rack. Keys on different nodes are refused, and nothing is written:
+    before, the request went to the first key's node, which read or wrote
+    keys it doesn't own."""
+    print("Running MULTIKEY_ROUTING test")
+    dyno_cluster = c.get_dynomite_cluster()
+    plain, with_options = multikey_commands(
+        lambda i: '{MULTIKEY_ROUTING}k%d' % i)
+    multikey_setup(c.redis_conn, lambda i: '{MULTIKEY_ROUTING}k%d' % i)
+    multikey_setup(c.dyno_conn, lambda i: '{MULTIKEY_ROUTING}k%d' % i)
+    multikey_verify(c, plain)
+    for name, args, kwargs, dst in with_options:
+        assert getattr(c.redis_conn, name)(*args, **kwargs) == \
+            getattr(c.dyno_conn, name)(*args, **kwargs), name
+        c.run_verify('type', dst)
+    c.run_verify('eval', 'return #KEYS', 2, '{MULTIKEY_ROUTING}a',
+                 '{MULTIKEY_ROUTING}b')
+    print("\t-%d commands with keys sharing a hash tag answered as by Redis"
+          % (len(plain) + len(with_options) + 1))
+
+    racks = {}
+    for node in dyno_cluster.nodes:
+        racks.setdefault((node.spec.dc, node.spec.rack), []).append(node)
+    big = [nodes for nodes in racks.values() if len(nodes) > 1]
+    if not big:
+        # One node per rack: every key is on the same node, tag or not.
+        k = lambda i: 'MULTIKEY_ROUTING_untagged_%d' % i
+        multikey_setup(c.redis_conn, k)
+        multikey_setup(c.dyno_conn, k)
+        multikey_verify(c, plain)
+        print("\t-one node per rack: %d commands with untagged keys answered "
+              "as by Redis" % len(plain))
+        return
+
+    # Each command's first key on one node of a rack with more than one, its
+    # other keys elsewhere, found by where a write of each lands.
+    rack_nodes = big[0]
+    def owner(key):
+        c.dyno_conn.set(key, 'probe')
+        for _ in range(50):
+            holders = [n for n in rack_nodes
+                       if n.get_data_store_connection().exists(key)]
+            if holders:
+                c.dyno_conn.delete(key)
+                return holders[0]
+            time.sleep(0.1)
+        assert False, key
+    first_keys = (0, 2, 5, 8, 10)
+    node_a = owner('MULTIKEY_ROUTING_spread_0')
+    keys = {}
+    for j in range(12):
+        n = 0
+        while True:
+            key = 'MULTIKEY_ROUTING_spread_%d_%d' % (j, n)
+            if (owner(key) is node_a) == (j in first_keys):
+                keys[j] = key
+                break
+            n += 1
+    k = lambda j: keys[j]
+    plain, with_options = multikey_commands(k)
+    multikey_setup(c.dyno_conn, k)
+    refused = 0
+    for name, args, dst in plain:
+        try:
+            getattr(c.dyno_conn, name)(*args)
+            if name in ('sort', 'georadius'):
+                continue  # one key only
+            assert False, "%s across nodes wasn't refused" % name
+        except redis.exceptions.ResponseError as e:
+            assert 'Keys in the request cannot span multiple nodes' in str(e), \
+                (name, e)
+            refused += 1
+    for name, args, kwargs, dst in with_options:
+        try:
+            getattr(c.dyno_conn, name)(*args, **kwargs)
+            assert False, "%s with STORE across nodes wasn't refused" % name
+        except redis.exceptions.ResponseError as e:
+            assert 'Keys in the request cannot span multiple nodes' in str(e), \
+                (name, e)
+            refused += 1
+    try:
+        c.dyno_conn.eval('return #KEYS', 2, k(0), k(1))
+        assert False, "EVAL across nodes wasn't refused"
+    except redis.exceptions.ResponseError as e:
+        assert 'Keys in the script cannot span multiple nodes' in str(e), e
+        refused += 1
+    # Nothing was written to a destination, on any node.
+    for dst in [k(1), k(4), k(7), k(11)]:
+        for node in dyno_cluster.nodes:
+            assert not node.get_data_store_connection().exists(dst), \
+                (dst, node.ip)
+    print("\t-%d commands with keys on different nodes refused" % refused)
+
 def run_rest_api_test(c):
     """Checks the stats REST API's HTTP statuses: unknown paths, bad
     arguments, other methods and malformed requests get errors, not OK."""
@@ -641,6 +794,7 @@ def comparison_test(redis, dynomite, debug):
     run_incr_replicas_test(c)
     run_list_pop_test(c)
     run_random_set_test(c)
+    run_multikey_routing_test(c)
     run_rest_api_test(c)
     run_select_test(c)
     run_dbsize_test(c)

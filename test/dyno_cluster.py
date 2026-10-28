@@ -17,6 +17,7 @@ CLUSTER_DESC_FILEPATH='../running_cluster.yaml'
 DYN_O_MITE_DEFAULTS = dict(
     data_store=0,
     datastore_connections=1,
+    hash_tag='{}',
 )
 INTERNODE_LISTEN = 8101
 CLIENT_LISTEN = 8102

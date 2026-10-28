@@ -1241,8 +1241,7 @@ static void req_forward(struct context *ctx, struct conn *c_conn,
   }
 
   // Make sure that this is a valid request according to Dynomite.
-  s = g_verify_request(
-      req, pool, server_get_rack_by_dc_rack(pool, &pool->rack, &pool->dc));
+  s = g_verify_request(req, pool);
   if (s != DN_OK) {
     // If this was an invalid request, we forward an error.
     req_forward_error(ctx, c_conn, req, DN_OK, s);

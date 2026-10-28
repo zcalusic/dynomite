@@ -238,8 +238,7 @@ typedef enum msg_type { MSG_TYPE_CODEC(DEFINE_ACTION) } msg_type_t;
 typedef void (*func_msg_parse_t)(struct msg *, struct context *ctx);
 typedef rstatus_t (*func_msg_fragment_t)(struct msg *, struct server_pool *,
                                          struct rack *, struct msg_tqh *);
-typedef rstatus_t (*func_msg_verify_t)(struct msg *, struct server_pool *,
-                                       struct rack *);
+typedef rstatus_t (*func_msg_verify_t)(struct msg *, struct server_pool *);
 typedef void (*func_msg_coalesce_t)(struct msg *r);
 typedef rstatus_t (*msg_response_handler_t)(struct context *ctx, struct msg *req,
                                             struct msg *rsp);
@@ -299,6 +298,7 @@ typedef enum dyn_error {
   BAD_FORMAT,
   DYNOMITE_NO_QUORUM_ACHIEVED,
   DYNOMITE_SCRIPT_SPANS_NODES,
+  DYNOMITE_KEYS_SPAN_NODES,
   PEER_TIMEOUT,
   STORAGE_TIMEOUT,
   STORAGE_NOT_CONNECTED,
@@ -333,6 +333,8 @@ static inline char *dn_strerror(dyn_error_t err) {
       return "Failed to achieve Quorum";
     case DYNOMITE_SCRIPT_SPANS_NODES:
       return "Keys in the script cannot span multiple nodes";
+    case DYNOMITE_KEYS_SPAN_NODES:
+      return "Keys in the request cannot span multiple nodes, use a hash tag";
     case PEER_QUEUE_FULL:
       return "Peer Node has too many requests queued";
     default:
@@ -346,6 +348,7 @@ static inline char *dyn_error_source(dyn_error_t err) {
     case DYNOMITE_INVALID_STATE:
     case DYNOMITE_NO_QUORUM_ACHIEVED:
     case DYNOMITE_SCRIPT_SPANS_NODES:
+    case DYNOMITE_KEYS_SPAN_NODES:
       return "Dynomite:";
     case PEER_CONNECTION_REFUSE:
     case PEER_HOST_DOWN:

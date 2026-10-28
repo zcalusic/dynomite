@@ -2,6 +2,10 @@
 
 A command that isn't supported, or isn't listed here, gets the error Redis gives for a command it doesn't know (`-ERR unknown command 'XADD', with args beginning with: ...`, or `-ERR unknown subcommand 'LIST'. Try CLIENT HELP.` for CLIENT and SCRIPT), and the connection stays open.
 
+### Commands with more than one key
+
+MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on any nodes. The other commands with more than one key (RPOPLPUSH, SMOVE, SDIFF, SINTER, SUNION and their STORE forms, ZINTERSTORE, ZUNIONSTORE, PFCOUNT, JSON.MGET, EVAL and EVALSHA, and SORT and GEORADIUS with STORE or STOREDIST) go whole to the node of their first key, so all their keys must be on that node, in every rack: give them the same [hash tag](recommendation.md#hash-tags). Dynomite refuses a request whose keys are on different nodes with `-ERR Dynomite: Keys in the request cannot span multiple nodes, use a hash tag` (`Keys in the script ...` for EVAL and EVALSHA), without running it. With one node per rack, every key is on that node. The keys in SORT's BY and GET patterns aren't checked.
+
 ### Keys Command
 
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -41,16 +45,22 @@ A command that isn't supported, or isn't listed here, gets the error Redis gives
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      RESTORE      |    Yes     | RESTORE key ttl serialized-value                                                                                    |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
-    |      SORT         |    No      | SORT key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]   |
+    |      SORT         |    Yes**   | SORT key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]   |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |       TTL         |    Yes     | TTL key                                                                                                             |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      TYPE         |    Yes     | TYPE key                                                                                                            |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      UNLINK       |    Yes***  | UNLINK key [key ...]                                                                                                |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      SCAN         |    Yes*    | SCAN cursor [MATCH pattern] [COUNT count]                                                                           |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
 
 * SCAN, KEYS read only the local node.
+
+** SORT with STORE needs the destination on the key's node, see [Commands with more than one key](#commands-with-more-than-one-key).
+
+*** UNLINK is sent as DEL, which gives the same reply; Redis frees the memory at once instead of in the background.
 
 ### Strings Command
 
@@ -174,7 +184,7 @@ A command that isn't supported, or isn't listed here, gets the error Redis gives
     |      RPUSHX       |    Yes     | RPUSHX key value                                                                                                    |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
 
-* RPOPLPUSH support requires that source and destination keys hash to the same server. You can ensure this by using the same [hashtag](recommendation.md#hash-tags) for source and destination key. Dynomite does no checking on its end to verify that source and destination key hash to the same server, and the RPOPLPUSH command is forwarded to the server that the source key hashes to
+* RPOPLPUSH needs both keys on the same node, see [Commands with more than one key](#commands-with-more-than-one-key).
 
 ### Sets
 
@@ -212,7 +222,7 @@ A command that isn't supported, or isn't listed here, gets the error Redis gives
     |      SSCAN        |    Yes**   | SSCAN key cursor [MATCH pattern] [COUNT count]                                                                      |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
 
-* SDIFF, SDIFFSTORE, SINTER, SINTERSTORE, SMOVE, SUNION and SUNIONSTORE support requires that the supplied keys hash to the same server. You can ensure this by using the same [hashtag](recommendation.md#hash-tags) for all keys in the command. Dynomite does no checking on its end to verify that all the keys hash to the same server, and the given command is forwarded to the server that the first key hashes to.
+* SDIFF, SDIFFSTORE, SINTER, SINTERSTORE, SMOVE, SUNION and SUNIONSTORE need all their keys on the same node, see [Commands with more than one key](#commands-with-more-than-one-key).
 
 ** SSCAN scans only sets in the local node.
 
@@ -266,7 +276,7 @@ A command that isn't supported, or isn't listed here, gets the error Redis gives
     |      ZSCAN        |    Yes**   | ZSCAN key cursor [MATCH pattern] [COUNT count]                                                                      |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
 
-* ZINTERSTORE and ZUNIONSTORE support requires that the supplied keys hash to the same server. You can ensure this by using the same [hashtag](recommendation.md#hash-tags) for all keys in the command. Dynomite does no checking on its end to verify that all the keys hash to the same server, and the given command is forwarded to the server that the first key hashes to.
+* ZINTERSTORE and ZUNIONSTORE need all their keys on the same node, see [Commands with more than one key](#commands-with-more-than-one-key).
 
 ** SSCAN scans only sorted sets in the local node.
 
@@ -276,10 +286,12 @@ A command that isn't supported, or isn't listed here, gets the error Redis gives
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |     PFADD         |    Yes     | PFADD key element [element...]                                                                                      |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
-    |     PFCOUNT       |    Yes     | PFCOUNT key [key...]                                                                                                |
+    |     PFCOUNT       |    Yes*    | PFCOUNT key [key...]                                                                                                |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |     PFMERGE       |    No      | PFMERGE destkey sourcekey [sourcekey ...]                                                                           |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+
+* PFCOUNT with more than one key needs them all on the same node, see [Commands with more than one key](#commands-with-more-than-one-key).
 
 
 ### Pub/Sub
@@ -332,7 +344,7 @@ A command that isn't supported, or isn't listed here, gets the error Redis gives
     |    SCRIPT LOAD    |    Yes     | SCRIPT LOAD script                                                                                                  |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
 
- * EVAL and EVALSHA support is limited to scripts that take at least 1 key. If multiple keys are used, all keys must hash to the same server. You can ensure this by using the same [hashtag](recommendation.md#hash-tags) for all keys. If you use more than 1 key, the proxy does no checking to verify that all keys hash to the same server, and the entire command is forwarded to the server that the first key hashes to
+ * EVAL and EVALSHA support is limited to scripts that take at least 1 key. With more than one, all keys must be on the same node, see [Commands with more than one key](#commands-with-more-than-one-key).
 
  ** SCRIPT KILL and SCRIPT FLUSH will kill and flush on ALL Dynomite nodes.
 

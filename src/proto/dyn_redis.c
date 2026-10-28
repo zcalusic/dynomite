@@ -26,6 +26,7 @@
 #include "../dyn_core.h"
 #include "../dyn_dnode_peer.h"
 #include "../dyn_util.h"
+#include "../dyn_vnode.h"
 #include "dyn_proto.h"
 #include "dyn_proto_repair.h"
 
@@ -88,7 +89,6 @@ static bool redis_arg0(struct msg *r) {
     case MSG_REQ_REDIS_ZCARD:
 
     case MSG_REQ_REDIS_KEYS:
-    case MSG_REQ_REDIS_PFCOUNT:
       return true;
 
     default:
@@ -163,6 +163,34 @@ static bool redis_unsupported(struct msg *r) {
   return r->type == MSG_REQ_REDIS_UNSUPPORTED ||
          r->type == MSG_REQ_REDIS_CLIENT_UNSUPPORTED ||
          r->type == MSG_REQ_REDIS_SCRIPT_UNSUPPORTED;
+}
+
+/*
+ * Return true for a command with more than one key that goes where its first
+ * key goes, whole: its other keys are among its args, which are recorded, so
+ * that redis_verify_request() can check they belong to the same nodes.
+ */
+static bool redis_routed_by_first_key(struct msg *r) {
+  switch (r->type) {
+    case MSG_REQ_REDIS_RPOPLPUSH:
+    case MSG_REQ_REDIS_SMOVE:
+    case MSG_REQ_REDIS_SDIFF:
+    case MSG_REQ_REDIS_SDIFFSTORE:
+    case MSG_REQ_REDIS_SINTER:
+    case MSG_REQ_REDIS_SINTERSTORE:
+    case MSG_REQ_REDIS_SUNION:
+    case MSG_REQ_REDIS_SUNIONSTORE:
+    case MSG_REQ_REDIS_ZINTERSTORE:
+    case MSG_REQ_REDIS_ZUNIONSTORE:
+    case MSG_REQ_REDIS_PFCOUNT:
+    case MSG_REQ_REDIS_JSONMGET:
+    case MSG_REQ_REDIS_SORT:
+    case MSG_REQ_REDIS_GEORADIUS:
+    case MSG_REQ_REDIS_GEORADIUSBYMEMBER:
+      return true;
+    default:
+      return false;
+  }
 }
 
 /*
@@ -291,6 +319,7 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_ZUNIONSTORE:
     case MSG_REQ_REDIS_ZSCAN:
     case MSG_REQ_REDIS_PFADD:
+    case MSG_REQ_REDIS_PFCOUNT: /* key [key ...] */
     case MSG_REQ_REDIS_GEOADD:
     case MSG_REQ_REDIS_GEORADIUS:
     case MSG_REQ_REDIS_GEODIST:
@@ -403,11 +432,19 @@ static bool redis_error(struct msg *r) {
 /*
  * Return true if the first arg is recorded: always with read repairs, else
  * the level of a Dynomite config message and the index of a SELECT, which
- * are answered from it.
+ * are answered from it, and the args of a command routed by its first key.
  */
 static bool redis_records_arg1(struct msg *r, bool read_repairs_enabled) {
   return read_repairs_enabled || is_msg_type_dyno_config(r->type) ||
-         r->type == MSG_REQ_REDIS_SELECT;
+         r->type == MSG_REQ_REDIS_SELECT || redis_routed_by_first_key(r);
+}
+
+/*
+ * Return true if the second arg is recorded: always with read repairs, else
+ * for a command routed by its first key.
+ */
+static bool redis_records_arg2(struct msg *r, bool read_repairs_enabled) {
+  return read_repairs_enabled || redis_routed_by_first_key(r);
 }
 
 /*
@@ -418,10 +455,11 @@ static bool redis_records_arg1(struct msg *r, bool read_repairs_enabled) {
 
 /*
  * Return true if an arg read as a plain arg (SW_ARGN) is recorded: always
- * with read repairs, else the first ones of an unsupported command.
+ * with read repairs, else the first ones of an unsupported command, and all
+ * of a command routed by its first key.
  */
 static bool redis_records_argn(struct msg *r, bool read_repairs_enabled) {
-  return read_repairs_enabled ||
+  return read_repairs_enabled || redis_routed_by_first_key(r) ||
          (redis_unsupported(r) &&
           array_n(r->args) < REDIS_UNSUPPORTED_ARGS_MAX);
 }
@@ -1290,7 +1328,11 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               break;
             }
             if (str6icmp(m, 'u', 'n', 'l', 'i', 'n', 'k')) {
-              r->type = MSG_REQ_REDIS_UNLINK;
+              // Sent as DEL, which gives the same reply: split per key like
+              // it, and with read repairs rewritten like it, so that a repair
+              // can't bring the value back. Redis frees the memory at once
+              // instead of in the background.
+              r->type = MSG_REQ_REDIS_DEL;
               r->is_read = 0;
               break;
             }
@@ -2144,7 +2186,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         }
 
         m = p + r->rlen;
-        if (read_repairs_enabled) {
+        if (redis_records_arg2(r, read_repairs_enabled)) {
           start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
@@ -2176,7 +2218,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           goto error;
         }
 
-        if (read_repairs_enabled) {
+        if (redis_records_arg2(r, read_repairs_enabled)) {
           rstatus_t argstatus = record_arg(r, b, m);
           if (argstatus == DN_ERROR) {
             goto error;
@@ -3735,32 +3777,231 @@ rstatus_t redis_fragment(struct msg *r, struct server_pool *pool,
   }
 }
 
-rstatus_t redis_verify_request(struct msg *r, struct server_pool *pool,
-                               struct rack *rack) {
-  if (r->type != MSG_REQ_REDIS_EVAL) return DN_OK;
+/* Return true if arg is word, in any case. */
+static bool redis_arg_is(const struct argpos *arg, const char *word) {
+  uint8_t buf[16];
+  size_t len = strlen(word);
 
-  // For EVAL based commands, Dynomite wants to restrict all keys used by the
-  // script to belong to the same node
-  if (1 >= array_n(r->keys)) {
-    return DN_OK;
+  ASSERT(len < sizeof(buf));
+  return arg->len == len && argpos_copy(arg, buf, (uint32_t)len) == len &&
+         strncasecmp((const char *)buf, word, len) == 0;
+}
+
+/*
+ * The args of r, a command routed by its first key, that are keys too,
+ * flagged in is_key (of array_n(r->args)): the second key of RPOPLPUSH and
+ * SMOVE, all args of SDIFF, SINTER, SUNION, their STORE forms and PFCOUNT,
+ * all but the path of JSON.MGET, numkeys keys after ZINTERSTORE's and
+ * ZUNIONSTORE's destination, and the STORE (and STOREDIST) destinations of
+ * SORT and GEORADIUS. Options are read as Redis reads them, up to one it
+ * doesn't know; SORT's BY and GET patterns name other keys too, which can't
+ * be checked.
+ */
+static void redis_flag_key_args(struct msg *r, bool *is_key) {
+  uint32_t n = array_n(r->args), i, first = 0;
+
+  switch (r->type) {
+    case MSG_REQ_REDIS_RPOPLPUSH:
+    case MSG_REQ_REDIS_SMOVE:
+      if (n > 0) is_key[0] = true;
+      return;
+
+    case MSG_REQ_REDIS_JSONMGET:
+      for (i = 0; i + 1 < n; i++) is_key[i] = true;
+      return;
+
+    case MSG_REQ_REDIS_ZINTERSTORE:
+    case MSG_REQ_REDIS_ZUNIONSTORE: {
+      uint8_t buf[11];
+      struct argpos *numkeys;
+      uint32_t nkeys = 0;
+
+      if (n == 0) return;
+      numkeys = array_get(r->args, 0);
+      if (numkeys->len == 0 || numkeys->len >= sizeof(buf) ||
+          argpos_copy(numkeys, buf, numkeys->len) != numkeys->len) {
+        return;
+      }
+      for (i = 0; i < numkeys->len; i++) {
+        if (!isdigit(buf[i])) return;
+        nkeys = nkeys * 10 + (uint32_t)(buf[i] - '0');
+      }
+      for (i = 1; i <= nkeys && i < n; i++) is_key[i] = true;
+      return;
+    }
+
+    case MSG_REQ_REDIS_SORT:
+      for (i = 0; i < n; i++) {
+        struct argpos *arg = array_get(r->args, i);
+        if (redis_arg_is(arg, "BY") || redis_arg_is(arg, "GET")) {
+          i++;
+        } else if (redis_arg_is(arg, "LIMIT")) {
+          i += 2;
+        } else if (redis_arg_is(arg, "STORE")) {
+          if (i + 1 < n) is_key[++i] = true;
+        } else if (!redis_arg_is(arg, "ASC") && !redis_arg_is(arg, "DESC") &&
+                   !redis_arg_is(arg, "ALPHA")) {
+          return;
+        }
+      }
+      return;
+
+    case MSG_REQ_REDIS_GEORADIUS:
+    case MSG_REQ_REDIS_GEORADIUSBYMEMBER:
+      /* longitude latitude, or member; then radius and unit */
+      first = r->type == MSG_REQ_REDIS_GEORADIUS ? 4 : 3;
+      for (i = first; i < n; i++) {
+        struct argpos *arg = array_get(r->args, i);
+        if (redis_arg_is(arg, "COUNT")) {
+          i++;
+        } else if (redis_arg_is(arg, "STORE") ||
+                   redis_arg_is(arg, "STOREDIST")) {
+          if (i + 1 < n) is_key[++i] = true;
+        } else if (!redis_arg_is(arg, "WITHCOORD") &&
+                   !redis_arg_is(arg, "WITHDIST") &&
+                   !redis_arg_is(arg, "WITHHASH") &&
+                   !redis_arg_is(arg, "ANY") && !redis_arg_is(arg, "ASC") &&
+                   !redis_arg_is(arg, "DESC")) {
+          return;
+        }
+      }
+      return;
+
+    default:
+      for (i = 0; i < n; i++) is_key[i] = true;
+      return;
   }
-  uint32_t prev_idx = 0, i;
-  for (i = 0; i < array_n(r->keys); i++) { /* for each key */
-    struct keypos *kpos = array_get(r->keys, i);
+}
 
-    // If the keys are any of the dynomite reserved keys, skip verification for them
-    // as we don't distribute them based on tokens.
-    if (strncmp((char*)kpos->start, ADD_SET_STR, strlen(ADD_SET_STR)) == 0) continue;
-    if (strncmp((char*)kpos->start, REM_SET_STR, strlen(REM_SET_STR)) == 0) continue;
-    uint32_t idx = dnode_peer_idx_for_key_on_rack(
-        pool, rack, kpos->tag_start,
-        (uint32_t)(kpos->tag_end - kpos->tag_start));
-    if (i == 0) prev_idx = idx;
-    if (prev_idx != idx) {
-      return DYNOMITE_SCRIPT_SPANS_NODES;
+/*
+ * The node index of a key in every rack of the pool, in all its DCs, into
+ * idx (of one per rack): what decides where a request with the key goes.
+ * Only the part between the pool's hash tag characters is hashed, if the key
+ * has both.
+ */
+static void redis_key_nodes(struct server_pool *pool, uint8_t *key,
+                            uint32_t keylen, uint32_t *idx) {
+  struct dyn_token token;
+  uint32_t i, j, k = 0;
+
+  if (!string_empty(&pool->hash_tag)) {
+    uint8_t *tag_start = dn_strchr(key, key + keylen, pool->hash_tag.data[0]);
+    if (tag_start != NULL) {
+      uint8_t *tag_end =
+          dn_strchr(tag_start + 1, key + keylen, pool->hash_tag.data[1]);
+      if (tag_end != NULL) {
+        key = tag_start + 1;
+        keylen = (uint32_t)(tag_end - key);
+      }
     }
   }
-  return DN_OK;
+  init_dyn_token(&token);
+  pool->key_hash(key, keylen, &token);
+  for (i = 0; i < array_n(&pool->datacenters); i++) {
+    struct datacenter *dc = array_get(&pool->datacenters, i);
+    for (j = 0; j < array_n(&dc->racks); j++) {
+      struct rack *rack = array_get(&dc->racks, j);
+      idx[k++] =
+          rack->ncontinuum == 0
+              ? 0
+              : vnode_dispatch(&rack->continuums, rack->ncontinuum, &token);
+    }
+  }
+  deinit_dyn_token(&token);
+}
+
+/*
+ * Check that a request with more than one key, which goes where its first key
+ * goes, has all its keys on the same node in every rack: one in another
+ * node's range would be read or written on the wrong node. A write goes to
+ * every rack, so they are all checked. Returns DYNOMITE_SCRIPT_SPANS_NODES
+ * or DYNOMITE_KEYS_SPAN_NODES if they aren't.
+ */
+rstatus_t redis_verify_request(struct msg *r, struct server_pool *pool) {
+  bool script =
+      r->type == MSG_REQ_REDIS_EVAL || r->type == MSG_REQ_REDIS_EVALSHA;
+  uint32_t nracks = 0, i;
+  uint32_t *first = NULL, *idx = NULL;
+  bool *is_key = NULL;
+  uint8_t *copy = NULL;
+  rstatus_t status = DN_OK;
+
+  if (!script && !redis_routed_by_first_key(r)) return DN_OK;
+  if (array_n(r->keys) == 0) return DN_OK;
+  if (script ? array_n(r->keys) < 2 : array_n(r->args) == 0) return DN_OK;
+
+  for (i = 0; i < array_n(&pool->datacenters); i++) {
+    struct datacenter *dc = array_get(&pool->datacenters, i);
+    nracks += array_n(&dc->racks);
+  }
+  if (nracks == 0) return DN_OK;
+  first = dn_alloc(nracks * sizeof(*first));
+  idx = dn_alloc(nracks * sizeof(*idx));
+  if (first == NULL || idx == NULL) {
+    status = DN_ENOMEM;
+    goto out;
+  }
+
+  struct keypos *kpos = array_get(r->keys, 0);
+  redis_key_nodes(pool, kpos->start, (uint32_t)(kpos->end - kpos->start),
+                  first);
+
+  if (script) {
+    for (i = 1; i < array_n(r->keys); i++) {
+      kpos = array_get(r->keys, i);
+      // Dynomite's own keys in its rewritten scripts aren't distributed by
+      // tokens: skip them.
+      if (strncmp((char *)kpos->start, ADD_SET_STR, strlen(ADD_SET_STR)) == 0 ||
+          strncmp((char *)kpos->start, REM_SET_STR, strlen(REM_SET_STR)) == 0) {
+        continue;
+      }
+      redis_key_nodes(pool, kpos->start, (uint32_t)(kpos->end - kpos->start),
+                      idx);
+      if (memcmp(first, idx, nracks * sizeof(*idx)) != 0) {
+        status = DYNOMITE_SCRIPT_SPANS_NODES;
+        goto out;
+      }
+    }
+    goto out;
+  }
+
+  is_key = dn_zalloc(array_n(r->args) * sizeof(*is_key));
+  if (is_key == NULL) {
+    status = DN_ENOMEM;
+    goto out;
+  }
+  redis_flag_key_args(r, is_key);
+  for (i = 0; i < array_n(r->args); i++) {
+    struct argpos *arg = array_get(r->args, i);
+    uint8_t *key;
+
+    if (!is_key[i]) continue;
+    if (arg->mbuf->last - arg->start >= (ptrdiff_t)arg->len) {
+      key = arg->start; /* all in one mbuf */
+    } else {
+      if (copy != NULL) dn_free(copy);
+      copy = dn_alloc(arg->len);
+      if (copy == NULL) {
+        status = DN_ENOMEM;
+        goto out;
+      }
+      IGNORE_RET_VAL(argpos_copy(arg, copy, arg->len));
+      key = copy;
+    }
+    redis_key_nodes(pool, key, arg->len, idx);
+    if (memcmp(first, idx, nracks * sizeof(*idx)) != 0) {
+      status = DYNOMITE_KEYS_SPAN_NODES;
+      goto out;
+    }
+  }
+
+out:
+  // dn_free() takes no NULL.
+  if (first != NULL) dn_free(first);
+  if (idx != NULL) dn_free(idx);
+  if (is_key != NULL) dn_free(is_key);
+  if (copy != NULL) dn_free(copy);
+  return status;
 }
 
 bool redis_is_multikey_request(struct msg *req) {

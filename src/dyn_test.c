@@ -635,6 +635,7 @@ static void parse_cases_init(void) {
   parse_add_args(tc, MSG_REQ_REDIS_MSET, "k1 k2", "v1 v2", "MSET k1 v1 k2 v2");
   parse_add(tc, MSG_REQ_REDIS_MGET, "k1 k2 k3", "MGET k1 k2 k3");
   parse_add(tc, MSG_REQ_REDIS_DEL, "k1 k2", "DEL k1 k2");
+  parse_add(tc, MSG_REQ_REDIS_DEL, "k1 k2", "unlink k1 k2");
   parse_add(tc, MSG_REQ_REDIS_EXISTS, "k1", "Exists k1");
   parse_add_args(tc, MSG_REQ_REDIS_HSET, "h", "f v", "HSET h f v");
   parse_add_args(tc, MSG_REQ_REDIS_HSET, "h", "f1 v1 f2 v2",
@@ -725,6 +726,28 @@ static void parse_cases_init(void) {
       {MSG_REQ_REDIS_SCRIPT_UNSUPPORTED, "GET foo", "SCRIPT GET foo"},
       {MSG_REQ_REDIS_SCRIPT_UNSUPPORTED, "DEBUG yes", "SCRIPT DEBUG yes"},
   };
+  /*
+   * Commands with more than one key that go where the first one goes: the
+   * other keys are among the args, recorded with or without read repairs
+   * for redis_verify_request(). PFCOUNT took one key only before.
+   */
+  tc = parse_case_new("redis routed by the first key", DATA_REDIS, false);
+  parse_add_args(tc, MSG_REQ_REDIS_RPOPLPUSH, "src", "dst",
+                 "RPOPLPUSH src dst");
+  parse_add_args(tc, MSG_REQ_REDIS_SMOVE, "src", "dst m", "SMOVE src dst m");
+  parse_add_args(tc, MSG_REQ_REDIS_SUNIONSTORE, "d", "a b",
+                 "SUNIONSTORE d a b");
+  parse_add_args(tc, MSG_REQ_REDIS_SINTER, "a", "b c", "sinter a b c");
+  parse_add_args(tc, MSG_REQ_REDIS_ZUNIONSTORE, "d", "2 a b WEIGHTS 1 2",
+                 "ZUNIONSTORE d 2 a b WEIGHTS 1 2");
+  parse_add_args(tc, MSG_REQ_REDIS_PFCOUNT, "h1", "h2 h3", "PFCOUNT h1 h2 h3");
+  parse_add(tc, MSG_REQ_REDIS_PFCOUNT, "h1", "PFCOUNT h1");
+  parse_add_args(tc, MSG_REQ_REDIS_SORT, "l", "ALPHA STORE d",
+                 "SORT l ALPHA STORE d");
+  parse_add_args(tc, MSG_REQ_REDIS_GEORADIUS, "g", "15 37 200 km STORE d",
+                 "GEORADIUS g 15 37 200 km STORE d");
+  parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
+
   tc = parse_case_new("redis unsupported", DATA_REDIS, false);
   for (size_t i = 0; i < NELEMS(unsupported); i++) {
     parse_add_args(tc, unsupported[i].type, "", unsupported[i].args,
