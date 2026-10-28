@@ -659,6 +659,7 @@ static void parse_cases_init(void) {
   parse_add(tc, MSG_REQ_REDIS_RPOP, "list", "rpop list 3");
   parse_add(tc, MSG_REQ_REDIS_SRANDMEMBER, "set", "SRANDMEMBER set");
   parse_add(tc, MSG_REQ_REDIS_SRANDMEMBER, "set", "SRANDMEMBER set -5");
+  parse_add(tc, MSG_REQ_REDIS_DBSIZE, "", "DBSIZE");
   parse_add_args(tc, MSG_REQ_REDIS_SELECT, "", "0", "SELECT 0");
   parse_add_args(tc, MSG_REQ_REDIS_SELECT, "", "15", "select 15");
   parse_add_args(tc, MSG_HACK_SETTING_CONN_CONSISTENCY, "", "dc_Quorum",
@@ -767,6 +768,7 @@ static void parse_cases_init(void) {
                         "CLIENT SETINFO lib-name");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_SELECT, "", "SELECT");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_LPOP, "", "LPOP");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_DBSIZE, "", "dbsize x");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_SRANDMEMBER, "", "SRANDMEMBER");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_SELECT, "", "SELECT 0 1");
   parse_add(tc, MSG_REQ_REDIS_PING, "", "PING");

@@ -484,6 +484,19 @@ def run_select_test(c):
     print("\t-SELECT 0, other databases and the requests after them answered "
           "as expected")
 
+def run_dbsize_test(c):
+    """Checks DBSIZE, which counts the keys of the node's own datastore
+    only, like KEYS and SCAN: through each node it must match that node's
+    redis. Before, DBSIZE was unsupported."""
+    print("Running DBSIZE test")
+    nodes = c.get_dynomite_cluster().nodes
+    for node in nodes:
+        size = node.get_connection().dbsize()
+        assert size == node.get_data_store_connection().dbsize(), (node.ip,
+                                                                    size)
+        assert size > 0, (node.ip, size)
+    print("\t-%d nodes answered with their own datastore's size" % len(nodes))
+
 def run_each_safe_quorum_dc_down_test(c):
     """Stops the dynomite nodes of one DC, one rack and then all of them, and
     checks DC_EACH_SAFE_QUORUM writes and reads through a node of another DC:
@@ -559,6 +572,7 @@ def comparison_test(redis, dynomite, debug):
     run_list_pop_test(c)
     run_rest_api_test(c)
     run_select_test(c)
+    run_dbsize_test(c)
 
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM

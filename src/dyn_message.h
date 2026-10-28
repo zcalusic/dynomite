@@ -204,6 +204,7 @@
   ACTION(REQ_REDIS_CLIENT_SETINFO)                                             \
   ACTION(REQ_REDIS_HELLO)                                                      \
   ACTION(REQ_REDIS_SELECT)                                                     \
+  ACTION(REQ_REDIS_DBSIZE)                                                     \
   ACTION(RSP_REDIS_STATUS) /* redis response */                                \
   ACTION(RSP_REDIS_INTEGER)                                                    \
   ACTION(RSP_REDIS_BULK)                                                       \

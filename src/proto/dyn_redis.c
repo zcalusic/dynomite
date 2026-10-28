@@ -48,6 +48,7 @@ static bool redis_argz(struct msg *r) {
     case MSG_REQ_REDIS_QUIT:
     case MSG_REQ_REDIS_SCRIPT_FLUSH:
     case MSG_REQ_REDIS_SCRIPT_KILL:
+    case MSG_REQ_REDIS_DBSIZE:
       return true;
 
     default:
@@ -1107,6 +1108,14 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               break;
             }
 
+            if (str6icmp(m, 'd', 'b', 's', 'i', 'z', 'e')) {
+              // The local node's datastore only, like KEYS and SCAN.
+              r->type = MSG_REQ_REDIS_DBSIZE;
+              r->msg_routing = ROUTING_LOCAL_NODE_ONLY;
+              r->is_read = 1;
+              break;
+            }
+
             if (str6icmp(m, 's', 'e', 'l', 'e', 'c', 't')) {
               // Answered locally, see req_filter().
               r->type = MSG_REQ_REDIS_SELECT;
@@ -1678,6 +1687,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             }
             if (redis_argz(r) && (r->rntokens == 0)) {
               goto done;
+            } else if (r->type == MSG_REQ_REDIS_DBSIZE) {
+              goto wrong_arity;
             } else if (redis_arg_upto1(r) && r->rntokens == 0) {
               goto done;
             } else if (redis_arg_upto1(r) && r->rntokens == 1) {
