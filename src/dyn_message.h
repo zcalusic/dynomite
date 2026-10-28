@@ -205,6 +205,9 @@
   ACTION(REQ_REDIS_HELLO)                                                      \
   ACTION(REQ_REDIS_SELECT)                                                     \
   ACTION(REQ_REDIS_DBSIZE)                                                     \
+  ACTION(REQ_REDIS_UNSUPPORTED) /* answered with an error */                   \
+  ACTION(REQ_REDIS_CLIENT_UNSUPPORTED)                                         \
+  ACTION(REQ_REDIS_SCRIPT_UNSUPPORTED)                                         \
   ACTION(RSP_REDIS_STATUS) /* redis response */                                \
   ACTION(RSP_REDIS_INTEGER)                                                    \
   ACTION(RSP_REDIS_BULK)                                                       \

@@ -691,13 +691,6 @@ static void parse_cases_init(void) {
    * one whole, or extra args, before the commit that added them (a bare
    * SCRIPT is answered for its arity, see below) */
   static const char *const rejects[] = {
-      "SCRIPT GET foo",
-      "SCRIPT DEBUG yes",
-      "KILL",
-      "LOAD return(1)",
-      "FLUSH",
-      "CLIENT LIST",
-      "NOSUCHCOMMAND x",
       "dyno_config:conn_consistency DC_ONEX",
       "dyno_config:conn_consistency DC_ON",
       "dyno_config:conn_consistency bogus",
@@ -708,6 +701,49 @@ static void parse_cases_init(void) {
     tc = parse_case_new(rejects[i], DATA_REDIS, false);
     parse_add(tc, MSG_REQ_REDIS_GET, "foo", "GET foo");
     parse_reject(tc, rejects[i]);
+  }
+
+  /*
+   * Commands and subcommands Dynomite doesn't support: a client's are read
+   * to their end, with the name (or subcommand) and the args recorded for
+   * the error it gets, and the next request parses as usual; a peer's are
+   * rejected. Before, a client's were rejected too.
+   */
+  static const struct {
+    msg_type_t type;
+    const char *args;
+    const char *words;
+  } unsupported[] = {
+      {MSG_REQ_REDIS_UNSUPPORTED, "NOSUCHCOMMAND x", "NOSUCHCOMMAND x"},
+      {MSG_REQ_REDIS_UNSUPPORTED, "FLUSHALL", "FLUSHALL"},
+      {MSG_REQ_REDIS_UNSUPPORTED, "xadd s * f v", "xadd s * f v"},
+      {MSG_REQ_REDIS_UNSUPPORTED, "KILL", "KILL"},
+      {MSG_REQ_REDIS_UNSUPPORTED, "LOAD return(1)", "LOAD return(1)"},
+      {MSG_REQ_REDIS_UNSUPPORTED, "FLUSH", "FLUSH"},
+      {MSG_REQ_REDIS_CLIENT_UNSUPPORTED, "LIST", "CLIENT LIST"},
+      {MSG_REQ_REDIS_CLIENT_UNSUPPORTED, "kill a b", "client kill a b"},
+      {MSG_REQ_REDIS_SCRIPT_UNSUPPORTED, "GET foo", "SCRIPT GET foo"},
+      {MSG_REQ_REDIS_SCRIPT_UNSUPPORTED, "DEBUG yes", "SCRIPT DEBUG yes"},
+  };
+  tc = parse_case_new("redis unsupported", DATA_REDIS, false);
+  for (size_t i = 0; i < NELEMS(unsupported); i++) {
+    parse_add_args(tc, unsupported[i].type, "", unsupported[i].args,
+                   unsupported[i].words);
+  }
+  /* more args than are kept for the error, and one longer than an mbuf */
+  dn_snprintf(words, sizeof(words), "BLPOP");
+  for (int i = 0; i < 60; i++) {
+    size_t n = strlen(words);
+    dn_snprintf(words + n, sizeof(words) - n, " k%d", i);
+  }
+  parse_add(tc, MSG_REQ_REDIS_UNSUPPORTED, "", words);
+  dn_snprintf(words, sizeof(words), "NOSUCHCOMMAND %s", big);
+  parse_add(tc, MSG_REQ_REDIS_UNSUPPORTED, "", words);
+  parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
+  for (size_t i = 0; i < NELEMS(unsupported); i++) {
+    tc = parse_case_new("dnode unsupported", DATA_REDIS, true);
+    parse_add(tc, MSG_REQ_REDIS_SET, "foo1", "set foo1 bar1");
+    parse_reject(tc, unsupported[i].words);
   }
 
   /* the rest are named, since the messages end in CRLF */

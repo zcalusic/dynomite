@@ -484,6 +484,36 @@ def run_select_test(c):
     print("\t-SELECT 0, other databases and the requests after them answered "
           "as expected")
 
+def run_unsupported_test(c):
+    """Checks that commands Dynomite doesn't support get Redis's error for
+    unknown commands and the connection stays open for the next requests.
+    Before, Dynomite closed the connection without a reply."""
+    print("Running UNSUPPORTED test")
+    node = c.get_dynomite_cluster().nodes[0]
+    key = create_key('UNSUPPORTED', 'key').encode()
+    pipeline = b''.join(
+        b'*%d\r\n' % len(args) +
+        b''.join(b'$%d\r\n%s\r\n' % (len(a), a) for a in args)
+        for args in [(b'XADD', key, b'*', b'f', b'v'), (b'FLUSHALL',),
+                     (b'CLIENT', b'LIST'), (b'SET', key, b'v'), (b'GET', key)])
+    expected = (b"-ERR unknown command 'XADD', with args beginning with: '" +
+                key + b"' '*' 'f' 'v' \r\n"
+                b"-ERR unknown command 'FLUSHALL', with args beginning "
+                b"with: \r\n"
+                b"-ERR unknown subcommand 'LIST'. Try CLIENT HELP.\r\n"
+                b"+OK\r\n$1\r\nv\r\n")
+    with socket.create_connection((node.ip, node.port), timeout=2) as s:
+        s.sendall(pipeline)
+        received = b''
+        while len(received) < len(expected):
+            data = s.recv(4096)
+            if not data:
+                break
+            received += data
+    assert received == expected, received
+    print("\t-XADD, FLUSHALL and CLIENT LIST answered with errors, the "
+          "requests after them as usual")
+
 def run_dbsize_test(c):
     """Checks DBSIZE, which counts the keys of the node's own datastore
     only, like KEYS and SCAN: through each node it must match that node's
@@ -573,6 +603,7 @@ def comparison_test(redis, dynomite, debug):
     run_rest_api_test(c)
     run_select_test(c)
     run_dbsize_test(c)
+    run_unsupported_test(c)
 
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM

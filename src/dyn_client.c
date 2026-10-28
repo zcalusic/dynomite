@@ -429,6 +429,63 @@ static const char *redis_select_rsp(struct msg *req) {
   return "-ERR DB index is out of range" CRLF;
 }
 
+/*
+ * Append up to max bytes of an arg to buf at *n, as Redis prints one with
+ * %.*s: up to a NUL byte, if any. Returns the number of bytes appended.
+ */
+static size_t redis_append_arg(char *buf, size_t *n, const struct argpos *arg,
+                               size_t max) {
+  uint32_t len = argpos_copy(arg, (uint8_t *)buf + *n, (uint32_t)max);
+  size_t printed = strnlen(buf + *n, len);
+
+  *n += printed;
+  return printed;
+}
+
+/*
+ * Redis's error for a command or subcommand it doesn't know, into buf (of
+ * RSP_UNSUPPORTED_SIZE): the name cut at 128 bytes and, for a command, its
+ * args, each quoted and followed by a space, while those come to less than
+ * 128 bytes, the last one cut to fit. CR and LF in them become spaces.
+ */
+#define RSP_UNSUPPORTED_SIZE 1024
+
+static void redis_unsupported_rsp(struct msg *req, char *buf) {
+  const struct argpos *name;
+  size_t n = 0;
+
+  ASSERT(array_n(req->args) >= 1);
+  name = array_get(req->args, 0);
+  if (req->type == MSG_REQ_REDIS_UNSUPPORTED) {
+    n = (size_t)dn_snprintf(buf, RSP_UNSUPPORTED_SIZE,
+                            "-ERR unknown command '");
+    redis_append_arg(buf, &n, name, 128);
+    n += (size_t)dn_snprintf(buf + n, RSP_UNSUPPORTED_SIZE - n,
+                             "', with args beginning with: ");
+    size_t listed = 0;
+    for (uint32_t i = 1; i < array_n(req->args) && listed < 128; i++) {
+      buf[n++] = '\'';
+      listed +=
+          3 + redis_append_arg(buf, &n, array_get(req->args, i), 128 - listed);
+      buf[n++] = '\'';
+      buf[n++] = ' ';
+    }
+  } else {
+    n = (size_t)dn_snprintf(buf, RSP_UNSUPPORTED_SIZE,
+                            "-ERR unknown subcommand '");
+    redis_append_arg(buf, &n, name, 128);
+    n += (size_t)dn_snprintf(
+        buf + n, RSP_UNSUPPORTED_SIZE - n, "'. Try %s HELP.",
+        req->type == MSG_REQ_REDIS_CLIENT_UNSUPPORTED ? "CLIENT" : "SCRIPT");
+  }
+  for (size_t i = 0; i < n; i++) {
+    if (buf[i] == '\r' || buf[i] == '\n') {
+      buf[i] = ' ';
+    }
+  }
+  dn_snprintf(buf + n, RSP_UNSUPPORTED_SIZE - n, CRLF);
+}
+
 static bool req_filter(struct context *ctx, struct conn *conn,
                        struct msg *req) {
   ASSERT(conn->type == CONN_CLIENT);
@@ -488,6 +545,19 @@ static bool req_filter(struct context *ctx, struct conn *conn,
     redis_command_name(req->type, name, sizeof(name));
     dn_snprintf(rsp, sizeof(rsp),
                 "-ERR wrong number of arguments for '%s' command" CRLF, name);
+    IGNORE_RET_VAL(simulate_rsp(ctx, conn, req, rsp));
+    return true;
+  }
+
+  // A command Dynomite doesn't support: answer as Redis does for one it
+  // doesn't know, and keep the connection.
+  if (req->type == MSG_REQ_REDIS_UNSUPPORTED ||
+      req->type == MSG_REQ_REDIS_CLIENT_UNSUPPORTED ||
+      req->type == MSG_REQ_REDIS_SCRIPT_UNSUPPORTED) {
+    char rsp[RSP_UNSUPPORTED_SIZE];
+    log_debug(LOG_VERB, "%s filter unsupported %s", print_obj(conn),
+              print_obj(req));
+    redis_unsupported_rsp(req, rsp);
     IGNORE_RET_VAL(simulate_rsp(ctx, conn, req, rsp));
     return true;
   }

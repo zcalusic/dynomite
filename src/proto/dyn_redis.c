@@ -155,11 +155,25 @@ static bool redis_arg_upto1(struct msg *r) {
   return false;
 }
 /*
+ * Return true for a command or subcommand Dynomite doesn't support, from a
+ * client: it is read to its end and answered with Redis's error for unknown
+ * commands (req_filter()).
+ */
+static bool redis_unsupported(struct msg *r) {
+  return r->type == MSG_REQ_REDIS_UNSUPPORTED ||
+         r->type == MSG_REQ_REDIS_CLIENT_UNSUPPORTED ||
+         r->type == MSG_REQ_REDIS_SCRIPT_UNSUPPORTED;
+}
+
+/*
  * Return true if the command needs arguments, so that it can't come without
  * any. CLIENT SETINFO, SELECT and dyno_config:conn_consistency check their
  * own count.
  */
 static bool redis_needs_args(struct msg *r) {
+  if (redis_unsupported(r)) {
+    return false;
+  }
   switch (r->type) {
     case MSG_REQ_REDIS_HELLO:
     case MSG_REQ_REDIS_CLIENT_SETINFO:
@@ -394,6 +408,22 @@ static bool redis_error(struct msg *r) {
 static bool redis_records_arg1(struct msg *r, bool read_repairs_enabled) {
   return read_repairs_enabled || is_msg_type_dyno_config(r->type) ||
          r->type == MSG_REQ_REDIS_SELECT;
+}
+
+/*
+ * The most args of an unsupported command kept for its error, its name
+ * included: Redis lists args only up to 128 characters, at least 3 each.
+ */
+#define REDIS_UNSUPPORTED_ARGS_MAX 48
+
+/*
+ * Return true if an arg read as a plain arg (SW_ARGN) is recorded: always
+ * with read repairs, else the first ones of an unsupported command.
+ */
+static bool redis_records_argn(struct msg *r, bool read_repairs_enabled) {
+  return read_repairs_enabled ||
+         (redis_unsupported(r) &&
+          array_n(r->args) < REDIS_UNSUPPORTED_ARGS_MAX);
 }
 
 /* Start an arg at p, in mbuf b, unless one is being parsed already. */
@@ -731,9 +761,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         // only 'CLIENT SETINFO' is supported; it's answered locally.
         if (r->type == MSG_REQ_REDIS_CLIENT) {
           if ((p - m) != 7 || !str7icmp(m, 's', 'e', 't', 'i', 'n', 'f', 'o')) {
-            log_error("parsed unsupported command 'CLIENT %.*s'", (int)(p - m),
-                      m);
-            goto error;
+            r->type = MSG_REQ_REDIS_CLIENT_UNSUPPORTED;
+            goto unsupported;
           }
           r->type = MSG_REQ_REDIS_CLIENT_SETINFO;
           r->is_read = 1;
@@ -759,9 +788,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             r->type = MSG_REQ_REDIS_SCRIPT_EXISTS;
             r->is_read = 1;
           } else {
-            log_error("parsed unsupported command 'SCRIPT %.*s'", (int)(p - m),
-                      m);
-            goto error;
+            r->type = MSG_REQ_REDIS_SCRIPT_UNSUPPORTED;
+            goto unsupported;
           }
           r->msg_routing = ROUTING_ALL_NODES_ALL_RACKS_ALL_DCS;
           log_debug(LOG_VERB, "parsed command 'SCRIPT %.*s'", (int)(p - m), m);
@@ -1652,8 +1680,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         }
 
         if (r->type == MSG_UNKNOWN) {
-          log_error("parsed unsupported command '%.*s'", (int)(p - m), m);
-          goto error;
+          r->type = MSG_REQ_REDIS_UNSUPPORTED;
+          goto unsupported;
         }
 
         log_debug(LOG_VERB, "parsed command '%.*s'", (int)(p - m), m);
@@ -1682,6 +1710,14 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
 
         switch (ch) {
           case LF:
+            if (redis_unsupported(r)) {
+              // Its args are read as plain ones, whatever they are.
+              if (r->rntokens == 0) {
+                goto done;
+              }
+              state = SW_ARGN_LEN;
+              break;
+            }
             if (r->rntokens == 0 && redis_needs_args(r)) {
               goto wrong_arity;
             }
@@ -2361,7 +2397,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
 
       case SW_ARGN:
         m = p + r->rlen;
-        if (read_repairs_enabled) {
+        if (redis_records_argn(r, read_repairs_enabled)) {
           start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
@@ -2387,7 +2423,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           goto error;
         }
 
-        if (read_repairs_enabled) {
+        if (redis_records_argn(r, read_repairs_enabled)) {
           rstatus_t argstatus = record_arg(r, b, m);
           if (argstatus == DN_ERROR) {
             goto error;
@@ -2405,7 +2441,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
       case SW_ARGN_LF:
         switch (ch) {
           case LF:
-            if (redis_argn(r) || redis_argeval(r) || r->wrong_arity) {
+            if (redis_argn(r) || redis_argeval(r) || r->wrong_arity ||
+                redis_unsupported(r)) {
               if (r->rntokens == 0) {
                 goto done;
               }
@@ -2427,6 +2464,39 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         NOT_REACHED();
         break;
     }
+    continue;
+
+  unsupported:
+    /*
+     * A command or subcommand Dynomite doesn't support, its name from m to
+     * p. A client gets Redis's error for unknown commands (req_filter()),
+     * which needs the name and the first args; a peer can't be answered
+     * that way.
+     */
+    if (r->owner == NULL || r->owner->dyn_mode) {
+      log_error("parsed unsupported command '%.*s'", (int)(p - m), m);
+      goto error;
+    }
+    {
+      static struct log_ratelimit unsupported_log;
+      uint64_t suppressed;
+      if (log_ratelimit(&unsupported_log, &suppressed)) {
+        log_warn(
+            "unsupported command '%.*s' from a client answered with an "
+            "error; %" PRIu64 " more since last logged",
+            (int)(p - m), m, suppressed);
+      }
+    }
+    start_arg(r, b, m);
+    {
+      rstatus_t argstatus = record_arg(r, b, p);
+      if (argstatus == DN_ERROR) {
+        goto error;
+      } else if (argstatus == DN_ENOMEM) {
+        goto enomem;
+      }
+    }
+    state = SW_REQ_TYPE_LF;
     continue;
 
   wrong_arity:

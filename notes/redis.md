@@ -1,5 +1,7 @@
 ## Redis Commands Supported
 
+A command that isn't supported, or isn't listed here, gets the error Redis gives for a command it doesn't know (`-ERR unknown command 'XADD', with args beginning with: ...`, or `-ERR unknown subcommand 'LIST'. Try CLIENT HELP.` for CLIENT and SCRIPT), and the connection stays open.
+
 ### Keys Command
 
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
