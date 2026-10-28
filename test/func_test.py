@@ -422,6 +422,38 @@ def run_rest_api_test(c):
     print("\t-%d paths, POST and a malformed request answered as expected"
           % len(expected))
 
+def run_select_test(c):
+    """Checks SELECT, which Dynomite answers itself, on one connection: +OK
+    for database 0 and an error for any other, and the connection stays open
+    for the next requests. Before, SELECT was unsupported and the connection
+    was closed. A client asking for database 0 works too."""
+    print("Running SELECT test")
+    node = c.get_dynomite_cluster().nodes[0]
+    key = create_key('SELECT', 'key')
+    pipeline = b''.join(
+        b'*%d\r\n' % len(args) +
+        b''.join(b'$%d\r\n%s\r\n' % (len(a), a) for a in args)
+        for args in [(b'SELECT', b'0'), (b'SELECT', b'1'), (b'SELECT', b'x'),
+                     (b'SET', key.encode(), b'v'), (b'GET', key.encode())])
+    expected = (b'+OK\r\n'
+                b'-ERR DB index is out of range\r\n'
+                b'-ERR value is not an integer or out of range\r\n'
+                b'+OK\r\n$1\r\nv\r\n')
+    with socket.create_connection((node.ip, node.port), timeout=2) as s:
+        s.sendall(pipeline)
+        received = b''
+        while len(received) < len(expected):
+            data = s.recv(4096)
+            if not data:
+                break
+            received += data
+    assert received == expected, received
+    conn = redis.Redis(node.ip, node.port, db=0)
+    assert conn.execute_command('SELECT', 0)
+    assert conn.get(key) == b'v'
+    print("\t-SELECT 0, other databases and the requests after them answered "
+          "as expected")
+
 def run_each_safe_quorum_dc_down_test(c):
     """Stops the dynomite nodes of one DC, one rack and then all of them, and
     checks DC_EACH_SAFE_QUORUM writes and reads through a node of another DC:
@@ -495,6 +527,7 @@ def comparison_test(redis, dynomite, debug):
     run_encrypted_peer_msg_test(c)
     run_incr_replicas_test(c)
     run_rest_api_test(c)
+    run_select_test(c)
 
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM

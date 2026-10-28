@@ -654,6 +654,8 @@ static void parse_cases_init(void) {
   parse_add(tc, MSG_REQ_REDIS_CLIENT_SETINFO, "",
             "CLIENT SETINFO lib-name test");
   parse_add(tc, MSG_REQ_REDIS_HELLO, "", "HELLO 3");
+  parse_add_args(tc, MSG_REQ_REDIS_SELECT, "", "0", "SELECT 0");
+  parse_add_args(tc, MSG_REQ_REDIS_SELECT, "", "15", "select 15");
   parse_add_args(tc, MSG_HACK_SETTING_CONN_CONSISTENCY, "", "dc_Quorum",
                  "dyno_config:conn_consistency dc_Quorum");
   parse_add_args(tc, MSG_HACK_SETTING_CONN_CONSISTENCY, "",
@@ -758,6 +760,8 @@ static void parse_cases_init(void) {
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_PING, "", "PING a b");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_CLIENT_SETINFO, "",
                         "CLIENT SETINFO lib-name");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SELECT, "", "SELECT");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SELECT, "", "SELECT 0 1");
   parse_add(tc, MSG_REQ_REDIS_PING, "", "PING");
   parse_add(tc, MSG_REQ_REDIS_PING, "", "PING hi");
   parse_add(tc, MSG_REQ_REDIS_INFO, "", "INFO");

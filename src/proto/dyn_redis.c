@@ -158,12 +158,14 @@ static bool redis_arg_upto1(struct msg *r) {
 }
 /*
  * Return true if the command needs arguments, so that it can't come without
- * any. CLIENT SETINFO and dyno_config:conn_consistency check their own count.
+ * any. CLIENT SETINFO, SELECT and dyno_config:conn_consistency check their
+ * own count.
  */
 static bool redis_needs_args(struct msg *r) {
   switch (r->type) {
     case MSG_REQ_REDIS_HELLO:
     case MSG_REQ_REDIS_CLIENT_SETINFO:
+    case MSG_REQ_REDIS_SELECT:
     case MSG_HACK_SETTING_CONN_CONSISTENCY:
       return false;
     default:
@@ -381,6 +383,16 @@ static bool redis_error(struct msg *r) {
       break;
   }
   return false;
+}
+
+/*
+ * Return true if the first arg is recorded: always with read repairs, else
+ * the level of a Dynomite config message and the index of a SELECT, which
+ * are answered from it.
+ */
+static bool redis_records_arg1(struct msg *r, bool read_repairs_enabled) {
+  return read_repairs_enabled || is_msg_type_dyno_config(r->type) ||
+         r->type == MSG_REQ_REDIS_SELECT;
 }
 
 /* Start an arg at p, in mbuf b, unless one is being parsed already. */
@@ -1095,6 +1107,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               break;
             }
 
+            if (str6icmp(m, 's', 'e', 'l', 'e', 'c', 't')) {
+              // Answered locally, see req_filter().
+              r->type = MSG_REQ_REDIS_SELECT;
+              r->is_read = 1;
+              break;
+            }
+
             if (str6icmp(m, 'c', 'l', 'i', 'e', 'n', 't')) {
               // First half of 'CLIENT <subcommand>'.
               r->type = MSG_REQ_REDIS_CLIENT;
@@ -1683,6 +1702,12 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
                 goto done;
               }
               state = SW_ARG1_LEN;
+            } else if (r->type == MSG_REQ_REDIS_SELECT) {
+              // SELECT <index>, no key.
+              if (r->rntokens != 1) {
+                goto wrong_arity;
+              }
+              state = SW_ARG1_LEN;
             } else if (r->type == MSG_HACK_SETTING_CONN_CONSISTENCY) {
               // dyno_config:conn_consistency <level>, no key.
               if (r->rntokens != 1) {
@@ -1929,8 +1954,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
 
         m = p + r->rlen;
 
-        // The level of a Dynomite config message is recorded as an arg too.
-        if (read_repairs_enabled || is_msg_type_dyno_config(r->type)) {
+        if (redis_records_arg1(r, read_repairs_enabled)) {
           start_arg(r, b, p);
           while (m >= b->last) {
             // 'm' has surpassed the current mbuf. Make the next mbuf current.
@@ -1956,7 +1980,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           goto error;
         }
 
-        if (read_repairs_enabled || is_msg_type_dyno_config(r->type)) {
+        if (redis_records_arg1(r, read_repairs_enabled)) {
           rstatus_t argstatus = record_arg(r, b, m);
           if (argstatus == DN_ERROR) {
             goto error;
@@ -1982,7 +2006,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
         switch (ch) {
           case LF:
             if (redis_arg_upto1(r) || redis_arg1(r) ||
-                is_msg_type_dyno_config(r->type)) {
+                is_msg_type_dyno_config(r->type) ||
+                r->type == MSG_REQ_REDIS_SELECT) {
               if (r->rntokens != 0) {
                 goto error;
               }

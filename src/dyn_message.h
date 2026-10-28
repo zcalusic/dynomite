@@ -192,7 +192,6 @@
   ACTION(REQ_REDIS_JSONOBJKEYS)                                                \
   ACTION(REQ_REDIS_JSONOBJLEN)                                                 \
   /* ACTION(REQ_REDIS_AUTH) */                                                 \
-  /* ACTION(REQ_REDIS_SELECT)*/ /* only during init */                         \
   ACTION(REQ_REDIS_PFADD)        /* redis requests - hyperloglog */            \
   ACTION(REQ_REDIS_PFCOUNT)                                                    \
   ACTION(REQ_REDIS_CONFIG)                                                     \
@@ -204,6 +203,7 @@
   ACTION(REQ_REDIS_CLIENT)                                                     \
   ACTION(REQ_REDIS_CLIENT_SETINFO)                                             \
   ACTION(REQ_REDIS_HELLO)                                                      \
+  ACTION(REQ_REDIS_SELECT)                                                     \
   ACTION(RSP_REDIS_STATUS) /* redis response */                                \
   ACTION(RSP_REDIS_INTEGER)                                                    \
   ACTION(RSP_REDIS_BULK)                                                       \
@@ -226,7 +226,6 @@
   ACTION(SENTINEL)                                                             \
   ACTION(END_IDX)                                                              \
   /* ACTION( REQ_REDIS_AUTH) */                                                \
-  /* ACTION( REQ_REDIS_SELECT)*/ /* only during init */                        \
 
 #define DEFINE_ACTION(_name) MSG_##_name,
 typedef enum msg_type { MSG_TYPE_CODEC(DEFINE_ACTION) } msg_type_t;

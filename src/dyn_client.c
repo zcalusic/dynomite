@@ -45,6 +45,9 @@
 #include "dyn_client.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
+#include <stdlib.h>
 
 #include "dyn_core.h"
 #include "dyn_dict_msg_id.h"
@@ -379,6 +382,53 @@ static void redis_command_name(msg_type_t type, char *buf, size_t size) {
   buf[n] = '\0';
 }
 
+/*
+ * The reply to SELECT <index>, as a Redis server with one database gives it:
+ * +OK for 0, an error for any other int, and others for an integer out of the
+ * int range and for an arg that isn't an integer the way Redis reads them (no
+ * sign but '-', no leading zeros or spaces, no overflow).
+ */
+static const char *redis_select_rsp(struct msg *req) {
+  const char *not_integer = "-ERR value is not an integer or out of range" CRLF;
+  uint8_t index[sizeof("-9223372036854775808")];
+  struct argpos *arg;
+  uint32_t i = 0;
+
+  ASSERT(array_n(req->args) == 1);
+  arg = array_get(req->args, 0);
+  if (arg->len >= sizeof(index) ||
+      argpos_copy(arg, index, (uint32_t)sizeof(index)) != arg->len) {
+    return not_integer;
+  }
+  index[arg->len] = '\0';
+
+  if (arg->len == 1 && index[0] == '0') {
+    return "+OK" CRLF;
+  }
+  if (arg->len > 0 && index[0] == '-') {
+    i++;
+  }
+  if (i >= arg->len || index[i] < '1' || index[i] > '9') {
+    return not_integer;
+  }
+  for (; i < arg->len; i++) {
+    if (!isdigit(index[i])) {
+      return not_integer;
+    }
+  }
+  errno = 0;
+  long long value = strtoll((const char *)index, NULL, 10);
+  if (errno == ERANGE) {
+    return not_integer;
+  }
+  if (value < INT_MIN || value > INT_MAX) {
+    // Redis's text, "must between" included.
+    return "-ERR value is out of range, value must between -2147483648 and "
+           "2147483647" CRLF;
+  }
+  return "-ERR DB index is out of range" CRLF;
+}
+
 static bool req_filter(struct context *ctx, struct conn *conn,
                        struct msg *req) {
   ASSERT(conn->type == CONN_CLIENT);
@@ -457,6 +507,14 @@ static bool req_filter(struct context *ctx, struct conn *conn,
     log_debug(LOG_VERB, "%s filter hello %s", print_obj(conn), print_obj(req));
     IGNORE_RET_VAL(simulate_rsp(ctx, conn, req,
         "-ERR unknown command 'HELLO'\r\n"));
+    return true;
+  }
+
+  // Some clients send SELECT on connect too, mostly SELECT 0. Dynomite has
+  // one database, so answer as a Redis server with 'databases 1' would.
+  if (req->type == MSG_REQ_REDIS_SELECT) {
+    log_debug(LOG_VERB, "%s filter select %s", print_obj(conn), print_obj(req));
+    IGNORE_RET_VAL(simulate_rsp(ctx, conn, req, redis_select_rsp(req)));
     return true;
   }
 
