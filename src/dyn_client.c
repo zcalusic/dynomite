@@ -48,6 +48,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <strings.h>
 
 #include "dyn_core.h"
 #include "dyn_dict_msg_id.h"
@@ -443,6 +444,33 @@ static size_t redis_append_arg(char *buf, size_t *n, const struct argpos *arg,
 }
 
 /*
+ * The reply to CLIENT SETINFO <attr> <value>, into buf (of RSP_SETINFO_SIZE):
+ * +OK for the two attributes Redis has, its error for any other, the name
+ * cut at 128 bytes. The value isn't kept, so it isn't checked.
+ */
+#define RSP_SETINFO_SIZE 192
+
+static void redis_setinfo_rsp(struct msg *req, char *buf) {
+  const struct argpos *attr;
+  char name[sizeof("lib-name")];
+  size_t n;
+
+  ASSERT(array_n(req->args) >= 1);
+  attr = array_get(req->args, 0);
+  if (attr->len < sizeof(name) &&
+      argpos_copy(attr, (uint8_t *)name, (uint32_t)sizeof(name)) == attr->len) {
+    name[attr->len] = '\0';
+    if (strcasecmp(name, "lib-name") == 0 || strcasecmp(name, "lib-ver") == 0) {
+      dn_snprintf(buf, RSP_SETINFO_SIZE, "+OK" CRLF);
+      return;
+    }
+  }
+  n = (size_t)dn_snprintf(buf, RSP_SETINFO_SIZE, "-ERR Unrecognized option '");
+  redis_append_arg(buf, &n, attr, 128);
+  dn_snprintf(buf + n, RSP_SETINFO_SIZE - n, "'" CRLF);
+}
+
+/*
  * Redis's error for a command or subcommand it doesn't know, into buf (of
  * RSP_UNSUPPORTED_SIZE): the name cut at 128 bytes and, for a command, its
  * args, each quoted and followed by a space, while those come to less than
@@ -586,13 +614,15 @@ static bool req_filter(struct context *ctx, struct conn *conn,
   }
 
   // Clients send these on connect. Dynomite can't forward them, since server
-  // connections are shared, so answer them here: CLIENT SETINFO with +OK,
-  // HELLO with the error older Redis versions send, so that clients fall
-  // back to RESP2 and keep the connection.
+  // connections are shared, so answer them here: CLIENT SETINFO as Redis
+  // does, HELLO with the error older Redis versions send, so that clients
+  // fall back to RESP2 and keep the connection.
   if (req->type == MSG_REQ_REDIS_CLIENT_SETINFO) {
+    char rsp[RSP_SETINFO_SIZE];
     log_debug(LOG_VERB, "%s filter client setinfo %s", print_obj(conn),
               print_obj(req));
-    IGNORE_RET_VAL(simulate_ok_rsp(ctx, conn, req));
+    redis_setinfo_rsp(req, rsp);
+    IGNORE_RET_VAL(simulate_rsp(ctx, conn, req, rsp));
     return true;
   }
 

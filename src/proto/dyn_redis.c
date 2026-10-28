@@ -46,10 +46,27 @@ RSP_STRING(DEFINE_ACTION)
 static bool redis_argz(struct msg *r) {
   switch (r->type) {
     case MSG_REQ_REDIS_PING:
-    case MSG_REQ_REDIS_QUIT:
-    case MSG_REQ_REDIS_SCRIPT_FLUSH:
     case MSG_REQ_REDIS_SCRIPT_KILL:
     case MSG_REQ_REDIS_DBSIZE:
+      return true;
+
+    default:
+      break;
+  }
+
+  return false;
+}
+
+/*
+ * Return true for a command with no key and any number of args, which Redis
+ * checks itself.
+ */
+static bool redis_argn_nokey(struct msg *r) {
+  switch (r->type) {
+    case MSG_REQ_REDIS_INFO:          /* [section [section ...]] */
+    case MSG_REQ_REDIS_QUIT:          /* takes any args */
+    case MSG_REQ_REDIS_SCRIPT_EXISTS: /* sha1 [sha1 ...] */
+    case MSG_REQ_REDIS_SCRIPT_FLUSH:  /* [ASYNC|SYNC] */
       return true;
 
     default:
@@ -104,11 +121,6 @@ static bool redis_arg0(struct msg *r) {
  */
 static bool redis_arg1(struct msg *r) {
   switch (r->type) {
-    case MSG_REQ_REDIS_EXPIRE:
-    case MSG_REQ_REDIS_EXPIREAT:
-    case MSG_REQ_REDIS_PEXPIRE:
-    case MSG_REQ_REDIS_PEXPIREAT:
-
     case MSG_REQ_REDIS_APPEND:
     case MSG_REQ_REDIS_DECRBY:
     case MSG_REQ_REDIS_GETBIT:
@@ -121,19 +133,14 @@ static bool redis_arg1(struct msg *r) {
     case MSG_REQ_REDIS_HGET:
 
     case MSG_REQ_REDIS_LINDEX:
-    case MSG_REQ_REDIS_LPUSHX:
     case MSG_REQ_REDIS_RPOPLPUSH:
-    case MSG_REQ_REDIS_RPUSHX:
 
     case MSG_REQ_REDIS_SISMEMBER:
 
-    case MSG_REQ_REDIS_ZRANK:
-    case MSG_REQ_REDIS_ZREVRANK:
     case MSG_REQ_REDIS_ZSCORE:
     case MSG_REQ_REDIS_SLAVEOF:
     case MSG_REQ_REDIS_CONFIG:
     case MSG_REQ_REDIS_SCRIPT_LOAD:
-    case MSG_REQ_REDIS_SCRIPT_EXISTS:
 
       return true;
 
@@ -146,7 +153,6 @@ static bool redis_arg1(struct msg *r) {
 
 static bool redis_arg_upto1(struct msg *r) {
   switch (r->type) {
-    case MSG_REQ_REDIS_INFO:
     case MSG_REQ_REDIS_PING:
       return true;
     default:
@@ -207,6 +213,9 @@ static bool redis_needs_args(struct msg *r) {
     case MSG_REQ_REDIS_CLIENT_SETINFO:
     case MSG_REQ_REDIS_SELECT:
     case MSG_HACK_SETTING_CONN_CONSISTENCY:
+    case MSG_REQ_REDIS_INFO:
+    case MSG_REQ_REDIS_QUIT:
+    case MSG_REQ_REDIS_SCRIPT_FLUSH:
       return false;
     default:
       return !redis_argz(r) && !redis_arg_upto1(r);
@@ -243,8 +252,6 @@ static bool redis_arg2(struct msg *r) {
     case MSG_REQ_REDIS_ZREMRANGEBYRANK:
     case MSG_REQ_REDIS_ZREMRANGEBYSCORE:
 
-    case MSG_REQ_REDIS_RESTORE:
-
     case MSG_REQ_REDIS_CLIENT_SETINFO:
 
       return true;
@@ -278,6 +285,12 @@ static bool redis_arg3(struct msg *r) {
  */
 static bool redis_argn(struct msg *r) {
   switch (r->type) {
+    case MSG_REQ_REDIS_EXPIRE:
+    case MSG_REQ_REDIS_EXPIREAT:
+    case MSG_REQ_REDIS_PEXPIRE:
+    case MSG_REQ_REDIS_PEXPIREAT:
+    case MSG_REQ_REDIS_RESTORE:
+
     case MSG_REQ_REDIS_SORT:
 
     case MSG_REQ_REDIS_BITCOUNT:
@@ -292,8 +305,10 @@ static bool redis_argn(struct msg *r) {
 
     case MSG_REQ_REDIS_LPOP: /* key [count] */
     case MSG_REQ_REDIS_LPUSH:
+    case MSG_REQ_REDIS_LPUSHX:
     case MSG_REQ_REDIS_RPOP: /* key [count] */
     case MSG_REQ_REDIS_RPUSH:
+    case MSG_REQ_REDIS_RPUSHX:
 
     case MSG_REQ_REDIS_SADD:
     case MSG_REQ_REDIS_SDIFF:
@@ -311,11 +326,13 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_ZINTERSTORE:
     case MSG_REQ_REDIS_ZRANGE:
     case MSG_REQ_REDIS_ZRANGEBYSCORE:
+    case MSG_REQ_REDIS_ZRANK:
     case MSG_REQ_REDIS_ZREM:
     case MSG_REQ_REDIS_ZREVRANGE:
     case MSG_REQ_REDIS_ZRANGEBYLEX:
     case MSG_REQ_REDIS_ZREVRANGEBYLEX:
     case MSG_REQ_REDIS_ZREVRANGEBYSCORE:
+    case MSG_REQ_REDIS_ZREVRANK:
     case MSG_REQ_REDIS_ZUNIONSTORE:
     case MSG_REQ_REDIS_ZSCAN:
     case MSG_REQ_REDIS_PFADD:
@@ -346,6 +363,28 @@ static bool redis_argn(struct msg *r) {
   }
 
   return false;
+}
+
+/*
+ * The fewest args after the key a redis_argn() command takes: with fewer, it
+ * is answered as Redis would (wrong_arity); Redis checks the rest itself.
+ */
+static uint32_t redis_argn_min(struct msg *r) {
+  switch (r->type) {
+    case MSG_REQ_REDIS_EXPIRE:    /* key seconds [NX|XX|GT|LT] */
+    case MSG_REQ_REDIS_EXPIREAT:  /* key unix-time [NX|XX|GT|LT] */
+    case MSG_REQ_REDIS_PEXPIRE:   /* key ms [NX|XX|GT|LT] */
+    case MSG_REQ_REDIS_PEXPIREAT: /* key unix-time-ms [NX|XX|GT|LT] */
+    case MSG_REQ_REDIS_LPUSHX:    /* key element [element ...] */
+    case MSG_REQ_REDIS_RPUSHX:    /* key element [element ...] */
+    case MSG_REQ_REDIS_ZRANK:     /* key member [WITHSCORE] */
+    case MSG_REQ_REDIS_ZREVRANK:  /* key member [WITHSCORE] */
+      return 1;
+    case MSG_REQ_REDIS_RESTORE: /* key ttl value [REPLACE] [ABSTTL] ... */
+      return 2;
+    default:
+      return 0;
+  }
 }
 
 /*
@@ -436,7 +475,9 @@ static bool redis_error(struct msg *r) {
  */
 static bool redis_records_arg1(struct msg *r, bool read_repairs_enabled) {
   return read_repairs_enabled || is_msg_type_dyno_config(r->type) ||
-         r->type == MSG_REQ_REDIS_SELECT || redis_routed_by_first_key(r);
+         r->type == MSG_REQ_REDIS_SELECT ||
+         r->type == MSG_REQ_REDIS_CLIENT_SETINFO ||
+         redis_routed_by_first_key(r);
 }
 
 /*
@@ -1774,9 +1815,14 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             if (r->rntokens == 0 && redis_needs_args(r)) {
               goto wrong_arity;
             }
-            if (redis_argz(r) && (r->rntokens == 0)) {
+            if (redis_argn_nokey(r)) {
+              if (r->rntokens == 0) {
+                goto done;
+              }
+              state = SW_ARGN_LEN;
+            } else if (redis_argz(r) && (r->rntokens == 0)) {
               goto done;
-            } else if (r->type == MSG_REQ_REDIS_DBSIZE) {
+            } else if (redis_argz(r) && !redis_arg_upto1(r)) {
               goto wrong_arity;
             } else if (redis_arg_upto1(r) && r->rntokens == 0) {
               goto done;
@@ -1784,8 +1830,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               state = SW_ARG1_LEN;
             } else if (redis_arg_upto1(r)) {
               goto wrong_arity;
-            } else if (r->type == MSG_REQ_REDIS_SCRIPT_LOAD ||
-                       r->type == MSG_REQ_REDIS_SCRIPT_EXISTS) {
+            } else if (r->type == MSG_REQ_REDIS_SCRIPT_LOAD) {
               // TODO: Find a way to do this without special casing for SCRIPT.
               state = SW_ARG1_LEN;
             } else if (redis_argeval(r)) {
@@ -1972,6 +2017,9 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
               }
               state = SW_ARG1_LEN;
             } else if (redis_argn(r)) {
+              if (r->rntokens < redis_argn_min(r)) {
+                goto wrong_arity;
+              }
               if (r->rntokens == 0) {
                 goto done;
               }
@@ -2108,8 +2156,10 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             if (redis_arg_upto1(r) || redis_arg1(r) ||
                 is_msg_type_dyno_config(r->type) ||
                 r->type == MSG_REQ_REDIS_SELECT) {
+              // Only SCRIPT LOAD gets here with args left, the others' are
+              // counted before.
               if (r->rntokens != 0) {
-                goto error;
+                goto wrong_arity;
               }
               goto done;
             } else if (redis_arg2(r)) {
@@ -2494,8 +2544,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
       case SW_ARGN_LF:
         switch (ch) {
           case LF:
-            if (redis_argn(r) || redis_argeval(r) || r->wrong_arity ||
-                redis_unsupported(r)) {
+            if (redis_argn(r) || redis_argn_nokey(r) || redis_argeval(r) ||
+                r->wrong_arity || redis_unsupported(r)) {
               if (r->rntokens == 0) {
                 goto done;
               }

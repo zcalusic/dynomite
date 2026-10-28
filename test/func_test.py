@@ -695,6 +695,74 @@ def run_unsupported_test(c):
     print("\t-XADD, FLUSHALL and CLIENT LIST answered with errors, the "
           "requests after them as usual")
 
+def run_optional_args_test(c):
+    """Checks commands with the optional args newer Redis versions added
+    (EXPIRE NX, ZRANK WITHSCORE, LPUSHX with several elements, RESTORE
+    REPLACE, SCRIPT EXISTS with several hashes, SCRIPT FLUSH ASYNC, INFO with
+    several sections) against Redis, and that requests with too few or too
+    many args, and CLIENT SETINFO, get Redis's own replies on a connection
+    that stays open. Before, all of them were refused, the SCRIPT ones closed
+    the connection, and CLIENT SETINFO took any attribute."""
+    print("Running OPTIONAL ARGS test")
+    key = create_key('OPTIONAL_ARGS', 'key')
+    zkey = create_key('OPTIONAL_ARGS', 'zset')
+    lkey = create_key('OPTIONAL_ARGS', 'list')
+    c.run_verify("set", key, "v")
+    for args in [("EXPIRE", key, 1000, "NX"), ("EXPIRE", key, 2000, "XX"),
+                 ("PEXPIRE", key, 500000, "LT"),
+                 ("EXPIREAT", key, 4102444800, "GT"),
+                 ("PEXPIREAT", key, 4102444800000, "NX")]:
+        c.run_verify("execute_command", *args)
+    c.run_verify("execute_command", "ZADD", zkey, 1, "a", 2, "b")
+    c.run_verify("execute_command", "ZRANK", zkey, "b", "WITHSCORE")
+    c.run_verify("execute_command", "ZREVRANK", zkey, "b", "WITHSCORE")
+    c.run_verify("execute_command", "ZRANK", zkey, "x", "WITHSCORE")
+    c.run_verify("rpush", lkey, "a")
+    c.run_verify("execute_command", "LPUSHX", lkey, "b", "c")
+    c.run_verify("execute_command", "RPUSHX", lkey, "d", "e", "f")
+    c.run_verify("lrange", lkey, 0, -1)
+    payload = c.run_verify("dump", lkey)
+    c.run_verify("execute_command", "RESTORE", lkey, 0, payload, "REPLACE")
+    c.run_verify("lrange", lkey, 0, -1)
+    sha = c.run_verify("script_load", "return 1")
+    c.run_verify("script_exists", sha, "0" * 40)
+    assert c.run_dynomite_only("execute_command", "SCRIPT", "FLUSH", "ASYNC")
+    assert c.run_dynomite_only("script_exists", sha) == [False]
+    info = c.run_dynomite_only("info", "server", "clients")
+    assert "redis_version" in info and "connected_clients" in info, info
+
+    node = c.get_dynomite_cluster().nodes[0]
+    standalone = c.standalone_redis
+    missing = create_key('OPTIONAL_ARGS', 'missing').encode()
+    pipeline = b''.join(
+        b'*%d\r\n' % len(args) +
+        b''.join(b'$%d\r\n%s\r\n' % (len(a), a) for a in args)
+        for args in [(b'EXPIRE', missing), (b'EXPIRE', missing, b'1', b'NX',
+                                            b'XX'),
+                     (b'ZRANK', missing), (b'ZRANK', missing, b'a', b'b'),
+                     (b'LPUSHX', missing), (b'RESTORE', missing, b'0'),
+                     (b'SCRIPT', b'EXISTS'), (b'SCRIPT', b'LOAD', b'a', b'b'),
+                     (b'SCRIPT', b'KILL', b'x'), (b'SCRIPT', b'FLUSH', b'x'),
+                     (b'CLIENT', b'SETINFO', b'lib-name', b'x'),
+                     (b'CLIENT', b'SETINFO', b'LIB-VER', b'1'),
+                     (b'CLIENT', b'SETINFO', b'other', b'1'),
+                     (b'GET', missing)])
+    replies = []
+    for ip, port in [(standalone.ip, standalone.port), (node.ip, node.port)]:
+        with socket.create_connection((ip, port), timeout=2) as s:
+            s.sendall(pipeline)
+            received = b''
+            while not received.endswith(b'$-1\r\n'):
+                data = s.recv(4096)
+                if not data:
+                    break
+                received += data
+        replies.append(received)
+    assert replies[0] == replies[1], replies
+    assert replies[1].count(b'\r\n') == 14, replies[1]
+    print("\t-14 commands with optional args answered as by Redis, 10 with "
+          "the wrong number of args and 3 CLIENT SETINFO too")
+
 def run_dbsize_test(c):
     """Checks DBSIZE, which counts the keys of the node's own datastore
     only, like KEYS and SCAN: through each node it must match that node's
@@ -787,6 +855,7 @@ def comparison_test(redis, dynomite, debug):
     run_select_test(c)
     run_dbsize_test(c)
     run_unsupported_test(c)
+    run_optional_args_test(c)
 
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM

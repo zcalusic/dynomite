@@ -585,7 +585,7 @@ static rstatus_t parse_run(struct conn *conn, const struct parse_case *tc,
   return status;
 }
 
-static struct parse_case parse_cases[48];
+static struct parse_case parse_cases[56];
 static size_t nparse_cases;
 
 static struct parse_case *parse_case_new(const char *name,
@@ -668,6 +668,41 @@ static void parse_cases_init(void) {
   parse_add_args(tc, MSG_HACK_SETTING_CONN_CONSISTENCY, "",
                  "DC_EACH_SAFE_QUORUM",
                  "DYNO_CONFIG:CONN_CONSISTENCY DC_EACH_SAFE_QUORUM");
+  parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
+
+  /*
+   * Commands with optional args newer Redis versions added: passed on, Redis
+   * checks the args beyond the fewest.
+   */
+  tc = parse_case_new("redis optional args", DATA_REDIS, false);
+  parse_add_args(tc, MSG_REQ_REDIS_EXPIRE, "k", "100", "EXPIRE k 100");
+  parse_add_args(tc, MSG_REQ_REDIS_EXPIRE, "k", "100 NX", "expire k 100 NX");
+  parse_add(tc, MSG_REQ_REDIS_EXPIREAT, "k", "EXPIREAT k 4102444800 XX");
+  parse_add(tc, MSG_REQ_REDIS_PEXPIRE, "k", "PEXPIRE k 100000 GT");
+  parse_add(tc, MSG_REQ_REDIS_PEXPIREAT, "k", "PEXPIREAT k 4102444800000 LT");
+  parse_add(tc, MSG_REQ_REDIS_EXPIRE, "k", "EXPIRE k 1 NX XX");
+  parse_add(tc, MSG_REQ_REDIS_ZRANK, "z", "ZRANK z m");
+  parse_add_args(tc, MSG_REQ_REDIS_ZRANK, "z", "m WITHSCORE",
+                 "ZRANK z m WITHSCORE");
+  parse_add(tc, MSG_REQ_REDIS_ZREVRANK, "z", "zrevrank z m withscore");
+  parse_add(tc, MSG_REQ_REDIS_ZRANK, "z", "ZRANK z a b c");
+  parse_add_args(tc, MSG_REQ_REDIS_LPUSHX, "l", "a b c", "LPUSHX l a b c");
+  dn_snprintf(words, sizeof(words), "RPUSHX l a %s", big);
+  parse_add(tc, MSG_REQ_REDIS_RPUSHX, "l", words);
+  parse_add(tc, MSG_REQ_REDIS_RESTORE, "k", "RESTORE k 0 payload");
+  parse_add_args(tc, MSG_REQ_REDIS_RESTORE, "k", "0 payload REPLACE ABSTTL",
+                 "RESTORE k 0 payload REPLACE ABSTTL");
+  parse_add(tc, MSG_REQ_REDIS_SCRIPT_EXISTS, "",
+            "SCRIPT EXISTS e0e1f9fabfc9d4800c877a703b823ac0578ff8db "
+            "0000000000000000000000000000000000000000");
+  parse_add(tc, MSG_REQ_REDIS_SCRIPT_FLUSH, "", "SCRIPT FLUSH ASYNC");
+  parse_add(tc, MSG_REQ_REDIS_SCRIPT_FLUSH, "", "script flush sync");
+  parse_add(tc, MSG_REQ_REDIS_SCRIPT_FLUSH, "", "SCRIPT FLUSH a b");
+  parse_add(tc, MSG_REQ_REDIS_QUIT, "", "QUIT");
+  parse_add(tc, MSG_REQ_REDIS_QUIT, "", "QUIT now");
+  parse_add(tc, MSG_REQ_REDIS_INFO, "", "INFO server");
+  parse_add(tc, MSG_REQ_REDIS_INFO, "", "INFO server clients memory");
+  parse_add(tc, MSG_REQ_REDIS_CLIENT_SETINFO, "", "CLIENT SETINFO LIB-VER 1.0");
   parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
 
   /* requests sent by a dnode peer, each with a dnode header */
@@ -819,6 +854,15 @@ static void parse_cases_init(void) {
   dn_snprintf(words, sizeof(words), "GET k %s y", big);
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_GET, "k", words);
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_EXPIRE, "k", "EXPIRE k");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_PEXPIREAT, "k", "PEXPIREAT k");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_ZRANK, "z", "ZRANK z");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_LPUSHX, "l", "LPUSHX l");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_RESTORE, "k", "RESTORE k 0");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SCRIPT_EXISTS, "", "SCRIPT EXISTS");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SCRIPT_LOAD, "", "SCRIPT LOAD a b");
+  dn_snprintf(words, sizeof(words), "SCRIPT LOAD a %s", big);
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SCRIPT_LOAD, "", words);
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SCRIPT_KILL, "", "SCRIPT KILL x");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_SETEX, "k", "SETEX k 10");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_LINSERT, "l", "LINSERT l a b c d");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_MSET, "k1", "MSET k1 v1 k2");
@@ -836,7 +880,8 @@ static void parse_cases_init(void) {
   parse_add(tc, MSG_REQ_REDIS_SCRIPT_FLUSH, "", "SCRIPT FLUSH");
   parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
 
-  static const char *dnode_arity[] = {"SMEMBERS", "GET k x", "HGET h"};
+  static const char *dnode_arity[] = {"SMEMBERS", "GET k x", "HGET h",
+                                      "LPUSHX l", "SCRIPT LOAD a b"};
   for (size_t i = 0; i < NELEMS(dnode_arity); i++) {
     tc = parse_case_new("dnode wrong arity", DATA_REDIS, true);
     parse_add(tc, MSG_REQ_REDIS_SET, "foo1", "set foo1 bar1");
