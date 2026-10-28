@@ -118,6 +118,19 @@ int log_loggable(int level) {
   return 1;
 }
 
+bool log_ratelimit(struct log_ratelimit *rl, uint64_t *suppressed) {
+  msec_t now = dn_msec_now();
+
+  if (now < rl->next) {
+    rl->suppressed++;
+    return false;
+  }
+  rl->next = now + LOG_RATELIMIT_MSEC;
+  *suppressed = rl->suppressed;
+  rl->suppressed = 0;
+  return true;
+}
+
 void _log(const char *file, int line, int panic, const char *fmt, ...) {
   struct logger *l = &logger;
   int len, size, errno_save;

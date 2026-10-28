@@ -247,11 +247,20 @@ static bool perform_repairs_if_necessary(struct context *ctx, struct response_mg
 struct msg *rspmgr_get_response(struct context *ctx, struct response_mgr *rspmgr) {
   // no quorum possible
   if (rspmgr->good_responses < rspmgr->quorum_responses) {
+    // While a node is down, this could be every request: the stats count
+    // them all, the log only one now and then.
+    static struct log_ratelimit no_quorum_log;
+    uint64_t suppressed;
+
     ASSERT(rspmgr->err_rsp);
     rspmgr_incr_non_quorum_responses_stats(rspmgr);
-    log_error("req: %lu return non quorum error rsp %p good rsp:%u quorum: %u",
-              rspmgr->msg->id, rspmgr->err_rsp, rspmgr->good_responses,
-              rspmgr->quorum_responses);
+    if (log_ratelimit(&no_quorum_log, &suppressed)) {
+      log_error("no quorum for req %" PRIu64
+                ", error returned: %u good "
+                "responses of %u needed; %" PRIu64 " more since last logged",
+                rspmgr->msg->id, rspmgr->good_responses,
+                rspmgr->quorum_responses, suppressed);
+    }
     msg_dump(LOG_DEBUG, rspmgr->err_rsp);
     return rspmgr->err_rsp;
   }

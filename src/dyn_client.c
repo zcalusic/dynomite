@@ -904,8 +904,14 @@ rstatus_t req_forward_to_peer(struct context *ctx, struct conn *c_conn,
       // (even though it's effectively a no-op as we wait only for one response in
       // DC_ONE).
       req->rspmgr.max_responses--;
-      log_error("Swallowing cross rack error due to DC_ONE. Error: %d '%s'",
-          status, dyn_error_source(*dyn_error_code));
+      // While a rack is down, this is every write: log one now and then.
+      static struct log_ratelimit swallow_log;
+      uint64_t suppressed;
+      if (log_ratelimit(&swallow_log, &suppressed)) {
+        log_warn("Swallowing cross rack error due to DC_ONE: %d '%s'; %" PRIu64
+                 " more since last logged",
+                 status, dyn_error_source(*dyn_error_code), suppressed);
+      }
     }
   }
   // Release the copy if we made one above.

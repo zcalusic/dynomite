@@ -1991,6 +1991,58 @@ static rstatus_t test_hash(void) {
  * Tokens are 32-bit: parse_dyn_token() takes 0 to 4294967295 in decimal and
  * nothing else, leaving the token 0 on errors.
  */
+/*
+ * log_ratelimit(): the first call logs, the ones within LOG_RATELIMIT_MSEC
+ * don't, and the next one after it logs with their count. Moving rl.next back
+ * stands in for the time passing.
+ */
+static rstatus_t test_log_ratelimit(void) {
+  struct log_ratelimit rl = {0};
+  uint64_t suppressed = 99;
+  size_t nfailed = 0, ncases = 0;
+
+  print_banner("LOG RATELIMIT");
+  ncases++;
+  if (!log_ratelimit(&rl, &suppressed) || suppressed != 0) {
+    log_error("first call: not logged or %" PRIu64 " suppressed", suppressed);
+    nfailed++;
+  }
+  ncases++;
+  if (rl.next < dn_msec_now() + LOG_RATELIMIT_MSEC - 1000) {
+    log_error("next line allowed at %" PRIu64 ", now is %" PRIu64, rl.next,
+              dn_msec_now());
+    nfailed++;
+  }
+  for (int i = 0; i < 3; i++) {
+    ncases++;
+    if (log_ratelimit(&rl, &suppressed)) {
+      log_error("call %d within the interval logged", i + 2);
+      nfailed++;
+    }
+  }
+  rl.next = dn_msec_now();
+  ncases++;
+  if (!log_ratelimit(&rl, &suppressed) || suppressed != 3) {
+    log_error("call after the interval: not logged or %" PRIu64
+              " suppressed, want 3",
+              suppressed);
+    nfailed++;
+  }
+  ncases++;
+  if (log_ratelimit(&rl, &suppressed) || rl.suppressed != 1) {
+    log_error("call after a logged one: logged or %" PRIu64 " suppressed",
+              rl.suppressed);
+    nfailed++;
+  }
+
+  if (nfailed != 0) {
+    log_error("%zu of %zu log ratelimit cases failed", nfailed, ncases);
+    return DN_ERROR;
+  }
+  loga("%zu log ratelimit cases passed", ncases);
+  return DN_OK;
+}
+
 static rstatus_t test_token(void) {
   static const struct {
     const char *str;
@@ -2569,6 +2621,12 @@ int main(int argc, char **argv) {
   ret = test_token();
   if (ret != DN_OK) {
     loga("Error in testing the token parser!!!");
+    goto err_out;
+  }
+
+  ret = test_log_ratelimit();
+  if (ret != DN_OK) {
+    loga("Error in testing log_ratelimit()!!!");
     goto err_out;
   }
 

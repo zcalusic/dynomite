@@ -23,6 +23,9 @@
 #ifndef _DYN_LOG_H_
 #define _DYN_LOG_H_
 
+#include <stdbool.h>
+#include <stdint.h>
+
 struct logger {
   char *name; /* log file name */
   int level;  /* log level */
@@ -44,6 +47,20 @@ struct logger {
 #define LOG_PVERB 11  /* periodic verbose messages on crack */
 
 #define LOG_MAX_LEN 512 /* max length of log message */
+
+/*
+ * For a log line that could come once per request, such as while a node is
+ * down: log_ratelimit() returns true at most once every LOG_RATELIMIT_MSEC
+ * for each struct log_ratelimit (zeroed to start), and then sets *suppressed
+ * to the number of times it returned false since. Not thread safe: use each
+ * one from one thread only.
+ */
+#define LOG_RATELIMIT_MSEC 10000
+
+struct log_ratelimit {
+  uint64_t next;       /* msec time from which a line may be logged again */
+  uint64_t suppressed; /* lines not logged since the last one */
+};
 
 /*
  * log_stderr   - log to stderr
@@ -146,6 +163,7 @@ void log_level_down(void);
 void log_level_set(int level);
 void log_reopen(void);
 int log_loggable(int level);
+bool log_ratelimit(struct log_ratelimit *rl, uint64_t *suppressed);
 void _log(const char *file, int line, int panic, const char *fmt, ...)
     __attribute__((format(printf, 4, 5)));
 void _log_stderr(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
