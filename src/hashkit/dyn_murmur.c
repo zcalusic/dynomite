@@ -24,15 +24,9 @@
  * "Murmur" hash provided by Austin, tanjent@gmail.com
  * http://murmurhash.googlepages.com/
  *
- * Note - This code makes a few assumptions about how your machine behaves -
- *
- * 1. We can read a 4-byte value from any address without crashing
- * 2. sizeof(int) == 4
- *
- * And it has a few limitations -
- * 1. It will not work incrementally.
- * 2. It will not produce the same results on little-endian and big-endian
- *  machines.
+ * It reads the key 4 bytes at a time as little-endian numbers, byte by byte,
+ * so it gives the same results at any alignment and on every machine: the
+ * ones x86 always gave. It will not work incrementally.
  *
  *  Updated to murmur2 hash - BP
  */
@@ -47,7 +41,7 @@ rstatus_t hash_murmur(const unsigned char *key, size_t length,
    * really 'magic', they just happen to work well.
    */
 
-  const unsigned int m = 0x5bd1e995;
+  const uint32_t m = 0x5bd1e995;
   const uint32_t seed = (0xdeadbeef * (uint32_t)length);
   const int r = 24;
 
@@ -60,7 +54,8 @@ rstatus_t hash_murmur(const unsigned char *key, size_t length,
   const unsigned char *data = (const unsigned char *)key;
 
   while (length >= 4) {
-    unsigned int k = *(unsigned int *)data;
+    uint32_t k = (uint32_t)data[0] | ((uint32_t)data[1] << 8) |
+                 ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
 
     k *= m;
     k ^= k >> r;
