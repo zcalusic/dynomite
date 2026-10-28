@@ -85,7 +85,6 @@
  * TODOs: Minh: add explanation for peer-to-peer communication
  */
 
-#define DYN_KEEPALIVE_INTERVAL_S 15 /* seconds */
 consistency_t g_read_consistency = DEFAULT_READ_CONSISTENCY;
 consistency_t g_write_consistency = DEFAULT_WRITE_CONSISTENCY;
 
@@ -264,11 +263,14 @@ rstatus_t conn_listen(struct context *ctx, struct conn *p) {
     return DN_ERROR;
   }
 
-  status = dn_set_keepalive(p->sd, 1);
-  if (status != DN_OK) {
+  // Accepted connections inherit it.
+  if (p->family != AF_UNIX) {
+    status = dn_set_keepalive(p->sd);
+    if (status != DN_OK) {
       log_error("set keepalive on p %d on addr '%.*s' failed: %s", p->sd,
                 p->pname.len, p->pname.data, strerror(errno));
       // Continue since this is not catastrophic
+    }
   }
 
   status = conn_event_add_conn(p);
@@ -320,14 +322,14 @@ rstatus_t conn_connect(struct context *ctx, struct conn *conn) {
               conn->pname.len, conn->pname.data, strerror(errno));
     goto error;
   }
-  status = dn_set_keepalive(conn->sd, DYN_KEEPALIVE_INTERVAL_S);
-  if (status != DN_OK) {
-    log_error("set keepalive on s %d for '%.*s' failed: %s", conn->sd,
-              conn->pname.len, conn->pname.data, strerror(errno));
-    // Continue since this is not catastrophic
-  }
-
   if (conn->pname.data[0] != '/') {
+    status = dn_set_keepalive(conn->sd);
+    if (status != DN_OK) {
+      log_error("set keepalive on s %d for '%.*s' failed: %s", conn->sd,
+                conn->pname.len, conn->pname.data, strerror(errno));
+      // Continue since this is not catastrophic
+    }
+
     status = dn_set_tcpnodelay(conn->sd);
     if (status != DN_OK) {
       log_warn("set tcpnodelay on s %d for '%.*s' failed, ignored: %s",

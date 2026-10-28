@@ -75,8 +75,36 @@ int dn_set_reuseaddr(int sd) {
   return setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &reuse, len);
 }
 
-int dn_set_keepalive(int sd, int val) {
-  return setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val));
+/* Set an int TCP-level socket option. */
+static int dn_set_tcp_option(int sd, int option, int val) {
+  return setsockopt(sd, IPPROTO_TCP, option, &val, sizeof(val));
+}
+
+/*
+ * Turn on TCP keepalive with the DN_KEEPALIVE_* timing. Without it, the
+ * system's defaults apply (on Linux, the first probe after 2 hours), and a
+ * NAT or firewall that drops idle connections silently cuts a quiet link
+ * long before anything notices. Where the TCP_KEEP* options don't exist,
+ * only the defaults are available.
+ */
+int dn_set_keepalive(int sd) {
+  int on = 1;
+
+  if (setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on)) < 0) {
+    return -1;
+  }
+#ifdef TCP_KEEPIDLE
+  if (dn_set_tcp_option(sd, TCP_KEEPIDLE, DN_KEEPALIVE_IDLE_S) < 0) return -1;
+#endif
+#ifdef TCP_KEEPINTVL
+  if (dn_set_tcp_option(sd, TCP_KEEPINTVL, DN_KEEPALIVE_INTERVAL_S) < 0) {
+    return -1;
+  }
+#endif
+#ifdef TCP_KEEPCNT
+  if (dn_set_tcp_option(sd, TCP_KEEPCNT, DN_KEEPALIVE_COUNT) < 0) return -1;
+#endif
+  return 0;
 }
 
 /*

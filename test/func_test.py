@@ -1,8 +1,10 @@
+import os
 import redis
 import requests
 import random
 import socket
 import string
+import struct
 import time
 from utils import string_generator, number_generator
 from dual_run import dual_run
@@ -808,6 +810,65 @@ def run_quorum_majority_test(c, num_keys=10):
           "its value, %d without one refused"
           % (num_keys, '/'.join(str(n) for n in sizes), num_keys))
 
+KEEPALIVE_IDLE_S = 15  # DN_KEEPALIVE_IDLE_S in src/dyn_util.h
+
+def tcp_timers(pid):
+    """The established TCP connections of process pid, as (local, remote,
+    timer, seconds left) from /proc/net/tcp: timer 2 is keepalive."""
+    inodes = set()
+    for fd in os.listdir('/proc/%d/fd' % pid):
+        try:
+            target = os.readlink('/proc/%d/fd/%s' % (pid, fd))
+        except OSError:
+            continue
+        if target.startswith('socket:['):
+            inodes.add(target[len('socket:['):-1])
+    def addr(field):
+        ip, port = field.split(':')
+        return '%s:%d' % (socket.inet_ntoa(struct.pack('<I', int(ip, 16))),
+                          int(port, 16))
+    hz = os.sysconf('SC_CLK_TCK')
+    with open('/proc/net/tcp') as f:
+        next(f)
+        for line in f:
+            fields = line.split()
+            if fields[3] != '01' or fields[9] not in inodes:
+                continue
+            timer, left = fields[5].split(':')
+            yield (addr(fields[1]), addr(fields[2]), int(timer, 16),
+                   int(left, 16) / hz)
+
+def run_keepalive_test(c):
+    """Checks the TCP keepalive timers on one node's connections, peers both
+    ways, its datastore and a client: the first probe is due within
+    KEEPALIVE_IDLE_S seconds. The timing used to be the system's (on Linux,
+    2 hours), so a NAT or firewall could drop a quiet peer link unnoticed."""
+    print("Running KEEPALIVE test")
+    node = c.get_dynomite_cluster().nodes[0]
+    client = node.get_connection()
+    assert client.ping()
+    # Right after a reply, a connection's timer is the retransmit one until
+    # the ACK: wait for the connections to settle.
+    for _ in range(20):
+        time.sleep(0.1)
+        conns = list(tcp_timers(node.get_dyno_node_pid()))
+        if all(timer != 1 for _, _, timer, _ in conns):
+            break
+    ports = {node.dnode_port: 'peer', node.data_store_port: 'datastore',
+             node.port: 'client'}
+    kinds = set()
+    for local, remote, timer, left in conns:
+        kind = (ports.get(int(local.split(':')[1])) or
+                ports.get(int(remote.split(':')[1])))
+        # timer 1 is a retransmit, pending instead while data is in flight
+        assert timer in (1, 2), (local, remote, timer, left)
+        if timer == 2:
+            assert left <= KEEPALIVE_IDLE_S + 1, (kind, local, remote, left)
+            kinds.add(kind)
+    assert {'peer', 'datastore', 'client'} <= kinds, (kinds, conns)
+    print("\t-%d connections (peers, datastore, client) probe within %d s"
+          % (len(conns), KEEPALIVE_IDLE_S))
+
 def run_dbsize_test(c):
     """Checks DBSIZE, which counts the keys of the node's own datastore
     only, like KEYS and SCAN: through each node it must match that node's
@@ -902,6 +963,7 @@ def comparison_test(redis, dynomite, debug):
     run_unsupported_test(c)
     run_optional_args_test(c)
     run_quorum_majority_test(c)
+    run_keepalive_test(c)
 
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM

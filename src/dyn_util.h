@@ -98,7 +98,16 @@ struct argpos;
 int dn_set_blocking(int sd);
 int dn_set_nonblocking(int sd);
 int dn_set_reuseaddr(int sd);
-int dn_set_keepalive(int sd, int val);
+/*
+ * TCP keepalive on peer, datastore and client connections: the first probe
+ * after this many seconds without traffic, then one every interval, and the
+ * connection is dropped after count unanswered ones (about 75 s in all).
+ */
+#define DN_KEEPALIVE_IDLE_S 15
+#define DN_KEEPALIVE_INTERVAL_S 15
+#define DN_KEEPALIVE_COUNT 4
+
+int dn_set_keepalive(int sd);
 int dn_set_tcpnodelay(int sd);
 int dn_set_linger(int sd, int timeout);
 int dn_set_sndbuf(int sd, int size);

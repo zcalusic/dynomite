@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <limits.h>
+#include <netinet/tcp.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509v3.h>
@@ -2612,6 +2613,53 @@ out:
   return status;
 }
 
+/*
+ * TCP keepalive on a socket as dn_set_keepalive() sets it for peer,
+ * datastore and client connections: the timing, not just SO_KEEPALIVE. The
+ * timing used to be left to the system (on Linux, the first probe after 2
+ * hours), so a NAT or firewall could drop a quiet peer link unnoticed.
+ */
+static rstatus_t test_keepalive(void) {
+  static const struct {
+    const char *name;
+    int level, option, want;
+  } opts[] = {
+      {"SO_KEEPALIVE", SOL_SOCKET, SO_KEEPALIVE, 1},
+#ifdef TCP_KEEPIDLE
+      {"TCP_KEEPIDLE", IPPROTO_TCP, TCP_KEEPIDLE, DN_KEEPALIVE_IDLE_S},
+#endif
+#ifdef TCP_KEEPINTVL
+      {"TCP_KEEPINTVL", IPPROTO_TCP, TCP_KEEPINTVL, DN_KEEPALIVE_INTERVAL_S},
+#endif
+#ifdef TCP_KEEPCNT
+      {"TCP_KEEPCNT", IPPROTO_TCP, TCP_KEEPCNT, DN_KEEPALIVE_COUNT},
+#endif
+  };
+  size_t nfailed = 0;
+  int sd;
+
+  print_banner("KEEPALIVE");
+  sd = socket(AF_INET, SOCK_STREAM, 0);
+  if (sd < 0 || dn_set_keepalive(sd) < 0) {
+    log_error("keepalive: %s", strerror(errno));
+    if (sd >= 0) close(sd);
+    return DN_ERROR;
+  }
+  for (size_t i = 0; i < NELEMS(opts); i++) {
+    int val = -1;
+    socklen_t len = sizeof(val);
+    if (getsockopt(sd, opts[i].level, opts[i].option, &val, &len) < 0 ||
+        val != opts[i].want) {
+      log_error("keepalive: %s is %d, want %d", opts[i].name, val,
+                opts[i].want);
+      nfailed++;
+    }
+  }
+  close(sd);
+  loga("keepalive options: %zu, failed: %zu", NELEMS(opts), nfailed);
+  return nfailed == 0 ? DN_OK : DN_ERROR;
+}
+
 static rstatus_t test_tls(void) {
   const long day = 24 * 60 * 60;
   char dir[] = "/tmp/dynomite-test-tls-XXXXXX";
@@ -2972,6 +3020,12 @@ int main(int argc, char **argv) {
   ret = test_config();
   if (ret != DN_OK) {
     loga("Error in testing the configuration!!!");
+    goto err_out;
+  }
+
+  ret = test_keepalive();
+  if (ret != DN_OK) {
+    loga("Error in testing TCP keepalive!!!");
     goto err_out;
   }
 
