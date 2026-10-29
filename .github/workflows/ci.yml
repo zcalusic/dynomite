@@ -77,7 +77,12 @@ jobs:
     runs-on: ubuntu-latest
     # An i386 container can't run the actions' 64-bit Node, so build with
     # -m32 against the i386 libraries; the binaries run on the x86_64 runner.
-    container: zcalusic/debian-trixie
+    # The default seccomp profile of Docker on the ubuntu-26.04 runners
+    # refuses socketcall(), which i386 glibc uses for socket() and
+    # setsockopt().
+    container:
+      image: zcalusic/debian-trixie
+      options: --security-opt seccomp=unconfined
     steps:
       - name: Install dependencies
         run: |
