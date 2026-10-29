@@ -74,7 +74,13 @@ typedef struct {
  * doesn't work.
  */
 #if defined(__i386__) || defined(__x86_64__) || defined(__vax__)
-#define SET(n) (*(const MD5_u32plus *)&ptr[(n) * 4])
+/* memcpy(): a cast to MD5_u32plus * is undefined on an unaligned address */
+static inline MD5_u32plus md5_load(const unsigned char *p) {
+  MD5_u32plus v;
+  memcpy(&v, p, sizeof(v));
+  return v;
+}
+#define SET(n) md5_load(&ptr[(n) * 4])
 #define GET(n) SET(n)
 #else
 #define SET(n)                                             \

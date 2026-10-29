@@ -33,7 +33,7 @@
 
 #undef get16bits
 #if (defined(__GNUC__) && defined(__i386__))
-#define get16bits(d) (*((const uint16_t *)(d)))
+#define get16bits(d) dn_load16(d)
 #endif
 
 #if !defined(get16bits)
