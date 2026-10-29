@@ -895,10 +895,16 @@ static char *conf_add_dyn_server(struct conf *cf, struct command *cmd,
     return CONF_ERROR;
   }
 
+  /*
+   * A seed's name may not resolve yet, e.g. a container that isn't up:
+   * dnode_peer_resolve() tries again before each connect, and the peer
+   * counts as down until then.
+   */
   status = dn_resolve(&address, field->port, &field->info);
   if (status != DN_OK) {
-    string_deinit(&address);
-    return CONF_ERROR;
+    memset(&field->info, 0, sizeof(field->info));
+    log_warn("dyn_seeds: '%.*s' doesn't resolve yet, retried on connect",
+             address.len, address.data);
   }
 
   string_deinit(&address);

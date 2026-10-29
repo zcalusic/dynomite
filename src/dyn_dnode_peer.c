@@ -186,6 +186,18 @@ static void dnode_create_connection_pool(struct server_pool *sp,
   }
 }
 
+/*
+ * Sets the peer's address. The peer keeps its own copy, which its connections'
+ * addr points to; family 0 means the name didn't resolve.
+ */
+static void dnode_peer_set_addr(struct node *peer,
+                                const struct sockinfo *info) {
+  peer->info = *info;
+  peer->endpoint.family = info->family;
+  peer->endpoint.addrlen = info->addrlen;
+  peer->endpoint.addr = (struct sockaddr *)&peer->info.addr;
+}
+
 static rstatus_t dnode_initialize_peer_each(void *elem, void *data1,
                                             void *data2) {
   struct context *ctx = data1;
@@ -205,10 +217,7 @@ static rstatus_t dnode_initialize_peer_each(void *elem, void *data1,
 
   string_copy(&s->endpoint.pname, cseed->pname.data, cseed->pname.len);
   s->endpoint.port = (uint16_t)cseed->port;
-  s->endpoint.family = cseed->info.family;
-  s->endpoint.addrlen = cseed->info.addrlen;
-  s->endpoint.addr = (struct sockaddr *)&cseed->info
-                         .addr;  // TODOs: fix this by copying, not reference
+  dnode_peer_set_addr(s, &cseed->info);
 
   uint8_t *p = cseed->name.data + cseed->name.len - 1;
   uint8_t *start = cseed->name.data;
@@ -619,12 +628,10 @@ static rstatus_t dnode_peer_add_node(struct server_pool *sp,
   string_copy(&s->endpoint.pname, node->pname.data, node->pname.len);
   s->endpoint.port = (uint16_t)node->port;
   string_copy(&s->name, node->name.data, node->name.len);
-  struct sockinfo *info = dn_alloc(sizeof(*info));  // need to free this
-  dn_resolve(&s->name, s->endpoint.port, info);
-  s->endpoint.family = info->family;
-  s->endpoint.addrlen = info->addrlen;
-  s->endpoint.addr = (struct sockaddr *)&info
-                         ->addr;  // TODOs: fix this by copying, not reference
+  struct sockinfo info;
+  memset(&info, 0, sizeof(info));
+  IGNORE_RET_VAL(dn_resolve(&s->name, s->endpoint.port, &info));
+  dnode_peer_set_addr(s, &info);
 
   string_copy(&s->rack, node->rack.data, node->rack.len);
   string_copy(&s->dc, node->dc.data, node->dc.len);
@@ -715,17 +722,10 @@ rstatus_t dnode_peer_replace(void *rmsg) {
     string_copy(&s->endpoint.pname, node->pname.data, node->pname.len);
     string_copy(&s->name, node->name.data, node->name.len);
 
-    // TODOs: need to free the previous s->endpoint.addr?
-    // if (s->endpoint.addr != NULL) {
-    //   dn_free(s->endpoint.addr);
-    //}
-
-    struct sockinfo *info = dn_alloc(sizeof(*info));  // need to free this
-    dn_resolve(&s->name, s->endpoint.port, info);
-    s->endpoint.family = info->family;
-    s->endpoint.addrlen = info->addrlen;
-    s->endpoint.addr = (struct sockaddr *)&info
-                           ->addr;  // TODOs: fix this by copying, not reference
+    struct sockinfo info;
+    memset(&info, 0, sizeof(info));
+    IGNORE_RET_VAL(dn_resolve(&s->name, s->endpoint.port, &info));
+    dnode_peer_set_addr(s, &info);
 
     dnode_create_connection_pool(sp, s);
 
@@ -734,6 +734,40 @@ rstatus_t dnode_peer_replace(void *rmsg) {
     log_debug(LOG_INFO, "Unable to find any node matching the token");
   }
 
+  return DN_OK;
+}
+
+/*
+ * Resolves the peer's name again before conn connects, so that a seed that
+ * didn't resolve at startup gets connected once it does, and a peer that moved
+ * to another address is followed. If the name stops resolving, the last
+ * address is kept. Blocks for the lookup: a peer connects at most once per
+ * reconnect backoff.
+ */
+rstatus_t dnode_peer_resolve(struct conn *conn) {
+  struct node *peer = conn->owner;
+  struct sockinfo info;
+
+  ASSERT(conn->type == CONN_DNODE_PEER_SERVER);
+
+  memset(&info, 0, sizeof(info));
+  if (dn_resolve(&peer->name, peer->endpoint.port, &info) == 0) {
+    if (peer->info.family != 0 &&
+        (info.addrlen != peer->info.addrlen ||
+         memcmp(&info.addr, &peer->info.addr, info.addrlen) != 0)) {
+      log_warn("peer '%.*s' resolves to %s now", peer->name.len,
+               peer->name.data,
+               dn_unresolve_addr((struct sockaddr *)&info.addr, info.addrlen));
+    }
+    dnode_peer_set_addr(peer, &info);
+  } else if (peer->info.family == 0) {
+    errno = EHOSTUNREACH;
+    return DN_ERROR;
+  }
+
+  conn->family = peer->endpoint.family;
+  conn->addrlen = peer->endpoint.addrlen;
+  conn->addr = peer->endpoint.addr;
   return DN_OK;
 }
 
@@ -861,13 +895,17 @@ struct conn *dnode_peer_get_conn(struct context *ctx, struct node *peer,
   return conn;
 }
 
+/*
+ * Connects to every peer. A peer that can't be connected to now, e.g. its
+ * name doesn't resolve yet, is down: its pool retries after the reconnect
+ * backoff, and the other peers are still connected.
+ */
 rstatus_t dnode_peer_pool_preconnect(struct context *ctx) {
-  rstatus_t status;
   struct server_pool *sp = &ctx->pool;
+  uint32_t i, n;
 
-  status = array_each(&sp->peers, dnode_peer_each_preconnect);
-  if (status != DN_OK) {
-    return status;
+  for (i = 0, n = array_n(&sp->peers); i < n; i++) {
+    IGNORE_RET_VAL(dnode_peer_each_preconnect(array_get(&sp->peers, i)));
   }
 
   return DN_OK;

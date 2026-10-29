@@ -22,6 +22,7 @@
 
 #include "dyn_connection_internal.h"
 #include "dyn_core.h"
+#include "dyn_dnode_peer.h"
 #include "dyn_server.h"
 #include "dyn_tls.h"
 #include "event/dyn_event.h"
@@ -306,6 +307,13 @@ rstatus_t conn_connect(struct context *ctx, struct conn *conn) {
   if (conn->sd > 0) {
     /* already connected on peer connection */
     return DN_OK;
+  }
+
+  if (conn->type == CONN_DNODE_PEER_SERVER) {
+    status = dnode_peer_resolve(conn);
+    if (status != DN_OK) {
+      goto error;
+    }
   }
 
   conn->sd = socket(conn->family, SOCK_STREAM, 0);

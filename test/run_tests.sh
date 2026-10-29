@@ -7,7 +7,8 @@
 # Without request files, runs test/no_quorum_request.yaml,
 # test/safe_quorum_request.yaml and test/each_safe_quorum_request.yaml.
 # Each cluster runs plaintext and with mutual TLS between its nodes; the
-# peer TLS checks in test/tls_test.py come last.
+# peer TLS checks in test/tls_test.py and the seed resolution checks in
+# test/seed_test.py come last.
 
 usage() {
     echo "usage: $0 [-n|--no-rebuild] [request_file ...]" >&2
@@ -52,3 +53,6 @@ done
 
 echo "Running the peer TLS tests"
 test/tls_test.py
+
+echo "Running the seed resolution tests"
+test/seed_test.py

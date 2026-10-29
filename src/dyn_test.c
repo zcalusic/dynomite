@@ -2106,6 +2106,9 @@ static const struct conf_case conf_cases[] = {
     CONF_INVALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:99999999999\n"),
     CONF_INVALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:abc\n"),
     CONF_INVALID("  dyn_seeds:\n  - 127.0.0.2:8101:r1:dc1:1,\n"),
+    /* a seed's name may not resolve yet: it's resolved again on connect */
+    CONF_VALID("  dyn_seeds:\n  - dynomite-test.invalid:8101:r1:dc1:0\n",
+               timeout, 5000),
     /* peer_tls needs the three files; off, they are ignored */
     CONF_VALID("", peer_tls, false),
     CONF_VALID("  peer_tls: false\n  peer_tls_cert: /nonexistent/node.pem\n",

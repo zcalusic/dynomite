@@ -167,6 +167,7 @@ struct node {
   struct server_pool *owner; /* owner pool */
   struct endpoint endpoint;
   struct string name; /* name (ref in conf_server) */
+  struct sockinfo info; /* resolved address, endpoint.addr points here */
 
   conn_pool_t *conn_pool; /* the only peer connection */
 

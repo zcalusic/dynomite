@@ -21,6 +21,7 @@ msec_t dnode_peer_timeout(struct msg *msg, struct conn *conn);
 rstatus_t dnode_initialize_peers(struct context *ctx);
 void dnode_peer_deinit(struct array *nodes);
 void dnode_peer_connected(struct context *ctx, struct conn *conn);
+rstatus_t dnode_peer_resolve(struct conn *conn);
 
 struct node *dnode_peer_pool_server(struct context *ctx,
                                     struct server_pool *pool, struct rack *rack,
