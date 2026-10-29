@@ -1043,7 +1043,7 @@ void gossip_debug(void) {
 }
 
 rstatus_t gossip_msg_peer_update(void *rmsg) {
-  rstatus_t status;
+  rstatus_t status = DN_OK; /* an update can have no nodes */
   struct ring_msg *msg = rmsg;
   struct server_pool *sp = msg->sp;
 
