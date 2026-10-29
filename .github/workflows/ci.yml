@@ -127,3 +127,51 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           MAKEFLAGS="-j $(nproc)" test/run_tests.sh
+
+  # AddressSanitizer and UndefinedBehaviorSanitizer over the unit and
+  # functional tests. Leaks aren't checked: valgrind covers those, and the
+  # functional tests kill their nodes. The harness doesn't keep dynomite's
+  # stderr, so the reports go to files, checked at the end.
+  asan:
+    name: Sanitizers
+    runs-on: ubuntu-latest
+    container: zcalusic/debian-trixie
+    env:
+      ASAN_OPTIONS: detect_leaks=0:log_path=/tmp/sanitizer/asan
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1:log_path=/tmp/sanitizer/ubsan
+    steps:
+      - name: Install dependencies
+        run: |
+          mkdir -p /tmp/sanitizer
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            automake gcc git libc6-dev libssl-dev libyaml-dev make \
+            openssl redis-server python3 python3-plumbum python3-redis \
+            python3-requests python3-yaml
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          autoreconf -fvi
+          ./configure --enable-debug=log \
+            CFLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined"
+          make -j "$(nproc)"
+
+      - name: Unit tests
+        run: make -j "$(nproc)" check VERBOSE=1
+
+      - name: Functional tests
+        run: test/run_tests.sh --no-rebuild
+
+      - name: Sanitizer reports
+        if: always()
+        run: |
+          if [ -n "$(ls -A /tmp/sanitizer)" ]; then
+            cat /tmp/sanitizer/*
+            exit 1
+          fi
+          echo "no sanitizer reports"
