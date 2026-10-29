@@ -258,6 +258,8 @@ static void conf_pool_deinit(struct conf_pool *cp) {
 
   string_deinit(&cp->listen.pname);
   string_deinit(&cp->listen.name);
+  // the pool's hash_tag refers to it; the conf goes after the pool
+  string_deinit(&cp->hash_tag);
 
   // NULL if the configuration failed before 'servers:' was parsed.
   if (cp->conf_datastore != NULL) {
