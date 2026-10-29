@@ -45,6 +45,62 @@ jobs:
       - name: Distribution check
         run: make -j "$(nproc)" distcheck VERBOSE=1
 
+  # The other compiler and a 32-bit build, so their warnings don't come back
+  # unnoticed.
+  clang:
+    name: Build (clang)
+    runs-on: ubuntu-latest
+    container: zcalusic/debian-trixie
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            automake clang git libc6-dev libssl-dev libyaml-dev make
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          autoreconf -fvi
+          ./configure CC=clang
+          make -j "$(nproc)" CFLAGS="-g -O2 -Werror"
+
+      - name: Unit tests
+        run: make -j "$(nproc)" check VERBOSE=1 CFLAGS="-g -O2 -Werror"
+
+  i386:
+    name: Build (i386)
+    runs-on: ubuntu-latest
+    # An i386 container can't run the actions' 64-bit Node, so build with
+    # -m32 against the i386 libraries; the binaries run on the x86_64 runner.
+    container: zcalusic/debian-trixie
+    steps:
+      - name: Install dependencies
+        run: |
+          dpkg --add-architecture i386
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            automake gcc gcc-multilib git libssl-dev:i386 libyaml-dev:i386 \
+            make
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          autoreconf -fvi
+          ./configure CC="gcc -m32"
+          make -j "$(nproc)" CFLAGS="-g -O2 -Werror"
+
+      - name: Unit tests
+        run: make -j "$(nproc)" check VERBOSE=1 CFLAGS="-g -O2 -Werror"
+
   test:
     name: Functional tests
     runs-on: ubuntu-latest
