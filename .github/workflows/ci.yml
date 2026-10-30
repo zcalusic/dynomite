@@ -139,6 +139,7 @@ jobs:
     env:
       ASAN_OPTIONS: detect_leaks=0:log_path=/tmp/sanitizer/asan
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1:log_path=/tmp/sanitizer/ubsan
+      SANITIZER_CFLAGS: -g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined
     steps:
       - name: Install dependencies
         run: |
@@ -157,12 +158,12 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           autoreconf -fvi
-          ./configure --enable-debug=log \
-            CFLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined"
-          make -j "$(nproc)"
+          ./configure --enable-debug=log CFLAGS="$SANITIZER_CFLAGS"
+          # -Werror only here, not for configure's own feature tests.
+          make -j "$(nproc)" CFLAGS="$SANITIZER_CFLAGS -Werror"
 
       - name: Unit tests
-        run: make -j "$(nproc)" check VERBOSE=1
+        run: make -j "$(nproc)" check VERBOSE=1 CFLAGS="$SANITIZER_CFLAGS -Werror"
 
       - name: Functional tests
         run: test/run_tests.sh --no-rebuild

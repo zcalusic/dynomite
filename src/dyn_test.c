@@ -1439,8 +1439,13 @@ static rstatus_t test_read_repair(struct conn *conn) {
       {"HMSET h f1", {NULL, NULL}},
   };
   /* keys with and without a hash tag in them, with and without one configured */
+  /*
+   * The key is an array: GCC at -O1 with the sanitizers mistook a pointer
+   * here for the NULL hash_tag and warned about the snprintf() of it.
+   */
   static const struct {
-    const char *hash_tag, *key;
+    const char *hash_tag;
+    const char key[16];
   } keys[] = {{NULL, "k"}, {"{}", "k"}, {"{}", "user:{42}:name"}};
 
   g_data_store = DATA_REDIS;
