@@ -34,6 +34,15 @@ def sleep_with_animation(seconds, optional_msg=""):
         sys.stdout.flush()
     print("\n")
 
+def wait_for(what, cond, timeout):
+    """Polls cond() until it is true; fails after timeout seconds."""
+    deadline = time.time() + timeout
+    while True:
+        if cond():
+            return
+        assert time.time() < deadline, "timed out waiting for " + what
+        time.sleep(0.1)
+
 def string_generator(size=6, chars=string.ascii_letters + string.digits):
     return ''.join(random.choice(chars) for _ in range(size))
 

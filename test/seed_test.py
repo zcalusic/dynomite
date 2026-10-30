@@ -17,7 +17,7 @@ from plumbum import local
 
 from dyno_cluster import DynoCluster, DynoSpec
 from dyno_node import DynoNode
-from utils import generate_ips, setup_temp_dir
+from utils import generate_ips, setup_temp_dir, wait_for
 
 HOSTS = '/etc/hosts'
 # .invalid never resolves through DNS (RFC 6761), so only /etc/hosts does
@@ -25,15 +25,6 @@ NAME = 'dynomite-seed-test.invalid'
 REQUEST = dict(
     cluster_desc=[dict(name='dc1', racks=[['rack1', 1], ['rack2', 1]])],
     conf=dict())
-
-def wait_for(what, cond, timeout):
-    """Polls cond() until it is true; fails after timeout seconds."""
-    deadline = time.time() + timeout
-    while True:
-        if cond():
-            return
-        assert time.time() < deadline, "timed out waiting for " + what
-        time.sleep(0.2)
 
 def stats_up(node):
     try:

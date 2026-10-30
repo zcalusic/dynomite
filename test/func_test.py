@@ -6,7 +6,7 @@ import socket
 import string
 import struct
 import time
-from utils import string_generator, number_generator
+from utils import string_generator, number_generator, wait_for
 from dual_run import dual_run
 
 def create_key(test_name, key_id):
@@ -329,7 +329,7 @@ def run_read_repair_test(c, num_keys=10, min_size=1, max_size=1024):
 def send_peer_request(node, key, flags):
     """Sends 'SET key value' to node's peer port as a peer in the same DC
     would, with the given dnode header flags. Returns what came back before
-    the node closed the connection or a 2 s timeout."""
+    the node closed the connection, a reply ended or a 2 s timeout."""
     payload = '*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n$5\r\nvalue\r\n'.format(
         len(key), key).encode()
     header = '   $2014$ 4242 3 {} 1 1 *1 d *{}\r\n'.format(
@@ -338,7 +338,7 @@ def send_peer_request(node, key, flags):
     with socket.create_connection((node.ip, node.dnode_port), timeout=2) as s:
         s.sendall(header + payload)
         try:
-            while True:
+            while not received.endswith(b'+OK\r\n'):
                 data = s.recv(4096)
                 if not data:
                     break
@@ -968,8 +968,12 @@ def run_each_safe_quorum_dc_down_test(c):
                         racks[:racks_down] and node not in stopped):
                     node.stop_dynomite()
                     stopped.append(node)
-            # Let the coordinator see its peer connections close.
-            time.sleep(1)
+            # Let the coordinator see its connections to them close.
+            up = [n for n in dyno_cluster.nodes if n not in stopped]
+            left = dyno_cluster.full_peer_connections(coordinator, up)
+            wait_for("the coordinator's connections to close",
+                     lambda: dyno_cluster.peer_connections(coordinator) <= left,
+                     10)
             racks_up = len(racks) - racks_down
             quorum = racks_up >= len(racks) // 2 + 1
             # Well below the 5 s request timeout: a reply only that timeout
@@ -995,7 +999,8 @@ def run_each_safe_quorum_dc_down_test(c):
         for node in stopped:
             node.start_dynomite()
         # Let the restarted nodes open their ports for the stats check.
-        time.sleep(1)
+        for node in stopped:
+            wait_for(node.name + "'s restart", node.ping_ok, 10)
 
 def comparison_test(redis, dynomite, debug):
     c = dual_run(redis, dynomite, debug)

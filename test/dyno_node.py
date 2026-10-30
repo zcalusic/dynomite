@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import redis
+import requests
 from node import Node
 from redis_node import RedisNode
 
@@ -56,6 +57,24 @@ class DynoNode(Node):
 
     def __exit__(self, type_, value, traceback):
         self.teardown()
+
+    def info(self):
+        """The node's /info, or None while its stats port is down."""
+        try:
+            r = requests.get('http://{}:{}/info'.format(self.ip,
+                             self.spec.stats_port), timeout=2)
+        except requests.exceptions.RequestException:
+            return None
+        return r.json()
+
+    def ping_ok(self):
+        """/ping answers 200 once the node is connected to its datastore."""
+        try:
+            r = requests.get('http://{}:{}/ping'.format(self.ip,
+                             self.spec.stats_port), timeout=2)
+        except requests.exceptions.RequestException:
+            return False
+        return r.status_code == 200
 
     def get_dyno_node_pid(self):
         return self.proc_future.proc.pid

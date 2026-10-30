@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from contextlib import ExitStack
-from time import sleep
 from urllib.request import urlopen
 import argparse
 import json
@@ -12,12 +11,11 @@ from plumbum import local
 
 from dyno_cluster import DynoCluster
 from func_test import comparison_test
-from utils import generate_ips, setup_temp_dir, sleep_with_animation
+from utils import generate_ips, setup_temp_dir, wait_for
 from redis_node import RedisNode
 
 REDIS_PORT = 1212
 STATS_PORT = 22222
-SETTLE_TIME = 3
 
 def main():
     parser = argparse.ArgumentParser(
@@ -50,8 +48,9 @@ def main():
         stack.enter_context(standalone_redis)
         stack.enter_context(dynomite_cluster)
 
-        # Wait for a while for the above nodes to start.
-        sleep_with_animation(SETTLE_TIME, "Waiting for cluster to start")
+        # Wait for the above nodes to start and connect to each other.
+        wait_for('the standalone redis', standalone_redis.is_up, 30)
+        dynomite_cluster.wait_until_ready()
 
         # Run all the functional comparison tests.
         comparison_test(standalone_redis, dynomite_cluster, False)

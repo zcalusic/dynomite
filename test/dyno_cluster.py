@@ -18,6 +18,8 @@ DYN_O_MITE_DEFAULTS = dict(
     data_store=0,
     datastore_connections=1,
     hash_tag='{}',
+    # /info's gauges, which the tests wait on, are updated every stats_interval
+    stats_interval=200,
 )
 INTERNODE_LISTEN = 8101
 CLIENT_LISTEN = 8102
@@ -180,6 +182,33 @@ class DynoCluster(object):
 
     def __exit__(self, type_, value, traceback):
         self.teardown()
+
+    def peer_connections(self, node):
+        """The node's peer_connections gauge, or None while it's down."""
+        info = node.info()
+        return None if info is None else info['dyn_o_mite']['peer_connections']
+
+    def full_peer_connections(self, node, peers=None):
+        """The peer_connections gauge of a node connected to all of 'peers'
+        (default: all the other nodes)."""
+        if peers is None:
+            peers = self.nodes
+        conf = node.spec._generate_config([])['dyn_o_mite']
+        return sum(conf['local_peer_connections'] if peer.spec.dc == node.spec.dc
+                   else conf['remote_peer_connections']
+                   for peer in peers if peer is not node)
+
+    def wait_until_ready(self, timeout=30):
+        """Waits for every node to be connected to its datastore and to all
+        its peers. A node started before a peer had its connections to it
+        refused and retries them after a backoff of 1 s; until then,
+        requests through it can fail with 'Peer Node is not connected'."""
+        for node in self.nodes:
+            full = self.full_peer_connections(node)
+            wait_for(node.name + "'s datastore", node.ping_ok, timeout)
+            wait_for(node.name + "'s peer connections",
+                     lambda: (self.peer_connections(node) or 0) >= full,
+                     timeout)
 
     def enable_read_repairs(self):
         for node in self.nodes:

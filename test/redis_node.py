@@ -17,6 +17,12 @@ class RedisNode(Node):
     def get_connection(self):
         return redis.Redis(self.ip, self.port, db=0)
 
+    def is_up(self):
+        try:
+            return self.get_connection().ping()
+        except redis.exceptions.ConnectionError:
+            return False
+
     def get_pid(self):
         return self.proc_future.proc.pid
 

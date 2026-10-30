@@ -3,12 +3,9 @@ import argparse
 import sys
 
 from plumbum import local
-from time import sleep
 
 from dyno_cluster import DynoCluster
-from utils import generate_ips, setup_temp_dir, sleep_with_animation
-
-SETTLE_TIME = 3
+from utils import generate_ips, setup_temp_dir
 
 def main():
     parser = argparse.ArgumentParser(
@@ -32,8 +29,8 @@ def main():
         # Launch the dynomite cluster.
         dynomite_cluster.launch()
 
-        # Wait for a while for the above nodes to start.
-        sleep_with_animation(SETTLE_TIME, "Waiting for cluster to start")
+        # Wait for the above nodes to start and connect to each other.
+        dynomite_cluster.wait_until_ready()
 
 if __name__ == '__main__':
     sys.exit(main())

@@ -17,16 +17,14 @@ from plumbum import local
 
 from dyno_cluster import DynoCluster
 from tls_util import make_ca, make_node_cert
-from utils import generate_ips, setup_temp_dir, sleep_with_animation
+from utils import generate_ips, setup_temp_dir, wait_for
 
 openssl = local['openssl']
 
 HANDSHAKE_TIMEOUT = 10  # TLS_HANDSHAKE_TIMEOUT_MS in src/dyn_tls.h
-SETTLE_TIME = 3
 REQUEST = dict(
     cluster_desc=[dict(name='dc1', racks=[['rack1', 1], ['rack2', 1]])],
-    # the counters are aggregated every stats_interval
-    conf=dict(stats_interval=1000))
+    conf=dict())
 
 def info(node):
     url = 'http://{}:{}/info'.format(node.ip, node.spec.stats_port)
@@ -38,15 +36,6 @@ def counter(node, name):
     if name in data:
         return data[name]
     return data['dyn_o_mite'][name]
-
-def wait_for(what, cond, timeout):
-    """Polls cond() until it is true; fails after timeout seconds."""
-    deadline = time.time() + timeout
-    while True:
-        if cond():
-            return
-        assert time.time() < deadline, "timed out waiting for " + what
-        time.sleep(0.2)
 
 def log_size(node):
     return os.path.getsize(node.logfile)
@@ -141,7 +130,7 @@ def main():
     with ExitStack() as stack:
         stack.enter_context(local.cwd(temp))
         stack.enter_context(cluster)
-        sleep_with_animation(SETTLE_TIME, "Waiting for cluster to start")
+        cluster.wait_until_ready()
         n1, n2 = cluster.nodes
         good = dict(n2.spec.tls_files)
         ca = good['ca']
