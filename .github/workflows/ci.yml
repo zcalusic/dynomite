@@ -106,9 +106,23 @@ jobs:
       - name: Unit tests
         run: make -j "$(nproc)" check VERBOSE=1 CFLAGS="-g -O2 -Werror"
 
+  # The functional tests in parallel parts, the asan job in the same ones.
   test:
-    name: Functional tests
+    name: Functional tests (${{ matrix.part }})
     runs-on: ubuntu-latest
+    strategy: &functional-parts
+      # Every part runs to the end, whichever fails.
+      fail-fast: false
+      matrix:
+        include:
+          - part: no_quorum
+            tests: test/no_quorum_request.yaml
+          - part: safe_quorum
+            tests: test/safe_quorum_request.yaml
+          - part: each_safe_quorum
+            tests: test/each_safe_quorum_request.yaml
+          - part: tls and seeds
+            tests: test/tls_test.py test/seed_test.py
     container: zcalusic/debian-trixie
     steps:
       - name: Install dependencies
@@ -126,15 +140,16 @@ jobs:
       - name: Run functional tests
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          MAKEFLAGS="-j $(nproc)" test/run_tests.sh
+          MAKEFLAGS="-j $(nproc)" test/run_tests.sh ${{ matrix.tests }}
 
   # AddressSanitizer and UndefinedBehaviorSanitizer over the unit and
   # functional tests. Leaks aren't checked: valgrind covers those, and the
   # functional tests kill their nodes. The harness doesn't keep dynomite's
   # stderr, so the reports go to files, checked at the end.
   asan:
-    name: Sanitizers
+    name: Sanitizers (${{ matrix.part }})
     runs-on: ubuntu-latest
+    strategy: *functional-parts
     container: zcalusic/debian-trixie
     env:
       ASAN_OPTIONS: detect_leaks=0:log_path=/tmp/sanitizer/asan
@@ -166,7 +181,7 @@ jobs:
         run: make -j "$(nproc)" check VERBOSE=1 CFLAGS="$SANITIZER_CFLAGS -Werror"
 
       - name: Functional tests
-        run: test/run_tests.sh --no-rebuild
+        run: test/run_tests.sh --no-rebuild ${{ matrix.tests }}
 
       - name: Sanitizer reports
         if: always()

@@ -2,16 +2,17 @@
 #
 # Build Dynomite and run the functional tests against generated clusters.
 #
-# usage: test/run_tests.sh [-n|--no-rebuild] [request_file ...]
+# usage: test/run_tests.sh [-n|--no-rebuild] [test ...]
 #
-# Without request files, runs test/no_quorum_request.yaml,
-# test/safe_quorum_request.yaml and test/each_safe_quorum_request.yaml.
-# Each cluster runs plaintext and with mutual TLS between its nodes; the
-# peer TLS checks in test/tls_test.py and the seed resolution checks in
-# test/seed_test.py come last.
+# A test is a request file, describing a cluster to run the functional
+# tests against, plaintext and with mutual TLS between its nodes, or a test
+# script that sets up its own nodes. Without tests, runs all of them:
+# test/no_quorum_request.yaml, test/safe_quorum_request.yaml,
+# test/each_safe_quorum_request.yaml, then the peer TLS checks in
+# test/tls_test.py and the seed resolution checks in test/seed_test.py.
 
 usage() {
-    echo "usage: $0 [-n|--no-rebuild] [request_file ...]" >&2
+    echo "usage: $0 [-n|--no-rebuild] [test ...]" >&2
     exit 2
 }
 
@@ -22,7 +23,7 @@ while [ "$#" -gt 0 ]; do
         -n|--no-rebuild) shift; rebuild=false;;
         -h|--help) usage;;
         -*) echo "unknown option: '$1'" >&2; usage;;
-        *) break;; # reached the list of request files
+        *) break;; # reached the list of tests
     esac
 done
 
@@ -34,7 +35,7 @@ cd "$(dirname "$0")/.."
 
 if [ "$#" -eq 0 ]; then
     set -- test/no_quorum_request.yaml test/safe_quorum_request.yaml \
-        test/each_safe_quorum_request.yaml
+        test/each_safe_quorum_request.yaml test/tls_test.py test/seed_test.py
 fi
 
 #build Dynomite
@@ -46,16 +47,18 @@ fi
 
 # The tests that don't depend on the cluster run in the first run only.
 skip_node_tests=()
-for request_file in "$@"; do
-    echo "Running functional tests with ${request_file}"
-    test/cluster_generator.py "${skip_node_tests[@]}" "${request_file}"
-    skip_node_tests=(--skip-node-tests)
-    echo "Running functional tests with ${request_file} and peer TLS"
-    test/cluster_generator.py --skip-node-tests --peer-tls "${request_file}"
+for t in "$@"; do
+    case ${t} in
+        *.py)
+            echo "Running ${t}"
+            "${t}"
+            ;;
+        *)
+            echo "Running functional tests with ${t}"
+            test/cluster_generator.py "${skip_node_tests[@]}" "${t}"
+            skip_node_tests=(--skip-node-tests)
+            echo "Running functional tests with ${t} and peer TLS"
+            test/cluster_generator.py --skip-node-tests --peer-tls "${t}"
+            ;;
+    esac
 done
-
-echo "Running the peer TLS tests"
-test/tls_test.py
-
-echo "Running the seed resolution tests"
-test/seed_test.py
