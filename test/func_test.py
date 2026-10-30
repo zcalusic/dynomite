@@ -30,8 +30,12 @@ def run_key_value_tests(c, max_keys=1000, max_payload=1024):
     c.run_verify("get", key)
     # expire a few
     key = create_key(test_name, random.randint(0, max_keys-1))
-    c.run_verify("expire", key, 5)
-    time.sleep(7)
+    c.run_verify("pexpire", key, 300)
+    c.run_verify("exists", key)
+    deadline = time.time() + 5
+    while c.run_redis_only("exists", key) or c.run_dynomite_only("exists", key):
+        assert time.time() < deadline, "%s didn't expire" % key
+        time.sleep(0.05)
     c.run_verify("exists", key)
 
 def run_multikey_test(c, max_keys=1000, max_payload=10):
