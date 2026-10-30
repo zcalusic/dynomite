@@ -292,20 +292,32 @@ def run_read_repair_test(c, num_keys=10, min_size=1, max_size=1024):
     # Update with a value that we want to repair with
     assert redis_conn.set(key, REPAIRED_VALUE) == True
 
-    test_success = False
-    # Attempt to retrieve the key up to 20 times and confirm that we read the
-    # repaired value.
-    # We retry multiple times since the quorum can be achieved with the majority replicas
-    # that have the older data, but we'll eventually conflict with the replica with the
-    # latest data causing the repair on all nodes.
-    for i in range(0, 20):
-        final_val = str(c.run_dynomite_only("get", key), 'utf-8')
-        if final_val == REPAIRED_VALUE:
-            test_success = True
-            break
+    # A quorum read is answered once a quorum of the replies agree, and only
+    # the replies in by then are compared and repaired: the stale replicas win
+    # whenever theirs come first, and for some keys that's every time. Hold
+    # back the replies of all but quorum - 1 stale replicas for a moment, so
+    # the replies that come first can't agree and the read waits for all of
+    # them.
+    replicas = [dyno_cluster.find_node_with_key(dc_name, r, key) for r in racks]
+    stale = [node for node in replicas if node is not node_with_key]
+    quorum = num_racks // 2 + 1
+    for node in stale[quorum - 1:]:
+        node.get_data_store_connection().client_pause(1000)
 
-    assert test_success == True
-    print("\t-Confirmed read repair took place successfully")
+    final_val = str(c.run_dynomite_only("get", key), 'utf-8')
+    assert final_val == REPAIRED_VALUE, final_val[:32]
+
+    # The repairs are sent after the reply, and the paused replicas apply
+    # theirs once the pause is over.
+    deadline = time.time() + 5
+    for node in stale:
+        conn = node.get_data_store_connection()
+        while (conn.get(key) != REPAIRED_VALUE.encode() or
+               conn.zscore(ADD_SET_MD_KEY, key) != add_ts):
+            assert time.time() < deadline, "%s not repaired" % node.ip
+            time.sleep(0.1)
+    print("\t-Confirmed read repair took place successfully on %d of %d replicas" %
+          (len(stale), num_racks))
     print("\t-Disabling read repairs")
     dyno_cluster.disable_read_repairs()
 
