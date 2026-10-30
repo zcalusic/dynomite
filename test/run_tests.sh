@@ -44,11 +44,14 @@ else
     echo "not rebuilding Dynomite"
 fi
 
+# The tests that don't depend on the cluster run in the first run only.
+skip_node_tests=()
 for request_file in "$@"; do
     echo "Running functional tests with ${request_file}"
-    test/cluster_generator.py "${request_file}"
+    test/cluster_generator.py "${skip_node_tests[@]}" "${request_file}"
+    skip_node_tests=(--skip-node-tests)
     echo "Running functional tests with ${request_file} and peer TLS"
-    test/cluster_generator.py --peer-tls "${request_file}"
+    test/cluster_generator.py --skip-node-tests --peer-tls "${request_file}"
 done
 
 echo "Running the peer TLS tests"

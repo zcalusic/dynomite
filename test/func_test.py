@@ -1002,7 +1002,10 @@ def run_each_safe_quorum_dc_down_test(c):
         for node in stopped:
             wait_for(node.name + "'s restart", node.ping_ok, 10)
 
-def comparison_test(redis, dynomite, debug):
+def comparison_test(redis, dynomite, debug, node_tests=True):
+    """Runs the tests against the cluster. node_tests=False skips the slow
+    ones whose outcome depends on neither the cluster's layout nor peer TLS,
+    for the runs after the first."""
     c = dual_run(redis, dynomite, debug)
     run_key_value_tests(c)
 
@@ -1025,7 +1028,8 @@ def comparison_test(redis, dynomite, debug):
     run_optional_args_test(c)
     run_quorum_majority_test(c)
     run_keepalive_test(c)
-    run_ping_test(c)
+    if node_tests:
+        run_ping_test(c)
 
     # Run read repairs tests last since we change the state of the cluster to use
     # DC_SAFE_QUORUM

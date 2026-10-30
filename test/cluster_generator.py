@@ -25,6 +25,9 @@ def main():
         help='YAML file describing desired cluster', nargs='?')
     parser.add_argument('--peer-tls', action='store_true',
         help='mutual TLS between the nodes, with certificates made on the fly')
+    parser.add_argument('--skip-node-tests', action='store_true',
+        help="skip the slow tests that don't depend on the cluster's layout "
+            'or peer TLS (PING), once another run did them')
     args = parser.parse_args()
 
     # Set up a temporary directory to store logs and configs for this cluster.
@@ -53,7 +56,8 @@ def main():
         dynomite_cluster.wait_until_ready()
 
         # Run all the functional comparison tests.
-        comparison_test(standalone_redis, dynomite_cluster, False)
+        comparison_test(standalone_redis, dynomite_cluster, False,
+                        node_tests=not args.skip_node_tests)
 
         random_node = random.choice(dynomite_cluster.nodes)
         stats_url = 'http://{}:{}/info'.format(random_node.ip, STATS_PORT)
