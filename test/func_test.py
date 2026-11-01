@@ -552,6 +552,45 @@ def run_hash_field_expiry_test(c):
     print("\t-15 commands answered as by the datastore; %d replicas with the "
           "same fields and expiry times" % num_racks)
 
+def run_delifeq_echo_test(c):
+    """Checks ECHO, which the local datastore answers, and DELIFEQ (Valkey
+    9) against the standalone datastore, and that a DELIFEQ deletes the key
+    in every rack's datastore, or none when the value differs. A datastore
+    without DELIFEQ refuses it, and Dynomite passes its error on."""
+    print("Running DELIFEQ_ECHO test")
+    assert c.run_verify('echo', 'hello') == b'hello'
+    replies = raw_replies(c, [('ECHO',), ('ECHO', 'a', 'b')])
+    assert replies[0] == replies[1], replies
+    deleted = create_key('DELIFEQ_ECHO', 'deleted')
+    kept = create_key('DELIFEQ_ECHO', 'kept')
+    standalone = c.standalone_redis.get_connection()
+    if not has_command(standalone, 'DELIFEQ'):
+        replies = raw_replies(c, [('DELIFEQ', deleted, 'v')])
+        assert replies[0] == replies[1], replies
+        print("\t-ECHO answered as by the datastore; DELIFEQ not in this "
+              "datastore: refused as by the datastore")
+        return
+    run = lambda *args: c.run_verify('execute_command', *args)
+    run('SET', deleted, 'v')
+    run('SET', kept, 'v')
+    assert run('DELIFEQ', deleted, 'other') == 0
+    assert run('DELIFEQ', deleted, 'v') == 1
+    assert run('DELIFEQ', kept, 'other') == 0
+    dyno_cluster = c.get_dynomite_cluster()
+    num_racks = sum(len(racks) for racks in dyno_cluster.counts_by_rack.values())
+    # Replication to other DCs is asynchronous: give it a few seconds.
+    for _ in range(50):
+        conns = [node.get_data_store_connection() for node in dyno_cluster.nodes]
+        left = [conn.get(deleted) for conn in conns if conn.exists(deleted)]
+        values = [conn.get(kept) for conn in conns if conn.exists(kept)]
+        if not left and values == [b'v'] * num_racks:
+            break
+        time.sleep(0.1)
+    assert not left, left
+    assert values == [b'v'] * num_racks, (num_racks, values)
+    print("\t-ECHO answered as by the datastore; DELIFEQ deleted the key in "
+          "all %d racks, and kept the one with another value" % num_racks)
+
 def run_list_pop_test(c):
     """Checks LPOP, RPOP and SRANDMEMBER with a count against Redis, and
     that each rack's redis holds one replica of the list, with the same
@@ -1170,6 +1209,7 @@ def comparison_test(redis, dynomite, debug, node_tests=True):
     run_incr_replicas_test(c)
     run_store_replicas_test(c)
     run_hash_field_expiry_test(c)
+    run_delifeq_echo_test(c)
     run_list_pop_test(c)
     run_random_set_test(c)
     run_multikey_routing_test(c)

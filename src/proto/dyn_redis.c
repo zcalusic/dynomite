@@ -121,6 +121,7 @@ static bool redis_arg0(struct msg *r) {
  */
 static bool redis_arg1(struct msg *r) {
   switch (r->type) {
+    case MSG_REQ_REDIS_DELIFEQ:
     case MSG_REQ_REDIS_APPEND:
     case MSG_REQ_REDIS_DECRBY:
     case MSG_REQ_REDIS_GETBIT:
@@ -933,6 +934,15 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 4:
+            if (str4icmp(m, 'e', 'c', 'h', 'o')) {
+              // ECHO <message>, no key: the local datastore answers it, like
+              // PING.
+              r->type = MSG_REQ_REDIS_ECHO;
+              r->msg_routing = ROUTING_LOCAL_NODE_ONLY;
+              r->is_read = 1;
+              break;
+            }
+
             if (str4icmp(m, 'h', 't', 't', 'l')) {
               r->type = MSG_REQ_REDIS_HTTL;
               r->is_read = 1;
@@ -1446,6 +1456,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 7:
+            if (str7icmp(m, 'd', 'e', 'l', 'i', 'f', 'e', 'q')) {
+              // Valkey 9: deletes the key if its value is the given one.
+              r->type = MSG_REQ_REDIS_DELIFEQ;
+              r->is_read = 0;
+              break;
+            }
+
             if (str7icmp(m, 'h', 'e', 'x', 'p', 'i', 'r', 'e')) {
               r->type = MSG_REQ_REDIS_HEXPIRE;
               r->is_read = 0;
@@ -1950,8 +1967,9 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
                 goto done;
               }
               state = SW_ARG1_LEN;
-            } else if (r->type == MSG_REQ_REDIS_SELECT) {
-              // SELECT <index>, no key.
+            } else if (r->type == MSG_REQ_REDIS_SELECT ||
+                       r->type == MSG_REQ_REDIS_ECHO) {
+              // SELECT <index> and ECHO <message>, no key.
               if (r->rntokens != 1) {
                 goto wrong_arity;
               }
@@ -2258,7 +2276,8 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
           case LF:
             if (redis_arg_upto1(r) || redis_arg1(r) ||
                 is_msg_type_dyno_config(r->type) ||
-                r->type == MSG_REQ_REDIS_SELECT) {
+                r->type == MSG_REQ_REDIS_SELECT ||
+                r->type == MSG_REQ_REDIS_ECHO) {
               // Only SCRIPT LOAD gets here with args left, the others' are
               // counted before.
               if (r->rntokens != 0) {

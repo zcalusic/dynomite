@@ -68,6 +68,7 @@
   ACTION(RSP_MC_CLIENT_ERROR)                                                  \
   ACTION(RSP_MC_SERVER_ERROR)                                                  \
   ACTION(REQ_REDIS_DEL) /* redis commands - keys */                            \
+  ACTION(REQ_REDIS_DELIFEQ)                                                    \
   ACTION(REQ_REDIS_EXISTS)                                                     \
   ACTION(REQ_REDIS_EXPIRE)                                                     \
   ACTION(REQ_REDIS_EXPIREAT)                                                   \
@@ -142,6 +143,7 @@
   ACTION(REQ_REDIS_LSET)                                                       \
   ACTION(REQ_REDIS_LTRIM)                                                      \
   ACTION(REQ_REDIS_PING)                                                       \
+  ACTION(REQ_REDIS_ECHO)                                                       \
   ACTION(REQ_REDIS_QUIT)                                                       \
   ACTION(REQ_REDIS_RPOP)                                                       \
   ACTION(REQ_REDIS_RPOPLPUSH)                                                  \

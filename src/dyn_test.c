@@ -760,6 +760,9 @@ static void parse_cases_init(void) {
                  "hexpiretime h FIELDS 1 f");
   parse_add_read(tc, MSG_REQ_REDIS_HPEXPIRETIME, "h",
                  "HPEXPIRETIME h FIELDS 1 f");
+  parse_add_write(tc, MSG_REQ_REDIS_DELIFEQ, "k", "DELIFEQ k v");
+  parse_add_read(tc, MSG_REQ_REDIS_ECHO, "", "ECHO hello");
+  parse_add_read(tc, MSG_REQ_REDIS_ECHO, "", "echo Hi");
   parse_add_read(tc, MSG_REQ_REDIS_TTL, "k", "TTL k");
   parse_add_read(tc, MSG_REQ_REDIS_PTTL, "k", "PTTL k");
   parse_add_write(tc, MSG_REQ_REDIS_SUNIONSTORE, "d", "SUNIONSTORE d a b");
@@ -922,6 +925,10 @@ static void parse_cases_init(void) {
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_HEXPIRE, "h", "HEXPIRE h 1 FIELDS 1");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_HTTL, "h", "HTTL h FIELDS 1");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_HGETEX, "h", "HGETEX h");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_DELIFEQ, "k", "DELIFEQ k");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_DELIFEQ, "k", "DELIFEQ k v x");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_ECHO, "", "ECHO");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_ECHO, "", "ECHO a b");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_ZRANK, "z", "ZRANK z");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_LPUSHX, "l", "LPUSHX l");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_RESTORE, "k", "RESTORE k 0");
