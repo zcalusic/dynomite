@@ -763,6 +763,16 @@ static void parse_cases_init(void) {
   parse_add_write(tc, MSG_REQ_REDIS_DELIFEQ, "k", "DELIFEQ k v");
   parse_add_read(tc, MSG_REQ_REDIS_ECHO, "", "ECHO hello");
   parse_add_read(tc, MSG_REQ_REDIS_ECHO, "", "echo Hi");
+  parse_add_write(tc, MSG_REQ_REDIS_GETEX, "k", "GETEX k EX 100");
+  parse_add_write(tc, MSG_REQ_REDIS_GETEX, "k", "getex k");
+  parse_add_write(tc, MSG_REQ_REDIS_GETDEL, "k", "GETDEL k");
+  parse_add_read(tc, MSG_REQ_REDIS_EXPIRETIME, "k", "EXPIRETIME k");
+  parse_add_read(tc, MSG_REQ_REDIS_PEXPIRETIME, "k", "pexpiretime k");
+  parse_add_read(tc, MSG_REQ_REDIS_LPOS, "l", "LPOS l a RANK -1 COUNT 2");
+  parse_add_read(tc, MSG_REQ_REDIS_SMISMEMBER, "s", "SMISMEMBER s a b");
+  parse_add_read(tc, MSG_REQ_REDIS_ZMSCORE, "z", "ZMSCORE z a b");
+  parse_add_write(tc, MSG_REQ_REDIS_ZPOPMIN, "z", "ZPOPMIN z");
+  parse_add_write(tc, MSG_REQ_REDIS_ZPOPMAX, "z", "zpopmax z 2");
   parse_add_read(tc, MSG_REQ_REDIS_TTL, "k", "TTL k");
   parse_add_read(tc, MSG_REQ_REDIS_PTTL, "k", "PTTL k");
   parse_add_write(tc, MSG_REQ_REDIS_SUNIONSTORE, "d", "SUNIONSTORE d a b");
@@ -929,6 +939,10 @@ static void parse_cases_init(void) {
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_DELIFEQ, "k", "DELIFEQ k v x");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_ECHO, "", "ECHO");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_ECHO, "", "ECHO a b");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_GETDEL, "k", "GETDEL k x");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_EXPIRETIME, "", "EXPIRETIME");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_LPOS, "l", "LPOS l");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SMISMEMBER, "s", "SMISMEMBER s");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_ZRANK, "z", "ZRANK z");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_LPUSHX, "l", "LPUSHX l");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_RESTORE, "k", "RESTORE k 0");

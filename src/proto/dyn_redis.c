@@ -85,11 +85,14 @@ static bool redis_arg0(struct msg *r) {
     case MSG_REQ_REDIS_PERSIST:
     case MSG_REQ_REDIS_PTTL:
     case MSG_REQ_REDIS_TTL:
+    case MSG_REQ_REDIS_EXPIRETIME:
+    case MSG_REQ_REDIS_PEXPIRETIME:
     case MSG_REQ_REDIS_TYPE:
     case MSG_REQ_REDIS_DUMP:
 
     case MSG_REQ_REDIS_DECR:
     case MSG_REQ_REDIS_GET:
+    case MSG_REQ_REDIS_GETDEL:
     case MSG_REQ_REDIS_INCR:
     case MSG_REQ_REDIS_STRLEN:
 
@@ -297,6 +300,7 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_BITCOUNT:
 
     case MSG_REQ_REDIS_SET:
+    case MSG_REQ_REDIS_GETEX:
     case MSG_REQ_REDIS_SCAN:
     case MSG_REQ_REDIS_HDEL:
     case MSG_REQ_REDIS_HMGET:
@@ -317,6 +321,7 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_HPEXPIRETIME:
 
     case MSG_REQ_REDIS_LPOP: /* key [count] */
+    case MSG_REQ_REDIS_LPOS:
     case MSG_REQ_REDIS_LPUSH:
     case MSG_REQ_REDIS_LPUSHX:
     case MSG_REQ_REDIS_RPOP: /* key [count] */
@@ -324,6 +329,7 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_RPUSHX:
 
     case MSG_REQ_REDIS_SADD:
+    case MSG_REQ_REDIS_SMISMEMBER:
     case MSG_REQ_REDIS_SDIFF:
     case MSG_REQ_REDIS_SDIFFSTORE:
     case MSG_REQ_REDIS_SINTER:
@@ -336,6 +342,9 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_SRANDMEMBER: /* key [count] */
 
     case MSG_REQ_REDIS_ZADD:
+    case MSG_REQ_REDIS_ZMSCORE:
+    case MSG_REQ_REDIS_ZPOPMIN:
+    case MSG_REQ_REDIS_ZPOPMAX:
     case MSG_REQ_REDIS_ZINTERSTORE:
     case MSG_REQ_REDIS_ZRANGE:
     case MSG_REQ_REDIS_ZRANGEBYSCORE:
@@ -392,6 +401,9 @@ static uint32_t redis_argn_min(struct msg *r) {
     case MSG_REQ_REDIS_RPUSHX:    /* key element [element ...] */
     case MSG_REQ_REDIS_ZRANK:     /* key member [WITHSCORE] */
     case MSG_REQ_REDIS_ZREVRANK:  /* key member [WITHSCORE] */
+    case MSG_REQ_REDIS_LPOS: /* key element [RANK r] [COUNT n] [MAXLEN m] */
+    case MSG_REQ_REDIS_SMISMEMBER: /* key member [member ...] */
+    case MSG_REQ_REDIS_ZMSCORE:    /* key member [member ...] */
       return 1;
     case MSG_REQ_REDIS_RESTORE: /* key ttl value [REPLACE] [ABSTTL] ... */
       return 2;
@@ -934,6 +946,12 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 4:
+            if (str4icmp(m, 'l', 'p', 'o', 's')) {
+              r->type = MSG_REQ_REDIS_LPOS;
+              r->is_read = 1;
+              break;
+            }
+
             if (str4icmp(m, 'e', 'c', 'h', 'o')) {
               // ECHO <message>, no key: the local datastore answers it, like
               // PING.
@@ -1129,6 +1147,14 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 5:
+            if (str5icmp(m, 'g', 'e', 't', 'e', 'x')) {
+              // A read that can set or remove the key's TTL: a write, so that
+              // every replica's TTL changes alike.
+              r->type = MSG_REQ_REDIS_GETEX;
+              r->is_read = 0;
+              break;
+            }
+
             if (str5icmp(m, 'h', 'p', 't', 't', 'l')) {
               r->type = MSG_REQ_REDIS_HPTTL;
               r->is_read = 1;
@@ -1260,6 +1286,12 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 6:
+            if (str6icmp(m, 'g', 'e', 't', 'd', 'e', 'l')) {
+              r->type = MSG_REQ_REDIS_GETDEL;
+              r->is_read = 0;
+              break;
+            }
+
             if (str6icmp(m, 'h', 'g', 'e', 't', 'e', 'x')) {
               // A read that can set or remove the fields' TTLs: a write, so
               // that every replica's TTLs change alike.
@@ -1456,6 +1488,24 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 7:
+            if (str7icmp(m, 'z', 'p', 'o', 'p', 'm', 'a', 'x')) {
+              r->type = MSG_REQ_REDIS_ZPOPMAX;
+              r->is_read = 0;
+              break;
+            }
+
+            if (str7icmp(m, 'z', 'p', 'o', 'p', 'm', 'i', 'n')) {
+              r->type = MSG_REQ_REDIS_ZPOPMIN;
+              r->is_read = 0;
+              break;
+            }
+
+            if (str7icmp(m, 'z', 'm', 's', 'c', 'o', 'r', 'e')) {
+              r->type = MSG_REQ_REDIS_ZMSCORE;
+              r->is_read = 1;
+              break;
+            }
+
             if (str7icmp(m, 'd', 'e', 'l', 'i', 'f', 'e', 'q')) {
               // Valkey 9: deletes the key if its value is the given one.
               r->type = MSG_REQ_REDIS_DELIFEQ;
@@ -1684,6 +1734,20 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 10:
+            if (str10icmp(m, 's', 'm', 'i', 's', 'm', 'e', 'm', 'b', 'e',
+                          'r')) {
+              r->type = MSG_REQ_REDIS_SMISMEMBER;
+              r->is_read = 1;
+              break;
+            }
+
+            if (str10icmp(m, 'e', 'x', 'p', 'i', 'r', 'e', 't', 'i', 'm',
+                          'e')) {
+              r->type = MSG_REQ_REDIS_EXPIRETIME;
+              r->is_read = 1;
+              break;
+            }
+
             if (str10icmp(m, 'h', 'p', 'e', 'x', 'p', 'i', 'r', 'e', 'a',
                           't')) {
               r->type = MSG_REQ_REDIS_HPEXPIREAT;
@@ -1701,6 +1765,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 11:
+            if (str11icmp(m, 'p', 'e', 'x', 'p', 'i', 'r', 'e', 't', 'i', 'm',
+                          'e')) {
+              r->type = MSG_REQ_REDIS_PEXPIRETIME;
+              r->is_read = 1;
+              break;
+            }
+
             if (str11icmp(m, 'h', 'e', 'x', 'p', 'i', 'r', 'e', 't', 'i', 'm',
                           'e')) {
               r->type = MSG_REQ_REDIS_HEXPIRETIME;

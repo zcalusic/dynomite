@@ -74,6 +74,8 @@
   ACTION(REQ_REDIS_EXPIREAT)                                                   \
   ACTION(REQ_REDIS_PEXPIRE)                                                    \
   ACTION(REQ_REDIS_PEXPIREAT)                                                  \
+  ACTION(REQ_REDIS_EXPIRETIME)                                                 \
+  ACTION(REQ_REDIS_PEXPIRETIME)                                                \
   ACTION(REQ_REDIS_PERSIST)                                                    \
   ACTION(REQ_REDIS_PTTL)                                                       \
   ACTION(REQ_REDIS_SCAN)                                                       \
@@ -90,6 +92,8 @@
   ACTION(REQ_REDIS_GETBIT)                                                     \
   ACTION(REQ_REDIS_GETRANGE)                                                   \
   ACTION(REQ_REDIS_GETSET)                                                     \
+  ACTION(REQ_REDIS_GETEX)                                                      \
+  ACTION(REQ_REDIS_GETDEL)                                                     \
   ACTION(REQ_REDIS_INCR)                                                       \
   ACTION(REQ_REDIS_INCRBY)                                                     \
   ACTION(REQ_REDIS_INCRBYFLOAT)                                                \
@@ -142,6 +146,7 @@
   ACTION(REQ_REDIS_LREM)                                                       \
   ACTION(REQ_REDIS_LSET)                                                       \
   ACTION(REQ_REDIS_LTRIM)                                                      \
+  ACTION(REQ_REDIS_LPOS)                                                       \
   ACTION(REQ_REDIS_PING)                                                       \
   ACTION(REQ_REDIS_ECHO)                                                       \
   ACTION(REQ_REDIS_QUIT)                                                       \
@@ -156,6 +161,7 @@
   ACTION(REQ_REDIS_SINTER)                                                     \
   ACTION(REQ_REDIS_SINTERSTORE)                                                \
   ACTION(REQ_REDIS_SISMEMBER)                                                  \
+  ACTION(REQ_REDIS_SMISMEMBER)                                                 \
   ACTION(REQ_REDIS_SLAVEOF)                                                    \
   ACTION(REQ_REDIS_SMEMBERS)                                                   \
   ACTION(REQ_REDIS_SMOVE)                                                      \
@@ -184,6 +190,9 @@
   ACTION(REQ_REDIS_ZREVRANGEBYSCORE)                                           \
   ACTION(REQ_REDIS_ZREVRANK)                                                   \
   ACTION(REQ_REDIS_ZSCORE)                                                     \
+  ACTION(REQ_REDIS_ZMSCORE)                                                    \
+  ACTION(REQ_REDIS_ZPOPMIN)                                                    \
+  ACTION(REQ_REDIS_ZPOPMAX)                                                    \
   ACTION(REQ_REDIS_ZUNIONSTORE)                                                \
   ACTION(REQ_REDIS_ZSCAN)                                                      \
   ACTION(REQ_REDIS_EVAL) /* redis requests - eval */                           \

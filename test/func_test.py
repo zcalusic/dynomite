@@ -591,6 +591,67 @@ def run_delifeq_echo_test(c):
     print("\t-ECHO answered as by the datastore; DELIFEQ deleted the key in "
           "all %d racks, and kept the one with another value" % num_racks)
 
+def run_single_key_commands_test(c):
+    """Checks GETEX, GETDEL, EXPIRETIME, PEXPIRETIME, LPOS, SMISMEMBER,
+    ZMSCORE, ZPOPMIN and ZPOPMAX (Redis 6.2 and 7) against the standalone
+    datastore, and that every rack's datastore holds the same result of the
+    writes: the TTL GETEX set, no key GETDEL took, the members ZPOPMIN and
+    ZPOPMAX left."""
+    print("Running SINGLE_KEY_COMMANDS test")
+    def key(name):
+        # One hash tag, so that all the keys are on one node in every rack.
+        return '{SINGLE_KEY_COMMANDS}' + name
+    at = 4102444800  # 2100-01-01
+    run = lambda *args: c.run_verify('execute_command', *args)
+    def check(want, *args):
+        got = run(*args)
+        assert got == want, (args, got, want)
+    run('SET', key('getex'), 'v')
+    check(b'v', 'GETEX', key('getex'), 'EXAT', at)
+    check(at, 'EXPIRETIME', key('getex'))
+    check(b'v', 'GETEX', key('getex'), 'PERSIST')
+    check(-1, 'PEXPIRETIME', key('getex'))
+    check(b'v', 'GETEX', key('getex'), 'PXAT', at * 1000 + 500)
+    check(at * 1000 + 500, 'PEXPIRETIME', key('getex'))
+    check(-2, 'EXPIRETIME', key('none'))
+    run('SET', key('getdel'), 'v')
+    check(b'v', 'GETDEL', key('getdel'))
+    check(None, 'GETDEL', key('getdel'))
+    run('RPUSH', key('list'), 'a', 'b', 'c', 'a')
+    check(3, 'LPOS', key('list'), 'a', 'RANK', -1)
+    check([0, 3], 'LPOS', key('list'), 'a', 'COUNT', 0)
+    run('SADD', key('set'), 'a', 'b')
+    check([1, 0], 'SMISMEMBER', key('set'), 'a', 'x')
+    run('ZADD', key('zset'), 1, 'a', 2, 'b', 3, 'c', 4, 'd')
+    check([1.0, None], 'ZMSCORE', key('zset'), 'a', 'x')
+    check([b'a', b'1'], 'ZPOPMIN', key('zset'))
+    check([b'd', b'4', b'c', b'3'], 'ZPOPMAX', key('zset'), 2)
+
+    standalone = c.standalone_redis.get_connection()
+    expected = (standalone.execute_command('PEXPIRETIME', key('getex')),
+                standalone.exists(key('getdel')),
+                standalone.zrange(key('zset'), 0, -1, withscores=True))
+    assert expected == (at * 1000 + 500, 0, [(b'b', 2.0)]), expected
+    dyno_cluster = c.get_dynomite_cluster()
+    num_racks = sum(len(racks) for racks in dyno_cluster.counts_by_rack.values())
+    # Replication to other DCs is asynchronous: give it a few seconds.
+    for _ in range(50):
+        replicas = []
+        for node in dyno_cluster.nodes:
+            conn = node.get_data_store_connection()
+            got = (conn.execute_command('PEXPIRETIME', key('getex')),
+                   conn.exists(key('getdel')),
+                   conn.zrange(key('zset'), 0, -1, withscores=True))
+            if conn.exists(key('getex')) or conn.exists(key('zset')):
+                replicas.append(got)
+        if len(replicas) == num_racks and all(r == expected for r in replicas):
+            break
+        time.sleep(0.1)
+    assert len(replicas) == num_racks, (num_racks, replicas)
+    assert all(r == expected for r in replicas), (expected, replicas)
+    print("\t-20 commands answered as by the datastore; %d replicas with the "
+          "same results" % num_racks)
+
 def run_list_pop_test(c):
     """Checks LPOP, RPOP and SRANDMEMBER with a count against Redis, and
     that each rack's redis holds one replica of the list, with the same
@@ -1210,6 +1271,7 @@ def comparison_test(redis, dynomite, debug, node_tests=True):
     run_store_replicas_test(c)
     run_hash_field_expiry_test(c)
     run_delifeq_echo_test(c)
+    run_single_key_commands_test(c)
     run_list_pop_test(c)
     run_random_set_test(c)
     run_multikey_routing_test(c)
