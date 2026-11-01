@@ -186,6 +186,21 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           MAKEFLAGS="-j $(nproc)" test/run_tests.sh ${{ matrix.tests }}
 
+      # On failure: the end of every node's log of the run that failed (the
+      # newest test directory), and on GitHub all the logs as an artifact;
+      # act can't run the upload action in this container.
+      - name: Node logs
+        if: failure()
+        run: test/show_logs.sh
+
+      - name: Upload node logs
+        if: failure() && !env.ACT
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs ${{ matrix.backend.name }} ${{ matrix.part }}
+          path: test_run.*/logs/
+          retention-days: 7
+
   # AddressSanitizer and UndefinedBehaviorSanitizer over the unit and
   # functional tests. Leaks aren't checked: valgrind covers those, and the
   # functional tests kill their nodes. The harness doesn't keep dynomite's
@@ -230,6 +245,18 @@ jobs:
 
       - name: Functional tests
         run: test/run_tests.sh --no-rebuild ${{ matrix.tests }}
+
+      - name: Node logs
+        if: failure()
+        run: test/show_logs.sh
+
+      - name: Upload node logs
+        if: failure() && !env.ACT
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs sanitizers ${{ matrix.part }}
+          path: test_run.*/logs/
+          retention-days: 7
 
       - name: Sanitizer reports
         if: always()
