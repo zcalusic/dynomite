@@ -1,6 +1,8 @@
-## Redis Commands Supported
+## Valkey and Redis Commands Supported
 
-A command that isn't supported, or isn't listed here, gets the error Redis gives for a command it doesn't know (`-ERR unknown command 'XADD', with args beginning with: ...`, or `-ERR unknown subcommand 'LIST'. Try CLIENT HELP.` for CLIENT and SCRIPT), and the connection stays open.
+The commands are the same with Valkey and Redis, which speak the same protocol; the notes below say Redis for both.
+
+A command that isn't supported, or isn't listed here, gets the error Valkey and Redis give for a command it doesn't know (`-ERR unknown command 'XADD', with args beginning with: ...`, or `-ERR unknown subcommand 'LIST'. Try CLIENT HELP.` for CLIENT and SCRIPT), and the connection stays open.
 
 ### Commands with more than one key
 

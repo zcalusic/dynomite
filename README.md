@@ -15,9 +15,19 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/zcalusic/dynomite.svg)](https://hub.docker.com/r/zcalusic/dynomite/)
 [![Apache V2 License](https://img.shields.io/badge/license-Apache%20V2-blue.svg)](LICENSE)
 
-**Dynomite**, inspired by the [Dynamo whitepaper](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf), is a thin, distributed dynamo layer for different storage engines and protocols. Currently these include [Redis](https://redis.io) and [Memcached](https://www.memcached.org/).  Dynomite supports multi-datacenter replication and is designed for high availability.
+**Dynomite**, inspired by the [Dynamo whitepaper](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf), is a thin, distributed dynamo layer for different storage engines and protocols. Currently these include [Valkey](https://valkey.io), [Redis](https://redis.io) and [Memcached](https://www.memcached.org/).  Dynomite supports multi-datacenter replication and is designed for high availability.
 
 The ultimate goal with Dynomite is to be able to implement high availability and cross-datacenter replication on storage engines that do not inherently provide that functionality. The implementation is efficient, not complex (few moving parts), and highly performant.
+
+## Backends
+
+Valkey is now our recommended and default-tested backend in place of Redis. [Valkey](https://valkey.io) is the Linux Foundation fork of Redis 7.2.4 and keeps the permissive BSD-3-Clause license.
+
+Since 2024, Redis is no longer BSD-licensed. Version 8 is offered under RSALv2, SSPLv1 or AGPLv3. As an Apache-2.0 project, we want the backends we recommend, test against and use in our examples to be permissively licensed, so users can adopt the full stack without copyleft or source-available terms to evaluate.
+
+Redis remains fully supported: Valkey and Redis speak the same protocol (RESP), selected with `data_store: 0`, and the configurations in [conf/](conf/) work with either. [CI](https://github.com/zcalusic/dynomite/actions/workflows/ci.yml) runs the functional tests against the latest Valkey and Redis releases and against Debian trixie's packages (Valkey 8.1.1, Redis 8.0.2), the oldest versions tested. Dynomite supports the commands listed in [notes/redis.md](notes/redis.md), on either server; commands added in newer releases, such as hash field expiry (HSETEX, HGETEX, HEXPIRE) or Valkey's DELIFEQ, are not supported yet.
+
+Memcached is supported with a smaller command set and fewer guarantees; see **data_store** under [Configuration](#configuration).
 
 ## Workflow
 
@@ -59,9 +69,11 @@ The unit tests (`src/dyn_test.c`) need no extra dependencies; run them after bui
 
     $ make check
 
-The functional tests start a local cluster of Dynomite and Redis nodes and compare the results of the same commands against Dynomite and a standalone Redis. Install their dependencies (Debian package names):
+The functional tests start a local cluster of Dynomite and Valkey nodes and compare the results of the same commands against Dynomite and a standalone Valkey. Install their dependencies (Debian package names):
 
-    $ sudo apt-get install openssl redis-server python3 python3-plumbum python3-redis python3-requests python3-yaml
+    $ sudo apt-get install openssl valkey-server python3 python3-plumbum python3-redis python3-requests python3-yaml
+
+They run `valkey-server`, or `redis-server` when Valkey isn't installed; to test another server, such as a build from source, set `DYN_TEST_SERVER` to its binary.
 
 Then run them from the repository; this builds Dynomite with debug logs first (`-n` skips the build). Each cluster runs plaintext and with mutual TLS between its nodes (certificates are made on the fly with `openssl`), and `test/tls_test.py` checks what the TLS peer port accepts and rejects:
 
@@ -108,7 +120,7 @@ Dynomite is configured through a YAML 1.1 file (YAML 1.1 is not JSON compatible)
 + **hash**: The hash function used to map keys to tokens. One of one_at_a_time, md5, crc16, crc32, crc32a, fnv1_64, fnv1a_64, fnv1_32, fnv1a_32, hsieh, murmur or jenkins. Defaults to murmur. Keep the default: Dyno's token-aware routing finds a key's node with a Murmur-based partitioner, so it only works with `murmur`. Choose the hash once, before the cluster stores data: changing it on a running cluster maps nearly every key to another token. The other functions come from twemproxy, which offered libmemcached's list so that setups sharding keys in the client could move behind the proxy without remapping them; that doesn't apply to Dynomite's token ring. Avoid `crc32` in particular: it is libmemcached's variant and only gives values from 0 to 32767, so all keys land on a single node (`crc32a` is the standard CRC-32).
 + **hash_tag**: A two-character string, such as `{}`, that selects the part of a key to hash: when a key contains both characters, only the part between them is hashed, so related keys can be kept on the same node. Not set by default.
 + **timeout**: The timeout in msec for establishing a connection to the server or receiving a response from it. Defaults to 5000 msec; must be at least 1.
-+ **data_store**: An integer value that controls whether a server pool speaks redis (0) or memcached (1). Defaults to redis (0). Memcached support covers the ASCII text protocol: get and gets (with several keys, split between the nodes that own them), set, add, replace, append, prepend, cas, incr, decr, delete, touch and quit; the binary and meta protocols and other commands, such as gat, stats or flush_all, are not supported. Keys are sharded and replicated as with Redis, but replies from replicas are not reconciled and there are no read repairs: when the replies disagree, DC_QUORUM returns the first one and the stricter levels return an error. Memcached is also less tested than Redis: the functional tests run against Redis only.
++ **data_store**: An integer value that controls whether a server pool speaks RESP, the protocol of Valkey and Redis (0), or memcached (1). Defaults to 0. Memcached support covers the ASCII text protocol: get and gets (with several keys, split between the nodes that own them), set, add, replace, append, prepend, cas, incr, decr, delete, touch and quit; the binary and meta protocols and other commands, such as gat, stats or flush_all, are not supported. Keys are sharded and replicated as with Valkey and Redis, but replies from replicas are not reconciled and there are no read repairs: when the replies disagree, DC_QUORUM returns the first one and the stricter levels return an error. Memcached is also less tested: the functional tests run against Valkey and Redis only.
 + **server_retry_timeout**: The longest wait in msec between attempts to reconnect to the server: the wait starts at 1 second and doubles after each failure, up to this limit in whole seconds (rounded down), so values below 2000, including 0, reconnect every second. Defaults to 10000 msec.
 + **servers**: A list with the local datastore's address, port and weight (name:port:weight or ip:port:weight) for this server pool. Exactly one is supported; a second entry is a configuration error.
 + **read_consistency**, **write_consistency**: The consistency level for reads and writes: DC_ONE, DC_QUORUM, DC_SAFE_QUORUM or DC_EACH_SAFE_QUORUM (case-insensitive). Both default to DC_ONE. Under the quorum levels, a quorum is more than half of a datacenter's racks sending the same reply; a datacenter can have up to 8 racks, and a node with more in its seeds doesn't start. Please refer to the [consistency document](https://github.com/Netflix/dynomite/wiki/Consistency). Both can also be changed at runtime through the stats_listen REST endpoint (`/set_consistency/read/<level>` and `/set_consistency/write/<level>`); the new level applies to client connections opened after the change.
