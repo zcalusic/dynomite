@@ -402,6 +402,54 @@ def run_incr_replicas_test(c, incrs_per_dc=3):
     assert all(v == expected for v in replicas), (expected, values)
     print("\t-%d replicas, each incremented %d times" % (num_racks, expected))
 
+def run_store_replicas_test(c):
+    """Checks the commands that store their result (SUNIONSTORE, ZINTERSTORE,
+    ZUNIONSTORE, SORT with STORE, GEORADIUS with STORE and GEORADIUSBYMEMBER
+    with STOREDIST) against Redis, and that every rack's datastore holds the
+    stored result. Before, Dynomite took them for reads: with DC_ONE, only
+    the local rack stored it, and with the quorum levels only the local DC."""
+    print("Running STORE_REPLICAS test")
+    def key(name):
+        return '{STORE_REPLICAS}' + name
+    c.run_verify('sadd', key('s1'), 'a', 'b')
+    c.run_verify('sadd', key('s2'), 'b', 'c')
+    c.run_verify('zadd', key('z1'), {'a': 1, 'b': 2})
+    c.run_verify('zadd', key('z2'), {'b': 3, 'c': 4})
+    c.run_verify('rpush', key('l'), 3, 1, 2)
+    c.run_verify('execute_command', 'GEOADD', key('geo'), 13.36, 38.11,
+                 'palermo', 15.08, 37.50, 'catania')
+    stores = [
+        ('SUNIONSTORE', key('su'), key('s1'), key('s2')),
+        ('ZINTERSTORE', key('zi'), 2, key('z1'), key('z2')),
+        ('ZUNIONSTORE', key('zu'), 2, key('z1'), key('z2')),
+        ('SORT', key('l'), 'STORE', key('sorted')),
+        ('GEORADIUS', key('geo'), 15, 37, 200, 'km', 'STORE', key('gr')),
+        ('GEORADIUSBYMEMBER', key('geo'), 'palermo', 200, 'km', 'STOREDIST',
+         key('grd')),
+    ]
+    for args in stores:
+        c.run_verify('execute_command', *args)
+    dests = [key(name) for name in ('su', 'zi', 'zu', 'sorted', 'gr', 'grd')]
+    standalone = c.standalone_redis.get_connection()
+    expected = {dest: standalone.dump(dest) for dest in dests}
+    dyno_cluster = c.get_dynomite_cluster()
+    num_racks = sum(len(racks) for racks in dyno_cluster.counts_by_rack.values())
+    # Replication to other DCs is asynchronous: give it a few seconds.
+    for _ in range(50):
+        missing = {}
+        for dest in dests:
+            values = [node.get_data_store_connection().dump(dest)
+                      for node in dyno_cluster.nodes]
+            replicas = [v for v in values if v == expected[dest]]
+            if len(replicas) != num_racks:
+                missing[dest] = len(replicas)
+        if not missing:
+            break
+        time.sleep(0.1)
+    assert not missing, ("replicas of %d racks" % num_racks, missing)
+    print("\t-%d stored results, each in all %d racks" % (len(dests),
+                                                           num_racks))
+
 def run_list_pop_test(c):
     """Checks LPOP, RPOP and SRANDMEMBER with a count against Redis, and
     that each rack's redis holds one replica of the list, with the same
@@ -1018,6 +1066,7 @@ def comparison_test(redis, dynomite, debug, node_tests=True):
     run_script_tests(c)
     run_encrypted_peer_msg_test(c)
     run_incr_replicas_test(c)
+    run_store_replicas_test(c)
     run_list_pop_test(c)
     run_random_set_test(c)
     run_multikey_routing_test(c)

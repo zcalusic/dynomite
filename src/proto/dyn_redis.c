@@ -894,7 +894,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
 
             if (str3icmp(m, 't', 't', 'l')) {
               r->type = MSG_REQ_REDIS_TTL;
-              r->is_read = 0;
+              r->is_read = 1;
               break;
             }
 
@@ -1621,14 +1621,14 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             if (str11icmp(m, 's', 'u', 'n', 'i', 'o', 'n', 's', 't', 'o', 'r',
                           'e')) {
               r->type = MSG_REQ_REDIS_SUNIONSTORE;
-              r->is_read = 1;
+              r->is_read = 0;
               break;
             }
 
             if (str11icmp(m, 'z', 'i', 'n', 't', 'e', 'r', 's', 't', 'o', 'r',
                           'e')) {
               r->type = MSG_REQ_REDIS_ZINTERSTORE;
-              r->is_read = 1;
+              r->is_read = 0;
               break;
             }
 
@@ -1642,7 +1642,7 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             if (str11icmp(m, 'z', 'u', 'n', 'i', 'o', 'n', 's', 't', 'o', 'r',
                           'e')) {
               r->type = MSG_REQ_REDIS_ZUNIONSTORE;
-              r->is_read = 1;
+              r->is_read = 0;
               break;
             }
 
@@ -3854,7 +3854,8 @@ static bool redis_arg_is(const struct argpos *arg, const char *word) {
  * ZUNIONSTORE's destination, and the STORE (and STOREDIST) destinations of
  * SORT and GEORADIUS. Options are read as Redis reads them, up to one it
  * doesn't know; SORT's BY and GET patterns name other keys too, which can't
- * be checked.
+ * be checked. SORT and GEORADIUS with a destination become writes, so that
+ * the result is stored in every rack.
  */
 static void redis_flag_key_args(struct msg *r, bool *is_key) {
   uint32_t n = array_n(r->args), i, first = 0;
@@ -3897,6 +3898,7 @@ static void redis_flag_key_args(struct msg *r, bool *is_key) {
         } else if (redis_arg_is(arg, "LIMIT")) {
           i += 2;
         } else if (redis_arg_is(arg, "STORE")) {
+          r->is_read = 0;
           if (i + 1 < n) is_key[++i] = true;
         } else if (!redis_arg_is(arg, "ASC") && !redis_arg_is(arg, "DESC") &&
                    !redis_arg_is(arg, "ALPHA")) {
@@ -3915,6 +3917,7 @@ static void redis_flag_key_args(struct msg *r, bool *is_key) {
           i++;
         } else if (redis_arg_is(arg, "STORE") ||
                    redis_arg_is(arg, "STOREDIST")) {
+          r->is_read = 0;
           if (i + 1 < n) is_key[++i] = true;
         } else if (!redis_arg_is(arg, "WITHCOORD") &&
                    !redis_arg_is(arg, "WITHDIST") &&
