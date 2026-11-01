@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
+import os
 import redis
 from node import Node
 
 from plumbum import BG
 from plumbum import local
 
-redis_bin = local.get('./test/_binaries/redis-server', 'redis-server')
+# The datastore server the tests run: $DYN_TEST_SERVER if set, else the
+# first of test/_binaries/redis-server, valkey-server and redis-server.
+if os.environ.get('DYN_TEST_SERVER'):
+    redis_bin = local.get(os.environ['DYN_TEST_SERVER'])
+else:
+    redis_bin = local.get('./test/_binaries/redis-server', 'valkey-server',
+                          'redis-server')
 
 class RedisNode(Node):
     def __init__(self, ip, port):
@@ -39,3 +46,7 @@ class RedisNode(Node):
 
     def __exit__(self, type_, value, traceback):
         self.teardown()
+
+if __name__ == '__main__':
+    print('Datastore server: {} ({})'.format(
+        redis_bin, redis_bin('--version').strip()))

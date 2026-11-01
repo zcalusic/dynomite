@@ -45,6 +45,8 @@ else
     echo "not rebuilding Dynomite"
 fi
 
+test/redis_node.py
+
 # The tests that don't depend on the cluster run in the first run only.
 skip_node_tests=()
 for t in "$@"; do
