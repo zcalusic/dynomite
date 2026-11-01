@@ -106,15 +106,36 @@ jobs:
       - name: Unit tests
         run: make -j "$(nproc)" check VERBOSE=1 CFLAGS="-g -O2 -Werror"
 
-  # The functional tests in parallel parts, the asan job in the same ones.
+  # The functional tests in parallel parts, against each datastore backend:
+  # the latest Valkey and Redis releases, built from pinned source tarballs,
+  # and trixie's packages as the oldest versions tested. The asan job runs
+  # the same parts against trixie's Valkey.
   test:
-    name: Functional tests (${{ matrix.part }})
+    name: Functional tests (${{ matrix.backend.name }}, ${{ matrix.part }})
     runs-on: ubuntu-latest
-    strategy: &functional-parts
-      # Every part runs to the end, whichever fails.
+    strategy:
+      # Every job runs to the end, whichever fails.
       fail-fast: false
       matrix:
-        include:
+        backend:
+          - name: Valkey 9.1.3
+            url: https://github.com/valkey-io/valkey/archive/refs/tags/9.1.3.tar.gz
+            sha256: 184e34ed2d9b51879b682b5b15205e2b9d677c60280e3cb453be8f520d04e293
+            packages: ca-certificates curl
+            server: /opt/backend/bin/valkey-server
+          - name: Redis 8.10.3
+            url: https://github.com/redis/redis/archive/refs/tags/8.10.3.tar.gz
+            sha256: 85ae62e175cc76f638015fa18cb384b549b6808a765425d9e9d47466f69532ea
+            packages: ca-certificates curl
+            server: /opt/backend/bin/redis-server
+          - name: Valkey trixie
+            packages: valkey-server
+            server: valkey-server
+          - name: Redis trixie
+            packages: redis-server
+            server: redis-server
+        part: [no_quorum, safe_quorum, each_safe_quorum, tls and seeds]
+        include: &functional-parts
           - part: no_quorum
             tests: test/no_quorum_request.yaml
           - part: safe_quorum
@@ -124,18 +145,41 @@ jobs:
           - part: tls and seeds
             tests: test/tls_test.py test/seed_test.py
     container: zcalusic/debian-trixie
+    env:
+      DYN_TEST_SERVER: ${{ matrix.backend.server }}
     steps:
       - name: Install dependencies
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
             automake gcc git libc6-dev libssl-dev libyaml-dev make \
-            openssl redis-server python3 python3-plumbum python3-redis \
-            python3-requests python3-yaml
+            openssl python3 python3-plumbum python3-redis \
+            python3-requests python3-yaml ${{ matrix.backend.packages }}
 
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      # The builds take 1.5-3 min on GitHub's runners, so they're cached, per
+      # tarball. act can't run the cache action in this container (no
+      # node), so it builds every time.
+      - name: Cache backend
+        id: cache-backend
+        if: matrix.backend.url && !env.ACT
+        uses: actions/cache@v6
+        with:
+          path: /opt/backend
+          key: backend-trixie-${{ matrix.backend.sha256 }}
+
+      - name: Build backend
+        if: matrix.backend.url && steps.cache-backend.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSLo /tmp/backend.tar.gz "${{ matrix.backend.url }}"
+          echo "${{ matrix.backend.sha256 }}  /tmp/backend.tar.gz" | sha256sum -c
+          mkdir /tmp/backend
+          tar -xzf /tmp/backend.tar.gz -C /tmp/backend --strip-components=1
+          make -C /tmp/backend -j "$(nproc)" BUILD_TLS=no
+          make -C /tmp/backend install PREFIX=/opt/backend
 
       - name: Run functional tests
         run: |
@@ -149,9 +193,13 @@ jobs:
   asan:
     name: Sanitizers (${{ matrix.part }})
     runs-on: ubuntu-latest
-    strategy: *functional-parts
+    strategy:
+      fail-fast: false
+      matrix:
+        include: *functional-parts
     container: zcalusic/debian-trixie
     env:
+      DYN_TEST_SERVER: valkey-server
       ASAN_OPTIONS: detect_leaks=0:log_path=/tmp/sanitizer/asan
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1:log_path=/tmp/sanitizer/ubsan
       SANITIZER_CFLAGS: -g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined
@@ -162,8 +210,8 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             automake gcc git libc6-dev libssl-dev libyaml-dev make \
-            openssl redis-server python3 python3-plumbum python3-redis \
-            python3-requests python3-yaml
+            openssl python3 python3-plumbum python3-redis python3-requests \
+            python3-yaml valkey-server
 
       - uses: actions/checkout@v7
         with:
