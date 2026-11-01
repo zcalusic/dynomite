@@ -252,6 +252,13 @@ def run_read_repair_test(c, num_keys=10, min_size=1, max_size=1024):
     run_zadd_tests(c, create_key(test_name, "_zadd_%d" % max_size))
     run_multi_field_hset_tests(c, create_key(test_name, "_hset_%d" % max_size))
 
+    # Commands without repair support pass through unchanged. These are the
+    # last in Dynomite's list of commands: the table of repair support
+    # used to end before them, and looking them up read past its end.
+    c.run_verify("script_exists", "0" * 40)
+    c.run_verify("select", 0)
+    assert c.run_dynomite_only("dbsize") >= 0
+
     print("\t-Simulating partial update to key '%s'" % key)
     # Below, we simulate a partial write by updating the value of 'key' on only
     # one replica, and updating its timestamp on that replica.

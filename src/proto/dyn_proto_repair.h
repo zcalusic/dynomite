@@ -494,6 +494,6 @@ struct cmd_info {
   msg_type_t repair_by_rem;
 };
 
-extern struct cmd_info proto_cmd_info[];
+extern struct cmd_info proto_cmd_info[MSG_END_IDX];
 
 #endif
