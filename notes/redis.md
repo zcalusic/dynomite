@@ -8,6 +8,16 @@ A command that isn't supported, or isn't listed here, gets the error Valkey and 
 
 MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on any nodes. The other commands with more than one key (RPOPLPUSH, SMOVE, SDIFF, SINTER, SUNION and their STORE forms, ZINTERSTORE, ZUNIONSTORE, PFCOUNT, JSON.MGET, EVAL and EVALSHA, and SORT and GEORADIUS with STORE or STOREDIST) go whole to the node of their first key, so all their keys must be on that node, in every rack: give them the same [hash tag](recommendation.md#hash-tags). Dynomite refuses a request whose keys are on different nodes with `-ERR Dynomite: Keys in the request cannot span multiple nodes, use a hash tag` (`Keys in the script ...` for EVAL and EVALSHA), without running it. With one node per rack, every key is on that node. The keys in SORT's BY and GET patterns aren't checked.
 
+### Commands of newer releases
+
+Some supported commands exist only in newer datastores: the hash field expiry commands HEXPIRE, HPEXPIRE, HEXPIREAT, HPEXPIREAT, HPERSIST, HTTL, HPTTL, HEXPIRETIME and HPEXPIRETIME since Redis 7.4, HSETEX, HGETEX and HGETDEL since Redis 8, all of them in Valkey 9; DELIFEQ in Valkey 9 only; GETEX, GETDEL, LPOS, SMISMEMBER and ZMSCORE since Redis 6.2, EXPIRETIME and PEXPIRETIME since Redis 7, and all of these in every Valkey. Dynomite passes them on, and a datastore that doesn't have one refuses it with its unknown command error. Upgrade all the datastores of a cluster before using such a command: while some have it and others don't, a write runs on some replicas and is refused on the others.
+
+GETEX and HGETEX can set or remove TTLs, so they are writes, under the write consistency level, also without options. ZPOPMIN and ZPOPMAX pop the same members on every replica, so unlike SPOP they work with any number of racks.
+
+TTLs set with a relative time (EX, PX, EXPIRE, HEXPIRE, HPEXPIRE and the like) start when each replica runs the write, a few milliseconds apart, so replies in milliseconds (PTTL, PEXPIRETIME, HPTTL, HPEXPIRETIME) can differ between replicas, and a read at DC_QUORUM or a stricter level can fail to reach a quorum. Absolute times (EXAT, PXAT, EXPIREAT, HEXPIREAT and the like) give every replica the same expiry.
+
+Read repairs cover only the commands that record timestamps (GET, SET, DEL, HGET, HSET, HMSET, HDEL, SISMEMBER, SADD, SREM, ZSCORE, ZADD, ZREM). The others' writes, these included, carry none: with read repairs enabled, a key or field that GETDEL, HGETDEL, DELIFEQ or an expiry removed on one replica can be repaired back, without its TTL, from a replica that still has it.
+
 ### Keys Command
 
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -23,6 +33,8 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |     EXPIREAT      |    Yes     | EXPIREAT key timestamp [NX | XX | GT | LT]                                                                          |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |     EXPIRETIME    |    Yes     | EXPIRETIME key                                                                                                      |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |       KEYS        |    Yes*     | KEYS pattern                                                                                                        |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      MIGRATE      |    No      | MIGRATE host port key destination-db timeout                                                                        |
@@ -36,6 +48,8 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
     |      PEXPIRE      |    Yes     | PEXPIRE key milliseconds [NX | XX | GT | LT]                                                                        |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |     PEXPIREAT     |    Yes     | PEXPIREAT key milliseconds-timestamp [NX | XX | GT | LT]                                                            |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |    PEXPIRETIME    |    Yes     | PEXPIRETIME key                                                                                                     |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      PTTL         |    Yes     | PTTL key                                                                                                            |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -79,9 +93,15 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      DECRBY       |    Yes     | DECRBY key decrement                                                                                                |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      DELIFEQ      |    Yes     | DELIFEQ key value                                                                                                   |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |       GET         |    Yes     | GET key                                                                                                             |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      GETBIT       |    Yes     | GETBIT key offset                                                                                                   |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |       GETDEL      |    Yes     | GETDEL key                                                                                                          |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |       GETEX       |    Yes     | GETEX key [EX seconds | PX milliseconds | EXAT unix-time | PXAT unix-time-ms | PERSIST]                             |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |     GETRANGE      |    Yes     | GETRANGE key start end                                                                                              |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -123,9 +143,19 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      HEXISTS      |    Yes     | HEXISTS key field                                                                                                   |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      HEXPIRE      |    Yes     | HEXPIRE key seconds [NX | XX | GT | LT] FIELDS numfields field [field …]                                            |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |     HEXPIREAT     |    Yes     | HEXPIREAT key unix-time [NX | XX | GT | LT] FIELDS numfields field [field …]                                        |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |    HEXPIRETIME    |    Yes     | HEXPIRETIME key FIELDS numfields field [field …]                                                                    |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |       HGET        |    Yes     | HGET key field                                                                                                      |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      HGETALL      |    Yes     | HGETALL key                                                                                                         |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      HGETDEL      |    Yes     | HGETDEL key FIELDS numfields field [field …]                                                                        |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |       HGETEX      |    Yes     | HGETEX key [EX seconds | PX ms | EXAT unix-time | PXAT unix-time-ms | PERSIST] FIELDS numfields field [field …]     |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      HINCRBY      |    Yes     | HINCRBY key field increment                                                                                         |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -139,9 +169,23 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      HMSET        |    Yes     | HMSET key field value [field value ...]                                                                             |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      HPERSIST     |    Yes     | HPERSIST key FIELDS numfields field [field …]                                                                       |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      HPEXPIRE     |    Yes     | HPEXPIRE key milliseconds [NX | XX | GT | LT] FIELDS numfields field [field …]                                      |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |     HPEXPIREAT    |    Yes     | HPEXPIREAT key unix-time-ms [NX | XX | GT | LT] FIELDS numfields field [field …]                                    |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |    HPEXPIRETIME   |    Yes     | HPEXPIRETIME key FIELDS numfields field [field …]                                                                   |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |       HPTTL       |    Yes     | HPTTL key FIELDS numfields field [field …]                                                                          |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      HSET         |    Yes     | HSET key field value                                                                                                |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |       HSETEX      |    Yes     | HSETEX key [FNX | FXX] [EX s | PX ms | EXAT t | PXAT t | KEEPTTL] FIELDS numfields field value [field value …]      |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      HSETNX       |    Yes     | HSETNX key field value                                                                                              |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |        HTTL       |    Yes     | HTTL key FIELDS numfields field [field …]                                                                           |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      HVALS        |    Yes     | HVALS key                                                                                                           |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -164,6 +208,8 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
     |      LLEN         |    Yes     | LLEN key                                                                                                            |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      LPOP         |    Yes     | LPOP key [count]                                                                                                    |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |        LPOS       |    Yes     | LPOS key element [RANK rank] [COUNT num-matches] [MAXLEN len]                                                       |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      LPUSH        |    Yes     | LPUSH key value [value ...]                                                                                         |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -209,6 +255,8 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |     SMEMBERS      |    Yes     | SMEMBERS key                                                                                                        |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |     SMISMEMBER    |    Yes     | SMISMEMBER key member [member …]                                                                                    |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      SMOVE        |    Yes*    | SMOVE source destination member                                                                                     |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      SPOP         |    Yes***  | SPOP key [count]                                                                                                    |
@@ -246,6 +294,12 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
     |     ZINTERSTORE   |    Yes*    | ZINTERSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX]                 |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |     ZLEXCOUNT     |    Yes     | ZLEXCOUNT key min max                                                                                               |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      ZMSCORE      |    Yes     | ZMSCORE key member [member …]                                                                                       |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      ZPOPMAX      |    Yes     | ZPOPMAX key [count]                                                                                                 |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      ZPOPMIN      |    Yes     | ZPOPMIN key [count]                                                                                                 |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      ZRANGE       |    Yes     | ZRANGE key start stop [WITHSCORES]                                                                                  |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -357,7 +411,7 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |       AUTH        |    No      | AUTH password                                                                                                       |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
-    |       ECHO        |    No      | ECHO message                                                                                                        |
+    |       ECHO        |   YES***   | ECHO message                                                                                                        |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |       PING        |    YES*    | PING                                                                                                                |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -369,6 +423,8 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
 * inline PING is also supported and runs locally only.
 
 ** only database 0 exists: SELECT 0 is answered locally with +OK, any other index with the error Redis gives for it.
+
+*** ECHO goes to the local datastore, like PING.
 
 ### Server
 
