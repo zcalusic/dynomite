@@ -117,6 +117,18 @@
   ACTION(REQ_REDIS_HSCAN)                                                      \
   ACTION(REQ_REDIS_HVALS)                                                      \
   ACTION(REQ_REDIS_HSTRLEN)                                                    \
+  ACTION(REQ_REDIS_HSETEX)                                                     \
+  ACTION(REQ_REDIS_HGETEX)                                                     \
+  ACTION(REQ_REDIS_HGETDEL)                                                    \
+  ACTION(REQ_REDIS_HEXPIRE)                                                    \
+  ACTION(REQ_REDIS_HPEXPIRE)                                                   \
+  ACTION(REQ_REDIS_HEXPIREAT)                                                  \
+  ACTION(REQ_REDIS_HPEXPIREAT)                                                 \
+  ACTION(REQ_REDIS_HPERSIST)                                                   \
+  ACTION(REQ_REDIS_HTTL)                                                       \
+  ACTION(REQ_REDIS_HPTTL)                                                      \
+  ACTION(REQ_REDIS_HEXPIRETIME)                                                \
+  ACTION(REQ_REDIS_HPEXPIRETIME)                                               \
   ACTION(REQ_REDIS_KEYS)                                                       \
   ACTION(REQ_REDIS_INFO)                                                       \
   ACTION(REQ_REDIS_LINDEX) /* redis requests - lists */                        \

@@ -302,6 +302,18 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_HMSET:
     case MSG_REQ_REDIS_HSET:
     case MSG_REQ_REDIS_HSCAN:
+    case MSG_REQ_REDIS_HSETEX:
+    case MSG_REQ_REDIS_HGETEX:
+    case MSG_REQ_REDIS_HGETDEL:
+    case MSG_REQ_REDIS_HEXPIRE:
+    case MSG_REQ_REDIS_HPEXPIRE:
+    case MSG_REQ_REDIS_HEXPIREAT:
+    case MSG_REQ_REDIS_HPEXPIREAT:
+    case MSG_REQ_REDIS_HPERSIST:
+    case MSG_REQ_REDIS_HTTL:
+    case MSG_REQ_REDIS_HPTTL:
+    case MSG_REQ_REDIS_HEXPIRETIME:
+    case MSG_REQ_REDIS_HPEXPIRETIME:
 
     case MSG_REQ_REDIS_LPOP: /* key [count] */
     case MSG_REQ_REDIS_LPUSH:
@@ -382,6 +394,20 @@ static uint32_t redis_argn_min(struct msg *r) {
       return 1;
     case MSG_REQ_REDIS_RESTORE: /* key ttl value [REPLACE] [ABSTTL] ... */
       return 2;
+    case MSG_REQ_REDIS_HGETEX:       /* key [opts] FIELDS n field ... */
+    case MSG_REQ_REDIS_HGETDEL:      /* key FIELDS n field ... */
+    case MSG_REQ_REDIS_HPERSIST:     /* key FIELDS n field ... */
+    case MSG_REQ_REDIS_HTTL:         /* key FIELDS n field ... */
+    case MSG_REQ_REDIS_HPTTL:        /* key FIELDS n field ... */
+    case MSG_REQ_REDIS_HEXPIRETIME:  /* key FIELDS n field ... */
+    case MSG_REQ_REDIS_HPEXPIRETIME: /* key FIELDS n field ... */
+      return 3;
+    case MSG_REQ_REDIS_HSETEX:     /* key [opts] FIELDS n field value ... */
+    case MSG_REQ_REDIS_HEXPIRE:    /* key secs [cond] FIELDS n field ... */
+    case MSG_REQ_REDIS_HPEXPIRE:   /* key ms [cond] FIELDS n field ... */
+    case MSG_REQ_REDIS_HEXPIREAT:  /* key time [cond] FIELDS n f ... */
+    case MSG_REQ_REDIS_HPEXPIREAT: /* key ms-time [cond] FIELDS n f */
+      return 4;
     default:
       return 0;
   }
@@ -907,6 +933,12 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 4:
+            if (str4icmp(m, 'h', 't', 't', 'l')) {
+              r->type = MSG_REQ_REDIS_HTTL;
+              r->is_read = 1;
+              break;
+            }
+
             if (str4icmp(m, 'p', 't', 't', 'l')) {
               r->type = MSG_REQ_REDIS_PTTL;
               r->is_read = 1;
@@ -1087,6 +1119,12 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 5:
+            if (str5icmp(m, 'h', 'p', 't', 't', 'l')) {
+              r->type = MSG_REQ_REDIS_HPTTL;
+              r->is_read = 1;
+              break;
+            }
+
             if (str5icmp(m, 'h', 'k', 'e', 'y', 's')) {
               r->type = MSG_REQ_REDIS_HKEYS;
               r->msg_routing = ROUTING_TOKEN_OWNER_LOCAL_RACK_ONLY;
@@ -1212,6 +1250,20 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 6:
+            if (str6icmp(m, 'h', 'g', 'e', 't', 'e', 'x')) {
+              // A read that can set or remove the fields' TTLs: a write, so
+              // that every replica's TTLs change alike.
+              r->type = MSG_REQ_REDIS_HGETEX;
+              r->is_read = 0;
+              break;
+            }
+
+            if (str6icmp(m, 'h', 's', 'e', 't', 'e', 'x')) {
+              r->type = MSG_REQ_REDIS_HSETEX;
+              r->is_read = 0;
+              break;
+            }
+
             if (str6icmp(m, 'a', 'p', 'p', 'e', 'n', 'd')) {
               r->type = MSG_REQ_REDIS_APPEND;
               r->is_read = 0;
@@ -1394,6 +1446,18 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 7:
+            if (str7icmp(m, 'h', 'e', 'x', 'p', 'i', 'r', 'e')) {
+              r->type = MSG_REQ_REDIS_HEXPIRE;
+              r->is_read = 0;
+              break;
+            }
+
+            if (str7icmp(m, 'h', 'g', 'e', 't', 'd', 'e', 'l')) {
+              r->type = MSG_REQ_REDIS_HGETDEL;
+              r->is_read = 0;
+              break;
+            }
+
             if (str7icmp(m, 'p', 'e', 'r', 's', 'i', 's', 't')) {
               r->type = MSG_REQ_REDIS_PERSIST;
               r->is_read = 0;
@@ -1479,6 +1543,18 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 8:
+            if (str8icmp(m, 'h', 'p', 'e', 'r', 's', 'i', 's', 't')) {
+              r->type = MSG_REQ_REDIS_HPERSIST;
+              r->is_read = 0;
+              break;
+            }
+
+            if (str8icmp(m, 'h', 'p', 'e', 'x', 'p', 'i', 'r', 'e')) {
+              r->type = MSG_REQ_REDIS_HPEXPIRE;
+              r->is_read = 0;
+              break;
+            }
+
             if (str8icmp(m, 'e', 'x', 'p', 'i', 'r', 'e', 'a', 't')) {
               r->type = MSG_REQ_REDIS_EXPIREAT;
               r->is_read = 0;
@@ -1535,6 +1611,12 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 9:
+            if (str9icmp(m, 'h', 'e', 'x', 'p', 'i', 'r', 'e', 'a', 't')) {
+              r->type = MSG_REQ_REDIS_HEXPIREAT;
+              r->is_read = 0;
+              break;
+            }
+
             if (str9icmp(m, 'p', 'e', 'x', 'p', 'i', 'r', 'e', 'a', 't')) {
               r->type = MSG_REQ_REDIS_PEXPIREAT;
               r->is_read = 0;
@@ -1585,6 +1667,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 10:
+            if (str10icmp(m, 'h', 'p', 'e', 'x', 'p', 'i', 'r', 'e', 'a',
+                          't')) {
+              r->type = MSG_REQ_REDIS_HPEXPIREAT;
+              r->is_read = 0;
+              break;
+            }
+
             if (str10icmp(m, 's', 'd', 'i', 'f', 'f', 's', 't', 'o', 'r',
                           'e')) {
               r->type = MSG_REQ_REDIS_SDIFFSTORE;
@@ -1595,6 +1684,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 11:
+            if (str11icmp(m, 'h', 'e', 'x', 'p', 'i', 'r', 'e', 't', 'i', 'm',
+                          'e')) {
+              r->type = MSG_REQ_REDIS_HEXPIRETIME;
+              r->is_read = 1;
+              break;
+            }
+
             if (str11icmp(m, 'i', 'n', 'c', 'r', 'b', 'y', 'f', 'l', 'o', 'a',
                           't')) {
               r->type = MSG_REQ_REDIS_INCRBYFLOAT;
@@ -1663,6 +1759,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 12:
+            if (str12icmp(m, 'h', 'p', 'e', 'x', 'p', 'i', 'r', 'e', 't', 'i',
+                          'm', 'e')) {
+              r->type = MSG_REQ_REDIS_HPEXPIRETIME;
+              r->is_read = 1;
+              break;
+            }
+
             if (str12icmp(m, 'h', 'i', 'n', 'c', 'r', 'b', 'y', 'f', 'l', 'o',
                           'a', 't')) {
               r->type = MSG_REQ_REDIS_HINCRBYFLOAT;

@@ -174,6 +174,7 @@ def run_hash_tests(c, max_keys=10, max_fields=1000):
     c.run_verify("hkeys", key)
     key, _ = create_key_field()
     c.run_verify("hvals", key)
+    c.set_sort_before_compare(False)
 
     # TODO: Still have ordering issues with HSCAN. Find another way to test.
     # finally do a hscan
@@ -456,6 +457,100 @@ def run_store_replicas_test(c):
     assert not missing, ("replicas of %d racks" % num_racks, missing)
     print("\t-%d stored results, each in all %d racks" % (len(dests),
                                                            num_racks))
+
+def has_command(conn, name):
+    """Whether the datastore behind conn knows the command."""
+    return name.lower() in [n.decode() if isinstance(n, bytes) else n
+                            for n in conn.command_list()]
+
+def raw_replies(c, commands):
+    """Sends the commands as one pipeline to the standalone datastore and to a
+    Dynomite node, followed by a GET of a missing key, and returns both raw
+    replies, read up to that GET's nil."""
+    node = c.get_dynomite_cluster().nodes[0]
+    standalone = c.standalone_redis
+    end = create_key('RAW_REPLIES', 'missing').encode()
+    pipeline = b''.join(
+        b'*%d\r\n' % len(args) +
+        b''.join(b'$%d\r\n%s\r\n' % (len(a), a) for a in args)
+        for args in [[str(a).encode() for a in cmd] for cmd in commands] +
+        [[b'GET', end]])
+    replies = []
+    for ip, port in [(standalone.ip, standalone.port), (node.ip, node.port)]:
+        with socket.create_connection((ip, port), timeout=2) as s:
+            s.sendall(pipeline)
+            received = b''
+            while not received.endswith(b'$-1\r\n'):
+                data = s.recv(4096)
+                if not data:
+                    break
+                received += data
+        replies.append(received)
+    return replies
+
+def run_hash_field_expiry_test(c):
+    """Checks the hash field expiry commands (HSETEX, HGETEX, HGETDEL,
+    HEXPIRE, HPEXPIRE, HEXPIREAT, HPEXPIREAT, HPERSIST, HTTL, HPTTL,
+    HEXPIRETIME, HPEXPIRETIME; Redis 7.4 and 8, Valkey 9) against the
+    standalone datastore, and that every rack's datastore holds the same
+    fields with the same expiry times. With absolute times, the replies are
+    the same on every replica. A datastore without them refuses them, and
+    Dynomite passes its error on."""
+    print("Running HASH_FIELD_EXPIRY test")
+    h = create_key('HASH_FIELD_EXPIRY', '{h}')
+    standalone = c.standalone_redis.get_connection()
+    if not has_command(standalone, 'HSETEX'):
+        replies = raw_replies(c, [('HSETEX', h, 'FIELDS', 1, 'f', 'v'),
+                                  ('HTTL', h, 'FIELDS', 1, 'f')])
+        assert replies[0] == replies[1], replies
+        print("\t-Not in this datastore: refused as by the datastore")
+        return
+    at = 4102444800  # 2100-01-01
+    run = lambda *args: c.run_verify('execute_command', *args)
+    def check(want, *args):
+        got = run(*args)
+        assert got == want, (args, got, want)
+    run('HSET', h, 'f1', 'v1', 'f2', 'v2', 'f3', 'v3', 'f4', 'v4')
+    run('HSETEX', h, 'EXAT', at, 'FIELDS', 2, 'f5', 'v5', 'f6', 'v6')
+    check(0, 'HSETEX', h, 'FNX', 'EX', 100, 'FIELDS', 1, 'f5', 'x')
+    check([1, -2], 'HEXPIREAT', h, at, 'FIELDS', 2, 'f1', 'none')
+    run('HPEXPIREAT', h, at * 1000 + 500, 'NX', 'FIELDS', 1, 'f2')
+    check([at, -1, -2], 'HEXPIRETIME', h, 'FIELDS', 3, 'f1', 'f3', 'none')
+    check([at * 1000 + 500], 'HPEXPIRETIME', h, 'FIELDS', 1, 'f2')
+    check([1], 'HPERSIST', h, 'FIELDS', 1, 'f1')
+    check([-1, -2], 'HTTL', h, 'FIELDS', 2, 'f1', 'none')
+    check([-1], 'HPTTL', h, 'FIELDS', 1, 'f3')
+    check([b'v3'], 'HGETEX', h, 'EXAT', at, 'FIELDS', 1, 'f3')
+    check([b'v4'], 'HGETEX', h, 'FIELDS', 1, 'f4')
+    check([b'v4', None], 'HGETDEL', h, 'FIELDS', 2, 'f4', 'none')
+    check([1], 'HEXPIRE', h, 1000, 'FIELDS', 1, 'f6')
+    check([1], 'HPEXPIRE', h, 2000000, 'GT', 'FIELDS', 1, 'f6')
+    ttl = c.run_dynomite_only('execute_command', 'HTTL', h, 'FIELDS', 1, 'f6')
+    assert 0 < ttl[0] <= 2000, ttl
+
+    fields = ['f1', 'f2', 'f3', 'f5']
+    expected = (standalone.hgetall(h),
+                standalone.execute_command('HPEXPIRETIME', h, 'FIELDS',
+                                           len(fields), *fields))
+    dyno_cluster = c.get_dynomite_cluster()
+    num_racks = sum(len(racks) for racks in dyno_cluster.counts_by_rack.values())
+    # Replication to other DCs is asynchronous: give it a few seconds.
+    for _ in range(50):
+        replicas = []
+        for node in dyno_cluster.nodes:
+            conn = node.get_data_store_connection()
+            got = (conn.hgetall(h),
+                   conn.execute_command('HPEXPIRETIME', h, 'FIELDS',
+                                        len(fields), *fields))
+            if got[0]:
+                replicas.append(got)
+        if len(replicas) == num_racks and all(r == expected for r in replicas):
+            break
+        time.sleep(0.1)
+    assert len(replicas) == num_racks, (num_racks, replicas)
+    assert all(r == expected for r in replicas), (expected, replicas)
+    print("\t-15 commands answered as by the datastore; %d replicas with the "
+          "same fields and expiry times" % num_racks)
 
 def run_list_pop_test(c):
     """Checks LPOP, RPOP and SRANDMEMBER with a count against Redis, and
@@ -1074,6 +1169,7 @@ def comparison_test(redis, dynomite, debug, node_tests=True):
     run_encrypted_peer_msg_test(c)
     run_incr_replicas_test(c)
     run_store_replicas_test(c)
+    run_hash_field_expiry_test(c)
     run_list_pop_test(c)
     run_random_set_test(c)
     run_multikey_routing_test(c)

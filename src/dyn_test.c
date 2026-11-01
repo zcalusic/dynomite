@@ -233,6 +233,7 @@ struct parse_req {
   const char *args; /* space-separated, NULL if not checked */
   bool too_long;    /* a key was skipped as too long (keys has the others) */
   bool wrong_arity; /* a command came with the wrong number of args */
+  char rw;          /* 'r' a read, 'w' a write, 0 not checked */
 };
 
 #define PARSE_DATA_MAX 81920
@@ -299,6 +300,7 @@ static void parse_add_req(struct parse_case *tc, msg_type_t type,
   tc->reqs[tc->nreqs].args = NULL;
   tc->reqs[tc->nreqs].too_long = false;
   tc->reqs[tc->nreqs].wrong_arity = false;
+  tc->reqs[tc->nreqs].rw = 0;
   tc->nreqs++;
 }
 
@@ -323,6 +325,22 @@ static void parse_add_too_long(struct parse_case *tc, msg_type_t type,
                                const char *keys, const char *words) {
   parse_add(tc, type, keys, words);
   tc->reqs[tc->nreqs - 1].too_long = true;
+}
+
+/*
+ * Append a redis request the parser should take for a read, which goes to
+ * the local rack under DC_ONE, or for a write, which goes to every rack.
+ */
+static void parse_add_read(struct parse_case *tc, msg_type_t type,
+                           const char *keys, const char *words) {
+  parse_add(tc, type, keys, words);
+  tc->reqs[tc->nreqs - 1].rw = 'r';
+}
+
+static void parse_add_write(struct parse_case *tc, msg_type_t type,
+                            const char *keys, const char *words) {
+  parse_add(tc, type, keys, words);
+  tc->reqs[tc->nreqs - 1].rw = 'w';
 }
 
 /*
@@ -495,6 +513,13 @@ static rstatus_t parse_check(const struct parse_case *tc, size_t chunk,
               msg_type_string(tc->reqs[i].type)->data, tc->reqs[i].keys);
     return DN_ERROR;
   }
+  if (tc->reqs[i].rw != 0 && msg->is_read != (tc->reqs[i].rw == 'r')) {
+    log_error("%s (mbuf %zu, chunk %zu%s): %s %zu is a %s, want a %s", tc->name,
+              mbuf_data_size(), chunk, parse_mode(), what, i + 1,
+              msg->is_read ? "read" : "write",
+              tc->reqs[i].rw == 'r' ? "read" : "write");
+    return DN_ERROR;
+  }
   if (g_read_repairs_enabled && !tc->response &&
       tc->data_store == DATA_REDIS) {
     return parse_check_args(tc, chunk, i, msg);
@@ -586,7 +611,7 @@ static rstatus_t parse_run(struct conn *conn, const struct parse_case *tc,
   return status;
 }
 
-static struct parse_case parse_cases[56];
+static struct parse_case parse_cases[64];
 static size_t nparse_cases;
 
 static struct parse_case *parse_case_new(const char *name,
@@ -704,6 +729,43 @@ static void parse_cases_init(void) {
   parse_add(tc, MSG_REQ_REDIS_INFO, "", "INFO server");
   parse_add(tc, MSG_REQ_REDIS_INFO, "", "INFO server clients memory");
   parse_add(tc, MSG_REQ_REDIS_CLIENT_SETINFO, "", "CLIENT SETINFO LIB-VER 1.0");
+  parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
+
+  /*
+   * Commands of newer Redis and Valkey releases, passed on for the datastore
+   * to run or refuse; reads and writes as the datastore flags them, but
+   * HGETEX, which can change TTLs, is always a write. The commands that
+   * store a result are writes too, and TTL a read.
+   */
+  tc = parse_case_new("redis newer commands", DATA_REDIS, false);
+  parse_add_write(tc, MSG_REQ_REDIS_HSETEX, "h",
+                  "HSETEX h EX 100 FIELDS 1 f v");
+  parse_add_write(tc, MSG_REQ_REDIS_HSETEX, "h",
+                  "hsetex h FNX KEEPTTL FIELDS 2 f1 v1 f2 v2");
+  parse_add_write(tc, MSG_REQ_REDIS_HGETEX, "h", "HGETEX h PERSIST FIELDS 1 f");
+  parse_add_write(tc, MSG_REQ_REDIS_HGETEX, "h", "HGETEX h FIELDS 2 f1 f2");
+  parse_add_write(tc, MSG_REQ_REDIS_HGETDEL, "h", "HGETDEL h FIELDS 1 f");
+  parse_add_write(tc, MSG_REQ_REDIS_HEXPIRE, "h",
+                  "HEXPIRE h 100 NX FIELDS 1 f");
+  parse_add_write(tc, MSG_REQ_REDIS_HPEXPIRE, "h",
+                  "HPEXPIRE h 100000 FIELDS 1 f");
+  parse_add_write(tc, MSG_REQ_REDIS_HEXPIREAT, "h",
+                  "HEXPIREAT h 4102444800 FIELDS 1 f");
+  parse_add_write(tc, MSG_REQ_REDIS_HPEXPIREAT, "h",
+                  "hpexpireat h 4102444800000 GT FIELDS 1 f");
+  parse_add_write(tc, MSG_REQ_REDIS_HPERSIST, "h", "HPERSIST h FIELDS 1 f");
+  parse_add_read(tc, MSG_REQ_REDIS_HTTL, "h", "HTTL h FIELDS 2 f1 f2");
+  parse_add_read(tc, MSG_REQ_REDIS_HPTTL, "h", "HPTTL h FIELDS 1 f");
+  parse_add_read(tc, MSG_REQ_REDIS_HEXPIRETIME, "h",
+                 "hexpiretime h FIELDS 1 f");
+  parse_add_read(tc, MSG_REQ_REDIS_HPEXPIRETIME, "h",
+                 "HPEXPIRETIME h FIELDS 1 f");
+  parse_add_read(tc, MSG_REQ_REDIS_TTL, "k", "TTL k");
+  parse_add_read(tc, MSG_REQ_REDIS_PTTL, "k", "PTTL k");
+  parse_add_write(tc, MSG_REQ_REDIS_SUNIONSTORE, "d", "SUNIONSTORE d a b");
+  parse_add_write(tc, MSG_REQ_REDIS_ZINTERSTORE, "d", "ZINTERSTORE d 2 a b");
+  parse_add_write(tc, MSG_REQ_REDIS_ZUNIONSTORE, "d", "ZUNIONSTORE d 2 a b");
+  parse_add_read(tc, MSG_REQ_REDIS_SUNION, "a", "SUNION a b");
   parse_add(tc, MSG_REQ_REDIS_GET, "last", "GET last");
 
   /* requests sent by a dnode peer, each with a dnode header */
@@ -856,6 +918,10 @@ static void parse_cases_init(void) {
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_GET, "k", words);
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_EXPIRE, "k", "EXPIRE k");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_PEXPIREAT, "k", "PEXPIREAT k");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_HSETEX, "h", "HSETEX h FIELDS 1 f");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_HEXPIRE, "h", "HEXPIRE h 1 FIELDS 1");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_HTTL, "h", "HTTL h FIELDS 1");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_HGETEX, "h", "HGETEX h");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_ZRANK, "z", "ZRANK z");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_LPUSHX, "l", "LPUSHX l");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_RESTORE, "k", "RESTORE k 0");

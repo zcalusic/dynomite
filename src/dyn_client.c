@@ -803,6 +803,14 @@ static void req_redis_stats(struct context *ctx, struct msg *req) {
     case MSG_REQ_REDIS_HINCRBYFLOAT:
     case MSG_REQ_REDIS_HSET:
     case MSG_REQ_REDIS_HSETNX:
+    case MSG_REQ_REDIS_HSETEX:
+    case MSG_REQ_REDIS_HGETEX:
+    case MSG_REQ_REDIS_HGETDEL:
+    case MSG_REQ_REDIS_HEXPIRE:
+    case MSG_REQ_REDIS_HPEXPIRE:
+    case MSG_REQ_REDIS_HEXPIREAT:
+    case MSG_REQ_REDIS_HPEXPIREAT:
+    case MSG_REQ_REDIS_HPERSIST:
       stats_server_incr(ctx, redis_req_hashes);
       break;
     default:
