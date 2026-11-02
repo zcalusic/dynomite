@@ -98,6 +98,24 @@ def run_get_every_node_test(c):
         conn.close()
 
 
+def run_unknown_command_test(c):
+    """Unknown commands get ERROR, as from memcached, and the connection
+    stays open; so do the memcached commands Dynomite doesn't support."""
+    print('Running memcache unknown command test')
+    c.run_verify(b'set uc 0 0 2\r\nuc\r\n')
+    for req in [b'foo\r\n', b'foo bar baz\r\n', b'GET uc\r\n', b'\r\n',
+                b'get\r\n', b'gets\r\n', b'bogus_cmd k\r\n']:
+        c.run_verify(req)
+        c.run_verify(b'get uc\r\n')
+    # Pipelined: the requests around it get their replies.
+    c.run_verify(b'get uc\r\nfoo\r\nget uc\r\n', replies=3)
+    for req in [b'gat 0 uc\r\n', b'stats\r\n', b'flush_all\r\n',
+                b'version\r\n', b'mg uc v\r\n']:
+        got = c.run_dynomite_only(req)
+        assert got == b'ERROR\r\n', '{!r}: {!r}'.format(req, got)
+        c.run_verify(b'get uc\r\n')
+
+
 def run_quit_test(c):
     """quit closes the connection without a reply."""
     print('Running memcache quit test')
@@ -112,5 +130,6 @@ def comparison_test(standalone, dynomite):
     c = McDualRun(standalone, dynomite)
     run_storage_test(c)
     run_get_every_node_test(c)
+    run_unknown_command_test(c)
     run_quit_test(c)
     print('All memcache tests ran fine')

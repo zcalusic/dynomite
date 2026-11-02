@@ -884,7 +884,6 @@ static void parse_cases_init(void) {
   static const struct {
     const char *name, *data;
   } mc_rejects[] = {
-      {"memcache unknown command", "bogus k\r\n"},
       {"memcache bad length", "set k 0 0 x\r\nhello\r\n"},
       {"memcache value too long", "set k 0 0 5\r\nhelloX\r\n"},
   };
@@ -893,6 +892,34 @@ static void parse_cases_init(void) {
     parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
     parse_reject(tc, mc_rejects[i].data);
   }
+  /*
+   * Lines with a command Dynomite doesn't know or support, or without the
+   * key the command needs: from a client, the parser skips the line and
+   * the request is answered ERROR (req_filter()), the requests after it
+   * parse as usual; from a peer, it rejects them, and a client's line
+   * longer than MEMCACHE_MAX_LINE_LENGTH.
+   */
+  static const char *mc_unsupported[] = {
+      "bogus k\r\n", "bogus\r\n", "GET k\r\n", "\r\n", "get\r\n",
+      "gets\r\n",   "flush_all\r\n", "gat 0 k\r\n", "mg k v\r\n",
+  };
+  tc = parse_case_new("memcache unsupported", DATA_MEMCACHE, false);
+  parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
+  for (size_t i = 0; i < NELEMS(mc_unsupported); i++) {
+    parse_add(tc, MSG_REQ_MC_UNSUPPORTED, "", mc_unsupported[i]);
+  }
+  dn_snprintf(long_words, sizeof(long_words), "bogus %s\r\n", big);
+  parse_add(tc, MSG_REQ_MC_UNSUPPORTED, "", long_words);
+  parse_add(tc, MSG_REQ_MC_GET, "last", "get last\r\n");
+  for (size_t i = 0; i < NELEMS(mc_unsupported); i++) {
+    tc = parse_case_new("memcache dnode unsupported", DATA_MEMCACHE, true);
+    parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
+    parse_reject(tc, mc_unsupported[i]);
+  }
+  tc = parse_case_new("memcache line too long", DATA_MEMCACHE, false);
+  parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
+  dn_snprintf(long_words, sizeof(long_words), "bogus %s\r\n", huge);
+  parse_reject(tc, long_words);
   /*
    * Keys too long to keep: longer than both test mbufs for redis, than
    * memcached allows (MEMCACHE_MAX_KEY_LENGTH) for memcache. From a client,

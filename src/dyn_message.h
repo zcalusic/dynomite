@@ -55,6 +55,7 @@
   ACTION(REQ_MC_DECR)                                                          \
   ACTION(REQ_MC_TOUCH)  /* memcache touch request */                           \
   ACTION(REQ_MC_QUIT)   /* memcache quit request */                            \
+  ACTION(REQ_MC_UNSUPPORTED) /* answered with ERROR */                         \
   ACTION(RSP_MC_NUM)    /* memcache arithmetic response */                     \
   ACTION(RSP_MC_STORED) /* memcache cas and storage response */                \
   ACTION(RSP_MC_NOT_STORED)                                                    \
@@ -731,6 +732,9 @@ rstatus_t simulate_rsp(struct context *ctx, struct conn *conn,
 
 /* The longest memcache key, as in memcached. */
 #define MEMCACHE_MAX_KEY_LENGTH 250
+/* the most of a memcache line with an unsupported command Dynomite reads
+   past before giving up on the connection */
+#define MEMCACHE_MAX_LINE_LENGTH 2048
 
 // Returns 'true' if 'msg_type' is a Dynomite configuration command.
 bool is_msg_type_dyno_config(msg_type_t msg_type);

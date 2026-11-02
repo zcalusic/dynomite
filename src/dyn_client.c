@@ -580,6 +580,15 @@ static bool req_filter(struct context *ctx, struct conn *conn,
     return true;
   }
 
+  // A memcache command Dynomite doesn't know or support: answer as
+  // memcached does for one it doesn't know, and keep the connection.
+  if (req->type == MSG_REQ_MC_UNSUPPORTED) {
+    log_debug(LOG_VERB, "%s filter unsupported %s", print_obj(conn),
+              print_obj(req));
+    IGNORE_RET_VAL(simulate_rsp(ctx, conn, req, "ERROR" CRLF));
+    return true;
+  }
+
   // A command came with the wrong number of arguments: answer as Redis does.
   if (req->wrong_arity) {
     log_debug(LOG_VERB, "%s filter wrong arity %s", print_obj(conn),

@@ -158,10 +158,12 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
     SW_AFTER_NOREPLY,
     SW_ALMOST_DONE,
     SW_KEY_SKIP,
+    SW_SKIP_LINE,
     SW_SENTINEL
   } state;
 
   const struct string* hash_tag = &ctx->pool.hash_tag;
+  bool from_client = r->owner != NULL && !r->owner->dyn_mode;
   state = r->state;
   b = STAILQ_LAST(&r->mhdr, mbuf, next);
 
@@ -184,6 +186,10 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
         }
 
         if (!islower(ch)) {
+          if (from_client) {
+            p = p - 1; /* the line may be just CRLF */
+            goto unsupported;
+          }
           goto error;
         }
 
@@ -311,6 +317,9 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
             case MSG_REQ_MC_DECR:
             case MSG_REQ_MC_TOUCH:
               if (ch == CR) {
+                if (from_client) {
+                  goto unsupported; /* no key: memcached says ERROR */
+                }
                 goto error;
               }
               state = SW_SPACES_BEFORE_KEY;
@@ -322,6 +331,9 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
               break;
 
             case MSG_UNKNOWN:
+              if (from_client) {
+                goto unsupported;
+              }
               goto error;
 
             default:
@@ -329,6 +341,9 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
           }
 
         } else if (!islower(ch)) {
+          if (from_client) {
+            goto unsupported;
+          }
           goto error;
         }
 
@@ -724,11 +739,36 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
 
         break;
 
+      case SW_SKIP_LINE:
+        /* the rest of a line with a command Dynomite doesn't support */
+        if (ch == LF) {
+          goto done;
+        }
+        if (++r->vlen > MEMCACHE_MAX_LINE_LENGTH) {
+          goto error;
+        }
+        break;
+
       case SW_SENTINEL:
       default:
         NOT_REACHED();
         break;
     }
+    continue;
+
+  unsupported:
+    /*
+     * From a client, a line with a command Dynomite doesn't know or support,
+     * or without the key the command needs: skip the rest of the line, and
+     * req_filter() answers ERROR, as memcached does for a command it doesn't
+     * know. A peer only forwards requests that parsed, so there it's an
+     * error.
+     */
+    log_debug(LOG_VERB, "req %" PRIu64 " has an unsupported command", r->id);
+    r->type = MSG_REQ_MC_UNSUPPORTED;
+    r->token = NULL;
+    r->vlen = 0;
+    state = SW_SKIP_LINE;
   }
 
   /*
