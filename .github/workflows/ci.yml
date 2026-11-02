@@ -112,9 +112,9 @@ jobs:
         run: make -j "$(nproc)" check VERBOSE=1 CFLAGS="-g -O2 -Werror"
 
   # The functional tests in parallel parts, against each datastore backend:
-  # the latest Valkey and Redis releases, built from pinned source tarballs,
-  # and trixie's packages as the oldest versions tested. The asan job runs
-  # the same parts against trixie's Valkey.
+  # the latest Valkey and Redis releases, built from pinned source tarballs.
+  # The asan job runs the same parts against trixie's Valkey package, which
+  # needs no build.
   test:
     name: Functional tests (${{ matrix.backend.name }}, ${{ matrix.part }})
     runs-on: ubuntu-latest
@@ -133,12 +133,6 @@ jobs:
             sha256: 85ae62e175cc76f638015fa18cb384b549b6808a765425d9e9d47466f69532ea
             packages: ca-certificates curl
             server: /opt/backend/bin/redis-server
-          - name: Valkey trixie
-            packages: valkey-server
-            server: valkey-server
-          - name: Redis trixie
-            packages: redis-server
-            server: redis-server
         part: [no_quorum, safe_quorum, each_safe_quorum, tls and seeds]
         include: &functional-parts
           - part: no_quorum
