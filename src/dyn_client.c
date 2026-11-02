@@ -626,6 +626,23 @@ static bool req_filter(struct context *ctx, struct conn *conn,
     return true;
   }
 
+  // Each memcached numbers its items itself, so the replicas' cas uniques
+  // differ, and a cas would change only the replicas whose unique matched:
+  // cas works with one rack only.
+  if (req->type == MSG_REQ_MC_CAS &&
+      pool_rack_count((struct server_pool *)conn->owner) > 1) {
+    log_debug(LOG_VERB, "%s filter cas %s", print_obj(conn), print_obj(req));
+    if (!req->expect_datastore_reply) {
+      req_put(req);
+      return true;
+    }
+    IGNORE_RET_VAL(simulate_rsp(
+        ctx, conn, req,
+        "SERVER_ERROR cas is not supported with more than one rack, since "
+        "each replica numbers its items itself" CRLF));
+    return true;
+  }
+
   // Clients send these on connect. Dynomite can't forward them, since server
   // connections are shared, so answer them here: CLIENT SETINFO as Redis
   // does, HELLO with the error older Redis versions send, so that clients

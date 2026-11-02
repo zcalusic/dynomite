@@ -189,6 +189,33 @@ def run_quorum_majority_test(c, num_keys=5):
           '%d without one refused' % (num_keys, num_keys))
 
 
+CAS_REFUSED = (b'SERVER_ERROR cas is not supported with more than one rack, '
+               b'since each replica numbers its items itself\r\n')
+
+
+def run_cas_test(c):
+    """cas works with one rack, as on memcached; with more, each replica
+    has its own cas uniques, and a cas would change only the replicas
+    whose unique matched: refused."""
+    print('Running memcache cas test')
+    racks = sum(len(r) for r in c.dyno_cluster.counts_by_rack.values())
+    c.run_verify(b'set cs 0 0 1\r\na\r\n')
+    c.run_verify(b'gets cs\r\n', cas=False)
+    if racks == 1:
+        c.run_verify(b'cas nocs 0 0 1 1\r\nz\r\n')
+    unique = c.run_dynomite_only(b'gets cs\r\n').split(b'\r\n')[0].split()[-1]
+    got = c.run_dynomite_only(b'cas cs 0 0 1 ' + unique + b'\r\nb\r\n')
+    if racks == 1:
+        assert got == b'STORED\r\n', got
+        return
+    assert got == CAS_REFUSED, got
+    # noreply: no reply, nothing written, the next request answered
+    got = c.run_dynomite_only(b'cas cs 0 0 1 ' + unique +
+                              b' noreply\r\nc\r\nget cs\r\n')
+    assert got == b'VALUE cs 0 1\r\na\r\nEND\r\n', got
+    print('\t-refused with %d racks' % racks)
+
+
 def run_quit_test(c):
     """quit closes the connection without a reply."""
     print('Running memcache quit test')
@@ -206,5 +233,6 @@ def comparison_test(standalone, dynomite):
     run_unknown_command_test(c)
     run_syntax_test(c)
     run_quorum_majority_test(c)
+    run_cas_test(c)
     run_quit_test(c)
     print('All memcache tests ran fine')
