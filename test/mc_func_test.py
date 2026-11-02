@@ -98,8 +98,19 @@ def run_get_every_node_test(c):
         conn.close()
 
 
+def run_quit_test(c):
+    """quit closes the connection without a reply."""
+    print('Running memcache quit test')
+    want = c.mc_conn.closed_after(b'quit\r\n')
+    got = c.dyno_conn.closed_after(b'quit\r\n')
+    assert want == b'', 'memcached: quit: {!r}'.format(want)
+    if got != want:
+        raise McMismatchError(b'quit\r\n', want, got)
+
+
 def comparison_test(standalone, dynomite):
     c = McDualRun(standalone, dynomite)
     run_storage_test(c)
     run_get_every_node_test(c)
+    run_quit_test(c)
     print('All memcache tests ran fine')
