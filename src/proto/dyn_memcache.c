@@ -1294,8 +1294,11 @@ static rstatus_t memcache_fragment_retrieval(struct msg *r,
   struct msg **sub_msgs;
   uint32_t i;
   rstatus_t status;
+  // dnode_peer_idx_for_key_on_rack() returns an index into pool->peers,
+  // all the cluster's nodes, not just this rack's.
+  uint32_t total_peers = array_n(&pool->peers);
 
-  sub_msgs = dn_zalloc(rack->ncontinuum * sizeof(*sub_msgs));
+  sub_msgs = dn_zalloc(total_peers * sizeof(*sub_msgs));
   if (sub_msgs == NULL) {
     return DN_ENOMEM;
   }
@@ -1353,8 +1356,7 @@ static rstatus_t memcache_fragment_retrieval(struct msg *r,
     }
   }
 
-  for (i = 0; i < rack->ncontinuum;
-       i++) { /* prepend mget header, and forward it */
+  for (i = 0; i < total_peers; i++) { /* prepend mget header, and forward it */
     struct msg *sub_msg = sub_msgs[i];
     if (sub_msg == NULL) {
       continue;
