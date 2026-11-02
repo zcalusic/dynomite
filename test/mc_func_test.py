@@ -104,7 +104,8 @@ def run_unknown_command_test(c):
     print('Running memcache unknown command test')
     c.run_verify(b'set uc 0 0 2\r\nuc\r\n')
     for req in [b'foo\r\n', b'foo bar baz\r\n', b'GET uc\r\n', b'\r\n',
-                b'get\r\n', b'gets\r\n', b'bogus_cmd k\r\n']:
+                b'get\r\n', b'gets\r\n', b'bogus_cmd k\r\n', b'set uc\r\n',
+                b'incr uc\r\n', b'touch uc\r\n']:
         c.run_verify(req)
         c.run_verify(b'get uc\r\n')
     # Pipelined: the requests around it get their replies.
@@ -114,6 +115,28 @@ def run_unknown_command_test(c):
         got = c.run_dynomite_only(req)
         assert got == b'ERROR\r\n', '{!r}: {!r}'.format(req, got)
         c.run_verify(b'get uc\r\n')
+
+
+def run_syntax_test(c):
+    """Requests memcached takes or answers with an error itself: a negative
+    expiry time, a time after delete's key, a delta that's not a number."""
+    print('Running memcache syntax test')
+    c.run_verify(b'set neg 0 -1 1\r\na\r\n')
+    c.run_verify(b'get neg\r\n')
+    c.run_verify(b'set tn 0 0 1\r\na\r\n')
+    c.run_verify(b'touch tn -1\r\n')
+    c.run_verify(b'get tn\r\n')
+    c.run_verify(b'set d0 0 0 1\r\na\r\n')
+    c.run_verify(b'delete d0 0\r\n')
+    c.run_verify(b'get d0\r\n')
+    c.run_verify(b'set d1 0 0 1\r\na\r\n')
+    c.run_verify(b'delete d1 5\r\n')
+    c.run_verify(b'delete d1 0 noreply\r\nget d1\r\n')
+    c.run_verify(b'set num 0 0 2\r\n10\r\n')
+    for req in [b'incr num abc\r\n', b'decr num -1\r\n', b'incr num 1x\r\n',
+                b'incr num 99999999999999999999999\r\n']:
+        c.run_verify(req)
+        c.run_verify(b'get num\r\n')
 
 
 def run_quit_test(c):
@@ -131,5 +154,6 @@ def comparison_test(standalone, dynomite):
     run_storage_test(c)
     run_get_every_node_test(c)
     run_unknown_command_test(c)
+    run_syntax_test(c)
     run_quit_test(c)
     print('All memcache tests ran fine')

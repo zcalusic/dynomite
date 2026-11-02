@@ -418,7 +418,11 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
           }
 
           if (ch == CR) {
-            if (memcache_storage(r) || memcache_arithmetic(r)) {
+            if (memcache_storage(r) || memcache_arithmetic(r) ||
+                memcache_touch(r)) {
+              if (from_client) {
+                goto unsupported; /* memcached says ERROR */
+              }
               goto error;
             }
             p = p - 1; /* go back by 1 byte */
@@ -493,7 +497,8 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
 
       case SW_SPACES_BEFORE_EXPIRY:
         if (ch != ' ') {
-          if (!isdigit(ch)) {
+          /* negative: the item expires at once */
+          if (!isdigit(ch) && ch != '-') {
             goto error;
           }
           /* expiry_start <- p; expiry <- ch - '0' */
@@ -615,7 +620,11 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
 
       case SW_SPACES_BEFORE_NUM:
         if (ch != ' ') {
-          if (!(isdigit(ch) || ch == '-')) {
+          /*
+           * Any word: memcached answers one that's not a number with an
+           * error. Peers parse what clients send them, so the same there.
+           */
+          if (ch == CR) {
             goto error;
           }
           /* num_start <- p; num <- ch - '0'  */
@@ -626,16 +635,11 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
         break;
 
       case SW_NUM:
-        if (isdigit(ch)) {
-          /* num <- num * 10 + (ch - '0') */
-          ;
-        } else if (ch == ' ' || ch == CR) {
+        if (ch == ' ' || ch == CR) {
           r->token = NULL;
           /* num_end <- p - 1 */
           p = p - 1; /* go back by 1 byte */
           state = SW_RUNTO_CRLF;
-        } else {
-          goto error;
         }
 
         break;
@@ -643,6 +647,17 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
       case SW_RUNTO_CRLF:
         switch (ch) {
           case ' ':
+            break;
+
+          case '0': case '1': case '2': case '3': case '4':
+          case '5': case '6': case '7': case '8': case '9':
+            /*
+             * delete's old time argument: memcached takes 0 and answers
+             * anything else with an error.
+             */
+            if (!memcache_delete(r)) {
+              goto error;
+            }
             break;
 
           case 'n':
@@ -768,6 +783,9 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
     r->type = MSG_REQ_MC_UNSUPPORTED;
     r->token = NULL;
     r->vlen = 0;
+    while (array_n(r->keys) > 0) { /* a key before what was missing */
+      array_pop(r->keys);
+    }
     state = SW_SKIP_LINE;
   }
 

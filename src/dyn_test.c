@@ -611,13 +611,17 @@ static rstatus_t parse_run(struct conn *conn, const struct parse_case *tc,
   return status;
 }
 
-static struct parse_case parse_cases[64];
+static struct parse_case parse_cases[128];
 static size_t nparse_cases;
 
 static struct parse_case *parse_case_new(const char *name,
                                          data_store_t data_store,
                                          bool dyn_mode) {
-  ASSERT(nparse_cases < NELEMS(parse_cases));
+  // ASSERT() is a no-op unless built with --enable-debug=full.
+  if (nparse_cases >= NELEMS(parse_cases)) {
+    loga("too many parse cases, make parse_cases[] larger");
+    exit(1);
+  }
   struct parse_case *tc = &parse_cases[nparse_cases++];
   memset(tc, 0, sizeof(*tc));
   tc->name = name;
@@ -902,6 +906,7 @@ static void parse_cases_init(void) {
   static const char *mc_unsupported[] = {
       "bogus k\r\n", "bogus\r\n", "GET k\r\n", "\r\n", "get\r\n",
       "gets\r\n",   "flush_all\r\n", "gat 0 k\r\n", "mg k v\r\n",
+      "set k\r\n",  "incr k\r\n",     "touch k\r\n",
   };
   tc = parse_case_new("memcache unsupported", DATA_MEMCACHE, false);
   parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
@@ -916,6 +921,26 @@ static void parse_cases_init(void) {
     parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
     parse_reject(tc, mc_unsupported[i]);
   }
+  /*
+   * Requests memcached takes, or answers with an error itself: a negative
+   * expiry time, delete's old time argument, a delta or touch time that's
+   * not a number. Forwarded as they are, so a peer parses them too.
+   */
+  tc = parse_case_new("memcache syntax", DATA_MEMCACHE, false);
+  parse_add(tc, MSG_REQ_MC_SET, "k", "set k 0 -1 1\r\na\r\n");
+  parse_add(tc, MSG_REQ_MC_DELETE, "k", "delete k 0\r\n");
+  parse_add(tc, MSG_REQ_MC_DELETE, "k", "delete k 5\r\n");
+  parse_add(tc, MSG_REQ_MC_DELETE, "k", "delete k 0 noreply\r\n");
+  parse_add(tc, MSG_REQ_MC_INCR, "k", "incr k abc\r\n");
+  parse_add(tc, MSG_REQ_MC_DECR, "k", "decr k 1x\r\n");
+  parse_add(tc, MSG_REQ_MC_TOUCH, "k", "touch k -1\r\n");
+  parse_add(tc, MSG_REQ_MC_GET, "last", "get last\r\n");
+  tc = parse_case_new("memcache dnode syntax", DATA_MEMCACHE, true);
+  parse_add(tc, MSG_REQ_MC_SET, "k", "set k 0 -1 1\r\na\r\n");
+  parse_add(tc, MSG_REQ_MC_DELETE, "k", "delete k 0\r\n");
+  parse_add(tc, MSG_REQ_MC_INCR, "k", "incr k abc\r\n");
+  parse_add(tc, MSG_REQ_MC_GET, "last", "get last\r\n");
+
   tc = parse_case_new("memcache line too long", DATA_MEMCACHE, false);
   parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
   dn_snprintf(long_words, sizeof(long_words), "bogus %s\r\n", huge);
