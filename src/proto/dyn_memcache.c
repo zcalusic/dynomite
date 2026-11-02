@@ -1515,6 +1515,18 @@ void memcache_pre_coalesce(struct msg *r) {
 
       break;
 
+    case MSG_RSP_MC_ERROR:
+    case MSG_RSP_MC_CLIENT_ERROR:
+    case MSG_RSP_MC_SERVER_ERROR:
+      /*
+       * A fragment failed, e.g. without a quorum: the request is answered
+       * with the error (rsp_make_error()), as in redis_pre_coalesce().
+       */
+      pr->is_error = 1;
+      pr->error_code = r->error_code;
+      pr->dyn_error_code = r->dyn_error_code;
+      break;
+
     default:
       /*
        * Valid responses for a fragmented request are MSG_RSP_MC_VALUE or
@@ -1638,8 +1650,21 @@ void memcache_post_coalesce(struct msg *request) {
 
   ASSERT(!response->is_request);
   ASSERT(request->is_request && (request->frag_owner == request));
+  /*
+   * A fragment failed, e.g. without a quorum (memcache_pre_coalesce()): the
+   * request is answered with its error (rsp_make_error()). Closing the
+   * client's connection here instead dropped the error and every request
+   * after it.
+   */
+  for (i = 0; i < array_n(request->keys) && !request->is_error; i++) {
+    struct msg *frag = request->frag_seq[i];
+    if (frag != request && frag->is_error) {
+      request->is_error = 1;
+      request->error_code = frag->error_code;
+      request->dyn_error_code = frag->dyn_error_code;
+    }
+  }
   if (request->is_error || request->is_ferror) {
-    response->owner->err = 1;
     return;
   }
 

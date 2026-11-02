@@ -2,6 +2,7 @@
 """Functional tests for memcache: the same raw requests to a standalone
 memcached and through the Dynomite cluster, with the replies compared byte
 for byte."""
+import random
 import re
 import time
 
@@ -139,6 +140,55 @@ def run_syntax_test(c):
         c.run_verify(b'get num\r\n')
 
 
+def run_quorum_majority_test(c, num_keys=5):
+    """Under DC_SAFE_QUORUM and DC_EACH_SAFE_QUORUM, values that disagree
+    written straight into the racks' memcached, the same in every DC: with
+    more than half the racks of each DC holding one, a get through one node
+    returns it; without, it's refused, and the connection stays usable."""
+    dyno_cluster = c.dyno_cluster
+    consistency = dyno_cluster.request['conf']['read_consistency']
+    if consistency not in ('DC_SAFE_QUORUM', 'DC_EACH_SAFE_QUORUM'):
+        return
+    print('Running memcache quorum majority test')
+    rng = random.Random(1)
+    conn = dyno_cluster.nodes[0].get_connection()
+    for majority in (True, False):
+        for i in range(num_keys):
+            key = b'mc_quorum_%d_%d' % (majority, i)
+            for dc, racks in dyno_cluster.counts_by_rack.items():
+                n = len(racks)
+                quorum = n // 2 + 1
+                if majority:
+                    values = [b'A'] * quorum + [b'B'] * (n - quorum)
+                elif n % 2 == 0:
+                    values = [b'A'] * (n // 2) + [b'B'] * (n // 2)
+                else:
+                    values = [b'ABCDEFGHIJ'[j:j + 1] for j in range(n)]
+                rng.shuffle(values)
+                by_rack = dict(zip(sorted(racks), values))
+                for node in dyno_cluster.nodes:
+                    if node.spec.dc == dc:
+                        ds = node.get_data_store_connection()
+                        r = ds.request(b'set ' + key + b' 0 0 1\r\n' +
+                                       by_rack[node.spec.rack] + b'\r\n')
+                        assert r == b'STORED\r\n', r
+                        ds.close()
+            got = conn.request(b'get ' + key + b'\r\n')
+            if majority:
+                assert got == b'VALUE ' + key + b' 0 1\r\nA\r\nEND\r\n', \
+                    (key, got)
+            else:
+                assert got == b'SERVER_ERROR Dynomite: Failed to achieve ' \
+                    b'Quorum\r\n', (key, got)
+            # The connection goes on.
+            got = conn.request(b'get mc_quorum_1_0\r\n')
+            assert got == b'VALUE mc_quorum_1_0 0 1\r\nA\r\nEND\r\n', \
+                (key, got)
+    conn.close()
+    print('\t-%d keys with a majority of the racks answered with its value, '
+          '%d without one refused' % (num_keys, num_keys))
+
+
 def run_quit_test(c):
     """quit closes the connection without a reply."""
     print('Running memcache quit test')
@@ -155,5 +205,6 @@ def comparison_test(standalone, dynomite):
     run_get_every_node_test(c)
     run_unknown_command_test(c)
     run_syntax_test(c)
+    run_quorum_majority_test(c)
     run_quit_test(c)
     print('All memcache tests ran fine')
