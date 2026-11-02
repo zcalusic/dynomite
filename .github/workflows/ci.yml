@@ -112,9 +112,10 @@ jobs:
         run: make -j "$(nproc)" check VERBOSE=1 CFLAGS="-g -O2 -Werror"
 
   # The functional tests in parallel parts, against each datastore backend:
-  # the latest Valkey and Redis releases, built from pinned source tarballs.
-  # The asan job runs the same parts against trixie's Valkey package, which
-  # needs no build.
+  # the latest Valkey, Redis and memcached releases, built from pinned source
+  # tarballs. memcached runs the cluster files only: the test scripts are
+  # Redis-only. The asan job runs the same parts against trixie's Valkey
+  # package, which needs no build.
   test:
     name: Functional tests (${{ matrix.backend.name }}, ${{ matrix.part }})
     runs-on: ubuntu-latest
@@ -133,7 +134,17 @@ jobs:
             sha256: 85ae62e175cc76f638015fa18cb384b549b6808a765425d9e9d47466f69532ea
             packages: ca-certificates curl
             server: /opt/backend/bin/redis-server
+          - &memcached
+            name: memcached 1.6.45
+            url: https://www.memcached.org/files/memcached-1.6.45.tar.gz
+            sha256: d362c64e6d8d5287153501eabf7c85b4a761432fbf53f5d7b085d0bb1653c1dd
+            packages: ca-certificates curl libevent-dev
+            server: /opt/backend/bin/memcached
+            datastore: memcache
         part: [no_quorum, safe_quorum, each_safe_quorum, tls and seeds]
+        exclude:
+          - backend: *memcached
+            part: tls and seeds
         include: &functional-parts
           - part: no_quorum
             tests: test/no_quorum_request.yaml
@@ -145,6 +156,7 @@ jobs:
             tests: test/tls_test.py test/seed_test.py
     container: ${{ vars.CI_IMAGE || 'zcalusic/debian-trixie' }}
     env:
+      DYN_TEST_DATASTORE: ${{ matrix.backend.datastore || 'redis' }}
       DYN_TEST_SERVER: ${{ matrix.backend.server }}
     steps:
       - name: Install dependencies
@@ -177,8 +189,15 @@ jobs:
           echo "${{ matrix.backend.sha256 }}  /tmp/backend.tar.gz" | sha256sum -c
           mkdir /tmp/backend
           tar -xzf /tmp/backend.tar.gz -C /tmp/backend --strip-components=1
-          make -C /tmp/backend -j "$(nproc)" BUILD_TLS=no
-          make -C /tmp/backend install PREFIX=/opt/backend
+          if [ -x /tmp/backend/configure ]; then
+            # memcached's release tarball
+            (cd /tmp/backend && ./configure --prefix=/opt/backend)
+            make -C /tmp/backend -j "$(nproc)"
+            make -C /tmp/backend install
+          else
+            make -C /tmp/backend -j "$(nproc)" BUILD_TLS=no
+            make -C /tmp/backend install PREFIX=/opt/backend
+          fi
 
       - name: Run functional tests
         run: |
