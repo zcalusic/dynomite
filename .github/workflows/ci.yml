@@ -9,11 +9,16 @@ on:
 permissions:
   contents: read
 
+# Every job runs in zcalusic/debian-trixie. The CI_IMAGE variable, unset on
+# GitHub, swaps in another image for local runs with act: one with the
+# packages below already installed (the install steps still run) and with
+# Node, which act needs in the container to run actions/cache.
+
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    container: zcalusic/debian-trixie
+    container: ${{ vars.CI_IMAGE || 'zcalusic/debian-trixie' }}
     steps:
       - name: Install dependencies
         run: |
@@ -50,7 +55,7 @@ jobs:
   clang:
     name: Build (clang)
     runs-on: ubuntu-latest
-    container: zcalusic/debian-trixie
+    container: ${{ vars.CI_IMAGE || 'zcalusic/debian-trixie' }}
     steps:
       - name: Install dependencies
         run: |
@@ -81,7 +86,7 @@ jobs:
     # refuses socketcall(), which i386 glibc uses for socket() and
     # setsockopt().
     container:
-      image: zcalusic/debian-trixie
+      image: ${{ vars.CI_IMAGE || 'zcalusic/debian-trixie' }}
       options: --security-opt seccomp=unconfined
     steps:
       - name: Install dependencies
@@ -144,7 +149,7 @@ jobs:
             tests: test/each_safe_quorum_request.yaml
           - part: tls and seeds
             tests: test/tls_test.py test/seed_test.py
-    container: zcalusic/debian-trixie
+    container: ${{ vars.CI_IMAGE || 'zcalusic/debian-trixie' }}
     env:
       DYN_TEST_SERVER: ${{ matrix.backend.server }}
     steps:
@@ -161,11 +166,11 @@ jobs:
           fetch-depth: 0
 
       # The builds take 1.5-3 min on GitHub's runners, so they're cached, per
-      # tarball. act can't run the cache action in this container (no
-      # node), so it builds every time.
+      # tarball. act can run the cache action only in a CI_IMAGE with Node;
+      # without one it builds every time.
       - name: Cache backend
         id: cache-backend
-        if: matrix.backend.url && !env.ACT
+        if: matrix.backend.url && (!env.ACT || vars.CI_IMAGE)
         uses: actions/cache@v6
         with:
           path: /opt/backend
@@ -212,7 +217,7 @@ jobs:
       fail-fast: false
       matrix:
         include: *functional-parts
-    container: zcalusic/debian-trixie
+    container: ${{ vars.CI_IMAGE || 'zcalusic/debian-trixie' }}
     env:
       DYN_TEST_SERVER: valkey-server
       ASAN_OPTIONS: detect_leaks=0:log_path=/tmp/sanitizer/asan
