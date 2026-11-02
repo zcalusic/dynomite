@@ -1070,7 +1070,14 @@ def run_quorum_majority_test(c, num_keys=10):
             except redis.exceptions.ResponseError as e:
                 assert not majority and 'Failed to achieve Quorum' in str(e), \
                     (key, e)
-                continue
+                # MGET splits its keys by owner: the part without a quorum
+                # fails the whole request, with the same error.
+                try:
+                    reply = conn.mget(key, key + '_other')
+                except redis.exceptions.ResponseError as e:
+                    assert 'Failed to achieve Quorum' in str(e), (key, e)
+                    continue
+                assert False, ('MGET', key, reply)
             assert majority and reply == b'A', (key, reply)
     print("\t-%d keys with a majority of the racks (%s per DC) answered with "
           "its value, %d without one refused"

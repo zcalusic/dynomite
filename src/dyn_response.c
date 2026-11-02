@@ -68,7 +68,10 @@ static struct msg *rsp_make_error(struct context *ctx, struct conn *conn,
 
       /* dequeue request (error fragment) from client outq */
       conn_dequeue_outq(ctx, conn, cmsg);
-      if (!error_code && cmsg->error_code != 0) {
+      // The first fragment's error. A quorum failure has only a
+      // dyn_error_code; taking only error_codes answered it "unknown".
+      if (!error_code && dyn_error_code == DYNOMITE_OK &&
+          (cmsg->error_code != 0 || cmsg->dyn_error_code != DYNOMITE_OK)) {
         error_code = cmsg->error_code;
         dyn_error_code = cmsg->dyn_error_code;
       }
