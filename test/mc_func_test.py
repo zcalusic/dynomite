@@ -76,6 +76,111 @@ def run_storage_test(c):
     c.run_verify(b'get k1\r\n')
 
 
+def run_noreply_test(c):
+    """noreply on every command that takes it: no reply, the write done,
+    the next request answered."""
+    print('Running memcache noreply test')
+    for req in [b'set nr 0 0 1 noreply\r\na\r\n',
+                b'add nr2 0 0 1 noreply\r\nb\r\n',
+                b'replace nr 0 0 1 noreply\r\nc\r\n',
+                b'append nr 0 0 1 noreply\r\nd\r\n',
+                b'prepend nr 0 0 1 noreply\r\ne\r\n',
+                b'set nrn 0 0 1\r\n5\r\nincr nrn 3 noreply\r\n',
+                b'decr nrn 1 noreply\r\n',
+                b'touch nr 100 noreply\r\n',
+                b'delete nr2 noreply\r\n']:
+        c.run_verify(req + b'get nr nr2 nrn\r\n',
+                     replies=2 if req.startswith(b'set nrn') else 1)
+    # A pipeline of them, then a reply.
+    c.run_verify(b''.join(b'set nrp%d 0 0 1 noreply\r\n%d\r\n' % (i, i % 10)
+                          for i in range(50)) +
+                 b'get ' + b' '.join(b'nrp%d' % i for i in range(50)) + b'\r\n')
+
+
+def run_key_length_test(c):
+    """Keys up to memcached's 250 bytes work; longer ones get Dynomite's
+    own error, and the connection goes on."""
+    print('Running memcache key length test')
+    k250 = b'k' * 250
+    c.run_verify(b'set ' + k250 + b' 0 0 1\r\na\r\n')
+    c.run_verify(b'get ' + k250 + b'\r\n')
+    c.run_verify(b'get a ' + k250 + b' b\r\n')
+    too_long = (b'CLIENT_ERROR Dynomite: Key is too long, the limit is 250 '
+                b'bytes\r\n')
+    for req in [b'set ' + b'k' * 251 + b' 0 0 1\r\na\r\n',
+                b'get ' + b'k' * 251 + b'\r\n',
+                b'get ' + b'k' * 1000 + b'\r\n']:
+        got = c.run_dynomite_only(req)
+        assert got == too_long, got
+        c.run_verify(b'get ' + k250 + b'\r\n')
+
+
+def run_value_test(c):
+    """Values: empty, with CRLF inside, larger than an mbuf, the flags'
+    range, and over memcached's item size limit."""
+    print('Running memcache value test')
+    for value in [b'', b'a\r\nb', b'\x00\xff' * 10, b'v' * (100 * 1024),
+                  bytes(range(256)) * 2048]:
+        c.run_verify(b'set val 0 0 %d\r\n' % len(value) + value + b'\r\n')
+        c.run_verify(b'get val\r\n')
+    c.run_verify(b'set fl 4294967295 0 1\r\na\r\n')
+    c.run_verify(b'get fl\r\n')
+    big = b'x' * (2 * 1024 * 1024)
+    c.run_verify(b'set huge 0 0 %d\r\n' % len(big) + big + b'\r\n')
+    c.run_verify(b'get huge\r\n')
+
+
+def run_arithmetic_test(c):
+    print('Running memcache arithmetic test')
+    for req in [b'set ar 0 0 1\r\n0\r\n', b'decr ar 1\r\n',
+                b'set ar 0 0 20\r\n18446744073709551615\r\n',
+                b'incr ar 1\r\n', b'incr ar 18446744073709551615\r\n',
+                b'set ar 0 0 3\r\nabc\r\n', b'incr ar 1\r\n',
+                b'set ar 0 0 2\r\n 1\r\n', b'incr ar 1\r\n',
+                b'incr nosuch 1\r\n', b'decr nosuch 1\r\n',
+                b'set ar 0 0 3\r\n100\r\n', b'decr ar 1\r\n']:
+        c.run_verify(req)
+        c.run_verify(b'get ar\r\n')
+
+
+def run_expiry_test(c):
+    print('Running memcache expiry test')
+    c.run_verify(b'set ex1 0 1 1\r\na\r\nset ex2 0 1 1\r\nb\r\n'
+                 b'set ex3 0 100 1\r\nc\r\n', replies=3)
+    c.run_verify(b'touch ex2 100\r\n')
+    c.run_verify(b'touch ex3 1\r\n')
+    time.sleep(2.5)
+    c.run_verify(b'get ex1 ex2 ex3\r\n')
+
+
+def run_hash_tag_test(c):
+    """Keys with the same hash tag go to the same node."""
+    print('Running memcache hash tag test')
+    for i in range(10):
+        c.run_verify(b'set {tag}%d 0 0 1\r\n%d\r\n' % (i, i))
+    c.run_verify(b'get ' + b' '.join(b'{tag}%d' % i for i in range(10)) +
+                 b'\r\n')
+    holders = set()
+    for node in c.dyno_cluster.nodes:
+        ds = node.get_data_store_connection()
+        if ds.request(b'get {tag}0 {tag}9\r\n').count(b'VALUE') == 2:
+            holders.add((node.spec.dc, node.spec.rack))
+        ds.close()
+    racks = sum(len(r) for r in c.dyno_cluster.counts_by_rack.values())
+    assert len(holders) == racks, holders
+
+
+def run_pipeline_test(c):
+    """Requests in one write get their replies in order."""
+    print('Running memcache pipeline test')
+    reqs = []
+    for i in range(30):
+        reqs.append(b'set pl%d 0 0 2\r\n%02d\r\n' % (i, i))
+        reqs.append(b'get pl%d pl%d\r\n' % (i, (i * 7) % 30))
+        reqs.append(b'incr pl%d 1\r\n' % i)
+    c.run_verify(b''.join(reqs), replies=len(reqs))
+
+
 def run_get_every_node_test(c):
     """get and gets through every node, with keys on every node: each
     node splits them by owner with its own view of the ring."""
@@ -229,6 +334,13 @@ def run_quit_test(c):
 def comparison_test(standalone, dynomite):
     c = McDualRun(standalone, dynomite)
     run_storage_test(c)
+    run_noreply_test(c)
+    run_key_length_test(c)
+    run_value_test(c)
+    run_arithmetic_test(c)
+    run_expiry_test(c)
+    run_hash_tag_test(c)
+    run_pipeline_test(c)
     run_get_every_node_test(c)
     run_unknown_command_test(c)
     run_syntax_test(c)
