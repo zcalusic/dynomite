@@ -3,6 +3,10 @@ import redis
 import requests
 from node import Node
 from redis_node import RedisNode
+from memcached_node import MemcachedNode
+from mc_client import McConnection
+
+import datastore
 
 from plumbum import BG
 from plumbum import local
@@ -19,7 +23,8 @@ class DynoNode(Node):
         self.seeds_list = seeds_list
         self.dnode_port = spec.dnode_port
         self.data_store_port = spec.data_store_port
-        self.data_store_node = RedisNode(self.ip, spec.data_store_port)
+        node_class = MemcachedNode if datastore.MEMCACHE else RedisNode
+        self.data_store_node = node_class(self.ip, spec.data_store_port)
         self.logfile = 'logs/dynomite_{}.log'.format(self.ip)
         self.proc_future = None
 
@@ -84,9 +89,13 @@ class DynoNode(Node):
 
     def get_data_store_connection(self):
         # should return the connection to the redis port
+        if datastore.MEMCACHE:
+            return McConnection(self.ip, self.data_store_port)
         return redis.StrictRedis(self.ip, self.data_store_port, db=0)
 
     def get_connection(self):
         # should return the connection to the dyno port not the redis
         print("returning connection at %s:%d" % (self.ip, self.port))
+        if datastore.MEMCACHE:
+            return McConnection(self.ip, self.port)
         return redis.Redis(self.ip, self.port, db=0)

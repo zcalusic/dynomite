@@ -10,6 +10,11 @@
 # test/no_quorum_request.yaml, test/safe_quorum_request.yaml,
 # test/each_safe_quorum_request.yaml, then the peer TLS checks in
 # test/tls_test.py and the seed resolution checks in test/seed_test.py.
+#
+# The datastore is Valkey or Redis, or memcached with
+# DYN_TEST_DATASTORE=memcache, which runs the request files only (the test
+# scripts are Redis-only); DYN_TEST_SERVER picks the server binary (see
+# test/datastore.py).
 
 usage() {
     echo "usage: $0 [-n|--no-rebuild] [test ...]" >&2
@@ -35,7 +40,10 @@ cd "$(dirname "$0")/.."
 
 if [ "$#" -eq 0 ]; then
     set -- test/no_quorum_request.yaml test/safe_quorum_request.yaml \
-        test/each_safe_quorum_request.yaml test/tls_test.py test/seed_test.py
+        test/each_safe_quorum_request.yaml
+    if [ "${DYN_TEST_DATASTORE:-redis}" != memcache ]; then
+        set -- "$@" test/tls_test.py test/seed_test.py
+    fi
 fi
 
 #build Dynomite
@@ -45,7 +53,7 @@ else
     echo "not rebuilding Dynomite"
 fi
 
-test/redis_node.py
+test/datastore.py
 
 # The tests that don't depend on the cluster run in the first run only.
 skip_node_tests=()

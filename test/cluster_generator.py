@@ -10,8 +10,11 @@ import yaml
 from plumbum import local
 
 from dyno_cluster import DynoCluster
-from func_test import comparison_test
+import datastore
+import func_test
+import mc_func_test
 from utils import generate_ips, setup_temp_dir, wait_for
+from memcached_node import MemcachedNode
 from redis_node import RedisNode
 
 REDIS_PORT = 1212
@@ -36,9 +39,10 @@ def main():
     # Generate IP addresses to be used by the nodes we will create.
     ips = generate_ips()
 
-    # Create a standalone Redis node.
+    # Create a standalone datastore node, to compare Dynomite's replies with.
     standalone_redis_ip = next(ips)
-    standalone_redis = RedisNode(standalone_redis_ip, REDIS_PORT)
+    node_class = MemcachedNode if datastore.MEMCACHE else RedisNode
+    standalone_redis = node_class(standalone_redis_ip, REDIS_PORT)
 
     # Create a Dynomite cluster.
     dynomite_cluster = DynoCluster(args.request_file, ips, peer_tls=args.peer_tls)
@@ -56,8 +60,11 @@ def main():
         dynomite_cluster.wait_until_ready()
 
         # Run all the functional comparison tests.
-        comparison_test(standalone_redis, dynomite_cluster, False,
-                        node_tests=not args.skip_node_tests)
+        if datastore.MEMCACHE:
+            mc_func_test.comparison_test(standalone_redis, dynomite_cluster)
+        else:
+            func_test.comparison_test(standalone_redis, dynomite_cluster, False,
+                                      node_tests=not args.skip_node_tests)
 
         random_node = random.choice(dynomite_cluster.nodes)
         stats_url = 'http://{}:{}/info'.format(random_node.ip, STATS_PORT)

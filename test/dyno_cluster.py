@@ -9,13 +9,14 @@ import signal
 import yaml
 
 from dyno_node import DynoNode
+import datastore
 from tls_util import make_cluster_certs
 from utils import *
 
 # TODO: Make this path absolute based on param instead of relative.
 CLUSTER_DESC_FILEPATH='../running_cluster.yaml'
 DYN_O_MITE_DEFAULTS = dict(
-    data_store=0,
+    data_store=datastore.DATA_STORE,
     datastore_connections=1,
     hash_tag='{}',
     # /info's gauges, which the tests wait on, are updated every stats_interval
