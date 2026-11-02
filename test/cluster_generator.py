@@ -5,7 +5,6 @@ import argparse
 import json
 import random
 import sys
-import yaml
 
 from plumbum import local
 

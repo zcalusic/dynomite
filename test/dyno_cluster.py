@@ -2,16 +2,14 @@
 from collections import namedtuple
 from plumbum import local
 import os
-import redis
 import random
-import shutil
-import signal
 import yaml
 
 from dyno_node import DynoNode
 import datastore
 from tls_util import make_cluster_certs
-from utils import *
+from utils import dict_request, make_get_rest_call, sum_racks, teardown_running_cluster, \
+    tokens_for_cluster, wait_for
 
 # TODO: Make this path absolute based on param instead of relative.
 CLUSTER_DESC_FILEPATH='../running_cluster.yaml'
@@ -226,9 +224,9 @@ class DynoCluster(object):
                "DC_QUORUM" in quorum_option or \
                "DC_SAFE_QUORUM" in quorum_option
         for node in self.nodes:
-            r = make_get_rest_call('http://%s:22222/set_consistency/read/%s' % \
+            make_get_rest_call('http://%s:22222/set_consistency/read/%s' % \
                 (node.ip, quorum_option))
-            r = make_get_rest_call('http://%s:22222/set_consistency/write/%s' % \
+            make_get_rest_call('http://%s:22222/set_consistency/write/%s' % \
                 (node.ip, quorum_option))
 
     # Returns the name of the first DC with multiple racks along with the rack count.
