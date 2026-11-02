@@ -187,6 +187,9 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
 
         if (!islower(ch)) {
           if (from_client) {
+            if (ch == CR || ch == LF) {
+              r->wrong_arity = 1; /* an empty line */
+            }
             p = p - 1; /* the line may be just CRLF */
             goto unsupported;
           }
@@ -209,25 +212,25 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
 
           switch (p - m) {
             case 3:
-              if (str4cmp(m, 'g', 'e', 't', ' ')) {
+              if (str3cmp(m, 'g', 'e', 't')) {
                 r->type = MSG_REQ_MC_GET;
                 r->is_read = 1;
                 break;
               }
 
-              if (str4cmp(m, 's', 'e', 't', ' ')) {
+              if (str3cmp(m, 's', 'e', 't')) {
                 r->type = MSG_REQ_MC_SET;
                 r->is_read = 0;
                 break;
               }
 
-              if (str4cmp(m, 'a', 'd', 'd', ' ')) {
+              if (str3cmp(m, 'a', 'd', 'd')) {
                 r->type = MSG_REQ_MC_ADD;
                 r->is_read = 0;
                 break;
               }
 
-              if (str4cmp(m, 'c', 'a', 's', ' ')) {
+              if (str3cmp(m, 'c', 'a', 's')) {
                 r->type = MSG_REQ_MC_CAS;
                 r->is_read = 0;
                 break;
@@ -318,7 +321,8 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
             case MSG_REQ_MC_TOUCH:
               if (ch == CR) {
                 if (from_client) {
-                  goto unsupported; /* no key: memcached says ERROR */
+                  r->wrong_arity = 1; /* no key */
+                  goto unsupported;
                 }
                 goto error;
               }
@@ -421,7 +425,8 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
             if (memcache_storage(r) || memcache_arithmetic(r) ||
                 memcache_touch(r)) {
               if (from_client) {
-                goto unsupported; /* memcached says ERROR */
+                r->wrong_arity = 1; /* nothing after the key */
+                goto unsupported;
               }
               goto error;
             }
@@ -774,10 +779,11 @@ void memcache_parse_req(struct msg *r, struct context *ctx) {
   unsupported:
     /*
      * From a client, a line with a command Dynomite doesn't know or support,
-     * or without the key the command needs: skip the rest of the line, and
-     * req_filter() answers ERROR, as memcached does for a command it doesn't
-     * know. A peer only forwards requests that parsed, so there it's an
-     * error.
+     * or (wrong_arity) an empty one or one without the arguments its command
+     * needs: skip the rest of the line, and req_filter() answers as memcached
+     * does, ERROR for a command it doesn't know, CLIENT_ERROR for a bad
+     * command line. A peer only forwards requests that parsed, so there it's
+     * an error.
      */
     log_debug(LOG_VERB, "req %" PRIu64 " has an unsupported command", r->id);
     r->type = MSG_REQ_MC_UNSUPPORTED;

@@ -259,6 +259,9 @@ static inline uint16_t dn_load16(const void *p) {
   return v;
 }
 
+#define str3cmp(m, c0, c1, c2) \
+  ((m)[0] == (c0) && (m)[1] == (c1) && (m)[2] == (c2))
+
 #ifdef DN_LITTLE_ENDIAN
 
 #define str4cmp(m, c0, c1, c2, c3) \

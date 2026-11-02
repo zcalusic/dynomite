@@ -904,14 +904,21 @@ static void parse_cases_init(void) {
    * longer than MEMCACHE_MAX_LINE_LENGTH.
    */
   static const char *mc_unsupported[] = {
-      "bogus k\r\n", "bogus\r\n", "GET k\r\n", "\r\n", "get\r\n",
-      "gets\r\n",   "flush_all\r\n", "gat 0 k\r\n", "mg k v\r\n",
-      "set k\r\n",  "incr k\r\n",     "touch k\r\n",
+      "bogus k\r\n",   "bogus\r\n",   "GET k\r\n",
+      "flush_all\r\n", "gat 0 k\r\n", "mg k v\r\n",
+  };
+  /* without the arguments their command needs (wrong_arity) */
+  static const char *mc_bad_format[] = {
+      "\r\n",      "get\r\n",    "gets\r\n",    "delete\r\n",
+      "set k\r\n", "incr k\r\n", "touch k\r\n",
   };
   tc = parse_case_new("memcache unsupported", DATA_MEMCACHE, false);
   parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
   for (size_t i = 0; i < NELEMS(mc_unsupported); i++) {
     parse_add(tc, MSG_REQ_MC_UNSUPPORTED, "", mc_unsupported[i]);
+  }
+  for (size_t i = 0; i < NELEMS(mc_bad_format); i++) {
+    parse_add_wrong_arity(tc, MSG_REQ_MC_UNSUPPORTED, "", mc_bad_format[i]);
   }
   dn_snprintf(long_words, sizeof(long_words), "bogus %s\r\n", big);
   parse_add(tc, MSG_REQ_MC_UNSUPPORTED, "", long_words);
@@ -920,6 +927,11 @@ static void parse_cases_init(void) {
     tc = parse_case_new("memcache dnode unsupported", DATA_MEMCACHE, true);
     parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
     parse_reject(tc, mc_unsupported[i]);
+  }
+  for (size_t i = 0; i < NELEMS(mc_bad_format); i++) {
+    tc = parse_case_new("memcache dnode bad format", DATA_MEMCACHE, true);
+    parse_add(tc, MSG_REQ_MC_GET, "foo", "get foo\r\n");
+    parse_reject(tc, mc_bad_format[i]);
   }
   /*
    * Requests memcached takes, or answers with an error itself: a negative

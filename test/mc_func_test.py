@@ -12,10 +12,16 @@ class McMismatchError(Exception):
         self.request, self.want, self.got = request, want, got
 
     def __str__(self):
+        # From a little before the first byte that differs.
+        n = min(len(self.want), len(self.got))
+        i = next((i for i in range(n) if self.want[i] != self.got[i]), n)
+        start = max(0, i - 200)
         return ('\n\t======Result Mismatch=======\n\tQuery: {!r}'
-                '\n\t===========================\n\tmemcached: {!r}'
+                '\n\t===========================\n\tFrom byte {}:'
+                '\n\tmemcached: {!r}'
                 '\n\t===========================\n\tDyno: {!r}').format(
-                    self.request[:200], self.want[:500], self.got[:500])
+                    self.request[:200], start, self.want[start:start + 500],
+                    self.got[start:start + 500])
 
 
 # The cas unique in a VALUE line: each memcached numbers its writes itself.
@@ -174,8 +180,11 @@ def run_pipeline_test(c):
     """Requests in one write get their replies in order."""
     print('Running memcache pipeline test')
     reqs = []
+    # Numbers that don't get shorter: memcached may pad a shorter result of
+    # incr or decr with spaces in place ("7 " from "06"), or not,
+    # depending on whether the item is in use.
     for i in range(30):
-        reqs.append(b'set pl%d 0 0 2\r\n%02d\r\n' % (i, i))
+        reqs.append(b'set pl%d 0 0 2\r\n%d\r\n' % (i, i + 10))
         reqs.append(b'get pl%d pl%d\r\n' % (i, (i * 7) % 30))
         reqs.append(b'incr pl%d 1\r\n' % i)
     c.run_verify(b''.join(reqs), replies=len(reqs))
@@ -209,17 +218,25 @@ def run_unknown_command_test(c):
     stays open; so do the memcached commands Dynomite doesn't support."""
     print('Running memcache unknown command test')
     c.run_verify(b'set uc 0 0 2\r\nuc\r\n')
-    for req in [b'foo\r\n', b'foo bar baz\r\n', b'GET uc\r\n', b'\r\n',
-                b'get\r\n', b'gets\r\n', b'bogus_cmd k\r\n', b'set uc\r\n',
-                b'incr uc\r\n', b'touch uc\r\n']:
+    for req in [b'foo\r\n', b'foo bar baz\r\n', b'GET uc\r\n',
+                b'bogus_cmd k\r\n']:
         c.run_verify(req)
         c.run_verify(b'get uc\r\n')
     # Pipelined: the requests around it get their replies.
     c.run_verify(b'get uc\r\nfoo\r\nget uc\r\n', replies=3)
+    # memcached commands Dynomite doesn't support
     for req in [b'gat 0 uc\r\n', b'stats\r\n', b'flush_all\r\n',
                 b'version\r\n', b'mg uc v\r\n']:
         got = c.run_dynomite_only(req)
         assert got == b'ERROR\r\n', '{!r}: {!r}'.format(req, got)
+        c.run_verify(b'get uc\r\n')
+    # Lines without the arguments their command needs, which Dynomite can't
+    # route, answered as current memcached does (older versions said ERROR).
+    for req in [b'\r\n', b'get\r\n', b'gets\r\n', b'delete\r\n',
+                b'set uc\r\n', b'incr uc\r\n', b'touch uc\r\n']:
+        got = c.run_dynomite_only(req)
+        assert got == b'CLIENT_ERROR bad command line format\r\n', \
+            '{!r}: {!r}'.format(req, got)
         c.run_verify(b'get uc\r\n')
 
 
@@ -236,7 +253,7 @@ def run_syntax_test(c):
     c.run_verify(b'delete d0 0\r\n')
     c.run_verify(b'get d0\r\n')
     c.run_verify(b'set d1 0 0 1\r\na\r\n')
-    c.run_verify(b'delete d1 5\r\n')
+    c.run_verify(b'delete d1 5\r\n')  # refused before memcached 1.6.4x
     c.run_verify(b'delete d1 0 noreply\r\nget d1\r\n')
     c.run_verify(b'set num 0 0 2\r\n10\r\n')
     for req in [b'incr num abc\r\n', b'decr num -1\r\n', b'incr num 1x\r\n',
