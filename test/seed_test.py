@@ -6,11 +6,9 @@ address. The name is made to resolve, and moved, through /etc/hosts, so
 this needs to run as root, as in the test containers; elsewhere it's
 skipped. test/run_tests.sh runs it after the cluster runs."""
 from contextlib import ExitStack
-import json
 import os
 import sys
 import time
-from urllib.request import urlopen
 
 import yaml
 from plumbum import local
@@ -25,14 +23,6 @@ NAME = 'dynomite-seed-test.invalid'
 REQUEST = dict(
     cluster_desc=[dict(name='dc1', racks=[['rack1', 1], ['rack2', 1]])],
     conf=dict())
-
-def stats_up(node):
-    try:
-        url = 'http://{}:{}/info'.format(node.ip, node.spec.stats_port)
-        json.loads(urlopen(url).read().decode('ascii'))
-        return True
-    except OSError:
-        return False
 
 def log_text(node):
     with open(node.logfile, 'rb') as fh:
@@ -95,8 +85,7 @@ def main():
         stack.enter_context(n1)
         stack.enter_context(n2)
         for node in (n1, n2):
-            wait_for('the stats port of ' + node.ip, lambda: stats_up(node),
-                     10)
+            wait_for('the datastore of ' + node.ip, node.ping_ok, 15)
         assert "doesn't resolve yet" in log_text(n1)
         assert not replicates(n1, n2)
         print("\t-Started, and writes don't reach the seed")
@@ -112,7 +101,7 @@ def main():
         moved = DynoNode(spec_at(spec2, next(ips)), [spec1.seed_string])
         set_hosts(original, moved.ip)
         stack.enter_context(moved)
-        wait_for('the stats port of ' + moved.ip, lambda: stats_up(moved), 10)
+        wait_for('the datastore of ' + moved.ip, moved.ping_ok, 15)
         wait_for('replication', lambda: replicates(n1, moved), 30)
         assert "resolves to {}:".format(moved.ip) in log_text(n1)
         print("\t-Followed the name to {}".format(moved.ip))

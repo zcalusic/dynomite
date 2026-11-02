@@ -84,25 +84,20 @@ def stalled_handshake(node):
     assert data == b'', data
     return time.time() - start
 
-def stats_up(node):
-    try:
-        info(node)
-        return True
-    except OSError:
-        return False
-
 def restart(nodes, tls_files):
     """Restarts the nodes, the second one with the given TLS files (None for
     plaintext); the first keeps its own. Both restart so that the first
-    one's reconnect backoff starts over. Returns once their stats ports
-    answer."""
+    one's reconnect backoff starts over. Returns once both are connected to
+    their datastores: each starts its datastore in the background and may
+    find it not listening yet, and then retries after a backoff; a write
+    replicated to a node meanwhile is dropped."""
     for node in nodes:
         node.teardown()
     nodes[1].spec.tls_files = tls_files
     for node in nodes:
         node.launch()
     for node in nodes:
-        wait_for('the stats port of ' + node.ip, lambda: stats_up(node), 10)
+        wait_for('the datastore of ' + node.ip, node.ping_ok, 15)
 
 def wait_connected(n1, n2, handshakes_before):
     """Waits for the two nodes to shake hands and replicate a write."""
@@ -204,7 +199,7 @@ def main():
         offset2 = log_size(n2)
         n1.launch()
         n2.launch()
-        wait_for('the stats port', lambda: stats_up(n1), 10)
+        wait_for('the datastore of ' + n1.ip, n1.ping_ok, 15)
         wait_for('self-check warning',
                  lambda: 'does not verify with the CAs' in log_since(n2, offset2),
                  10)
