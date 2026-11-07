@@ -166,14 +166,20 @@ def run_hash_tag_test(c):
         c.run_verify(b'set {tag}%d 0 0 1\r\n%d\r\n' % (i, i))
     c.run_verify(b'get ' + b' '.join(b'{tag}%d' % i for i in range(10)) +
                  b'\r\n')
-    holders = set()
-    for node in c.dyno_cluster.nodes:
-        ds = node.get_data_store_connection()
-        if ds.request(b'get {tag}0 {tag}9\r\n').count(b'VALUE') == 2:
-            holders.add((node.spec.dc, node.spec.rack))
-        ds.close()
+    # The other racks get their copies after the reply: wait for them.
     racks = sum(len(r) for r in c.dyno_cluster.counts_by_rack.values())
-    assert len(holders) == racks, holders
+    deadline = time.time() + 5
+    while True:
+        holders = set()
+        for node in c.dyno_cluster.nodes:
+            ds = node.get_data_store_connection()
+            if ds.request(b'get {tag}0 {tag}9\r\n').count(b'VALUE') == 2:
+                holders.add((node.spec.dc, node.spec.rack))
+            ds.close()
+        if len(holders) == racks:
+            break
+        assert time.time() < deadline, holders
+        time.sleep(0.1)
 
 
 def run_pipeline_test(c):
