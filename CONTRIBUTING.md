@@ -7,9 +7,9 @@ This is an unofficial fork of [Netflix/dynomite](https://github.com/Netflix/dyno
 
 Please open an [issue](https://github.com/zcalusic/dynomite/issues) and include:
 
-- the Dynomite version (`dynomite -V`) and how it was built,
+- the Dynomite version (`dynomite -V`) and how it was built, or the Docker image tag,
 - the configuration file, with any secrets removed,
-- the datastore (Redis or Memcached) and its version,
+- the datastore (Valkey, Redis or memcached) and its version,
 - what you did, what you expected, and what happened instead, including relevant log output.
 
 ## Pull requests

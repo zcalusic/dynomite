@@ -5,7 +5,7 @@
 > crash fixes). Releases are tagged `vX.Y.Z`, starting with `v0.9.0`. A Docker image,
 > [zcalusic/dynomite](https://hub.docker.com/r/zcalusic/dynomite/), is built from
 > [zcalusic/dockerfiles](https://github.com/zcalusic/dockerfiles/tree/master/dynomite). Please
-> report issues for this fork here, not upstream.
+> report issues for this fork [here](https://github.com/zcalusic/dynomite/issues), not upstream.
 
 ![dynomite logo](images/dynomite-logo.png)
 
