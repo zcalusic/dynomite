@@ -70,6 +70,7 @@
   ACTION(RSP_MC_SERVER_ERROR)                                                  \
   ACTION(REQ_REDIS_DEL) /* redis commands - keys */                            \
   ACTION(REQ_REDIS_DELIFEQ)                                                    \
+  ACTION(REQ_REDIS_DELEX)                                                      \
   ACTION(REQ_REDIS_EXISTS)                                                     \
   ACTION(REQ_REDIS_EXPIRE)                                                     \
   ACTION(REQ_REDIS_EXPIREAT)                                                   \
@@ -89,6 +90,7 @@
   ACTION(REQ_REDIS_DECR)                                                       \
   ACTION(REQ_REDIS_DECRBY)                                                     \
   ACTION(REQ_REDIS_DUMP)                                                       \
+  ACTION(REQ_REDIS_DIGEST)                                                     \
   ACTION(REQ_REDIS_GET)                                                        \
   ACTION(REQ_REDIS_GETBIT)                                                     \
   ACTION(REQ_REDIS_GETRANGE)                                                   \
@@ -98,6 +100,7 @@
   ACTION(REQ_REDIS_INCR)                                                       \
   ACTION(REQ_REDIS_INCRBY)                                                     \
   ACTION(REQ_REDIS_INCRBYFLOAT)                                                \
+  ACTION(REQ_REDIS_INCREX)                                                     \
   ACTION(REQ_REDIS_MSET)                                                       \
   ACTION(REQ_REDIS_MGET)                                                       \
   ACTION(REQ_REDIS_PSETEX)                                                     \

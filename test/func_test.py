@@ -591,6 +591,79 @@ def run_delifeq_echo_test(c):
     print("\t-ECHO answered as by the datastore; DELIFEQ deleted the key in "
           "all %d racks, and kept the one with another value" % num_racks)
 
+def run_delex_increx_test(c):
+    """Checks DELEX (Valkey 9.2, Redis 8.4), INCREX (Valkey 9.2, Redis 8.8)
+    and DIGEST (Redis 8.4) against the standalone datastore, with the options
+    both servers have, and that every rack's datastore holds the same result:
+    the keys DELEX deleted gone, the one it kept still there, the value and
+    expiry INCREX set. A datastore without a command refuses it, and Dynomite
+    passes its error on. A request without its key gets Dynomite's own wrong
+    arity error, the same as from a datastore that has the command."""
+    print("Running DELEX_INCREX test")
+    def key(name):
+        # One hash tag, so that all the keys are on one node in every rack.
+        return '{DELEX_INCREX}' + name
+    standalone = c.standalone_redis.get_connection()
+    present = [name for name in ('DELEX', 'INCREX', 'DIGEST')
+               if has_command(standalone, name)]
+    missing = [name for name in ('DELEX', 'INCREX', 'DIGEST')
+               if name not in present]
+    replies = raw_replies(c, [(name, key('x')) for name in missing] +
+                          [(name,) for name in present])
+    assert replies[0] == replies[1], replies
+    if 'DELEX' not in present or 'INCREX' not in present:
+        print("\t-%s not in this datastore: refused as by the datastore"
+              % ', '.join(missing))
+        return
+    at = 4102444800  # 2100-01-01
+    run = lambda *args: c.run_verify('execute_command', *args)
+    def check(want, *args):
+        got = run(*args)
+        assert got == want, (args, got, want)
+    for name in ('ifeq', 'ifne', 'kept', 'digest'):
+        run('SET', key(name), 'v')
+    check(0, 'DELEX', key('ifeq'), 'IFEQ', 'other')
+    check(1, 'DELEX', key('ifeq'), 'IFEQ', 'v')
+    check(0, 'DELEX', key('ifne'), 'IFNE', 'v')
+    check(1, 'DELEX', key('ifne'), 'IFNE', 'other')
+    check(0, 'DELEX', key('kept'), 'IFEQ', 'other')
+    check(0, 'DELEX', key('none'), 'IFEQ', 'v')
+    check([1, 1], 'INCREX', key('count'))
+    check([3, 2], 'INCREX', key('count'), 'BYINT', 2, 'EXAT', at)
+    check(at, 'EXPIRETIME', key('count'))
+    run('INCREX', key('count'), 'BYFLOAT', '0.5')
+    check([1, 1], 'INCREX', key('enx'), 'ENX', 'EXAT', at)
+    check([2, 1], 'INCREX', key('enx'), 'ENX', 'EXAT', at + 100)
+    check(at, 'EXPIRETIME', key('enx'))
+    if 'DIGEST' in present:
+        digest = run('DIGEST', key('digest'))
+        check(0, 'DELEX', key('digest'), 'IFDNE', digest)
+        check(1, 'DELEX', key('digest'), 'IFDEQ', digest)
+
+    def state(conn):
+        return (conn.exists(key('ifeq'), key('ifne')), conn.get(key('kept')),
+                conn.get(key('count')),
+                conn.execute_command('EXPIRETIME', key('count')),
+                conn.get(key('enx')), conn.exists(key('digest')))
+    expected = state(standalone)
+    assert expected == (0, b'v', b'3.5', at, b'2',
+                        0 if 'DIGEST' in present else 1), expected
+    dyno_cluster = c.get_dynomite_cluster()
+    num_racks = sum(len(racks) for racks in dyno_cluster.counts_by_rack.values())
+    # Replication to other DCs is asynchronous: give it a few seconds.
+    for _ in range(50):
+        replicas = [state(conn) for conn in
+                    (node.get_data_store_connection()
+                     for node in dyno_cluster.nodes)
+                    if conn.exists(key('kept'))]
+        if len(replicas) == num_racks and all(r == expected for r in replicas):
+            break
+        time.sleep(0.1)
+    assert len(replicas) == num_racks, (num_racks, replicas)
+    assert all(r == expected for r in replicas), (expected, replicas)
+    print("\t-%s answered as by the datastore; %d replicas with the same "
+          "results" % (', '.join(present), num_racks))
+
 def run_single_key_commands_test(c):
     """Checks GETEX, GETDEL, EXPIRETIME, PEXPIRETIME, LPOS, SMISMEMBER,
     ZMSCORE, ZPOPMIN and ZPOPMAX (Redis 6.2 and 7) against the standalone
@@ -1278,6 +1351,7 @@ def comparison_test(redis, dynomite, debug, node_tests=True):
     run_store_replicas_test(c)
     run_hash_field_expiry_test(c)
     run_delifeq_echo_test(c)
+    run_delex_increx_test(c)
     run_single_key_commands_test(c)
     run_list_pop_test(c)
     run_random_set_test(c)

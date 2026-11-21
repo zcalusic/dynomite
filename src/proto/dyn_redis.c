@@ -91,6 +91,7 @@ static bool redis_arg0(struct msg *r) {
     case MSG_REQ_REDIS_DUMP:
 
     case MSG_REQ_REDIS_DECR:
+    case MSG_REQ_REDIS_DIGEST:
     case MSG_REQ_REDIS_GET:
     case MSG_REQ_REDIS_GETDEL:
     case MSG_REQ_REDIS_INCR:
@@ -289,6 +290,7 @@ static bool redis_arg3(struct msg *r) {
  */
 static bool redis_argn(struct msg *r) {
   switch (r->type) {
+    case MSG_REQ_REDIS_DELEX:
     case MSG_REQ_REDIS_EXPIRE:
     case MSG_REQ_REDIS_EXPIREAT:
     case MSG_REQ_REDIS_PEXPIRE:
@@ -301,6 +303,7 @@ static bool redis_argn(struct msg *r) {
 
     case MSG_REQ_REDIS_SET:
     case MSG_REQ_REDIS_GETEX:
+    case MSG_REQ_REDIS_INCREX:
     case MSG_REQ_REDIS_SCAN:
     case MSG_REQ_REDIS_HDEL:
     case MSG_REQ_REDIS_HMGET:
@@ -1147,6 +1150,12 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 5:
+            if (str5icmp(m, 'd', 'e', 'l', 'e', 'x')) {
+              r->type = MSG_REQ_REDIS_DELEX;
+              r->is_read = 0;
+              break;
+            }
+
             if (str5icmp(m, 'g', 'e', 't', 'e', 'x')) {
               // A read that can set or remove the key's TTL: a write, so that
               // every replica's TTL changes alike.
@@ -1286,6 +1295,18 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 6:
+            if (str6icmp(m, 'd', 'i', 'g', 'e', 's', 't')) {
+              r->type = MSG_REQ_REDIS_DIGEST;
+              r->is_read = 1;
+              break;
+            }
+
+            if (str6icmp(m, 'i', 'n', 'c', 'r', 'e', 'x')) {
+              r->type = MSG_REQ_REDIS_INCREX;
+              r->is_read = 0;
+              break;
+            }
+
             if (str6icmp(m, 'g', 'e', 't', 'd', 'e', 'l')) {
               r->type = MSG_REQ_REDIS_GETDEL;
               r->is_read = 0;
