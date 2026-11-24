@@ -87,6 +87,7 @@
   ACTION(REQ_REDIS_APPEND) /* redis requests - string */                       \
   ACTION(REQ_REDIS_BITCOUNT)                                                   \
   ACTION(REQ_REDIS_BITPOS)                                                     \
+  ACTION(REQ_REDIS_BITRANGEINTARRAY)                                           \
   ACTION(REQ_REDIS_DECR)                                                       \
   ACTION(REQ_REDIS_DECRBY)                                                     \
   ACTION(REQ_REDIS_DUMP)                                                       \
@@ -175,6 +176,15 @@
   ACTION(REQ_REDIS_SUNION)                                                     \
   ACTION(REQ_REDIS_SUNIONSTORE)                                                \
   ACTION(REQ_REDIS_SSCAN)                                                      \
+  ACTION(REQ_REDIS_SEXPIRE)                                                    \
+  ACTION(REQ_REDIS_SPEXPIRE)                                                   \
+  ACTION(REQ_REDIS_SEXPIREAT)                                                  \
+  ACTION(REQ_REDIS_SPEXPIREAT)                                                 \
+  ACTION(REQ_REDIS_SPERSIST)                                                   \
+  ACTION(REQ_REDIS_STTL)                                                       \
+  ACTION(REQ_REDIS_SPTTL)                                                      \
+  ACTION(REQ_REDIS_SEXPIRETIME)                                                \
+  ACTION(REQ_REDIS_SPEXPIRETIME)                                               \
   ACTION(REQ_REDIS_ZADD) /* redis requests - sorted sets */                    \
   ACTION(REQ_REDIS_ZCARD)                                                      \
   ACTION(REQ_REDIS_ZCOUNT)                                                     \

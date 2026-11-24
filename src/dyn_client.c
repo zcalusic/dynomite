@@ -812,6 +812,11 @@ static void req_redis_stats(struct context *ctx, struct msg *req) {
     case MSG_REQ_REDIS_SREM:
     case MSG_REQ_REDIS_SUNIONSTORE:
     case MSG_REQ_REDIS_SSCAN:
+    case MSG_REQ_REDIS_SEXPIRE:
+    case MSG_REQ_REDIS_SPEXPIRE:
+    case MSG_REQ_REDIS_SEXPIREAT:
+    case MSG_REQ_REDIS_SPEXPIREAT:
+    case MSG_REQ_REDIS_SPERSIST:
       stats_server_incr(ctx, redis_req_set);
       break;
     case MSG_REQ_REDIS_ZADD:

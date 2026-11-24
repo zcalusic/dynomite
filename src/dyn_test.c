@@ -770,6 +770,25 @@ static void parse_cases_init(void) {
   parse_add_write(tc, MSG_REQ_REDIS_INCREX, "k", "INCREX k BYINT 2 EX 100");
   parse_add_write(tc, MSG_REQ_REDIS_INCREX, "k", "increx k");
   parse_add_read(tc, MSG_REQ_REDIS_DIGEST, "k", "DIGEST k");
+  parse_add_write(tc, MSG_REQ_REDIS_SEXPIRE, "s",
+                  "SEXPIRE s 100 NX MEMBERS 2 a b");
+  parse_add_write(tc, MSG_REQ_REDIS_SPEXPIRE, "s",
+                  "spexpire s 1000 MEMBERS 1 a");
+  parse_add_write(tc, MSG_REQ_REDIS_SEXPIREAT, "s",
+                  "SEXPIREAT s 4102444800 MEMBERS 1 a");
+  parse_add_write(tc, MSG_REQ_REDIS_SPEXPIREAT, "s",
+                  "SPEXPIREAT s 4102444800000 GT MEMBERS 1 a");
+  parse_add_write(tc, MSG_REQ_REDIS_SPERSIST, "s", "SPERSIST s MEMBERS 1 a");
+  parse_add_read(tc, MSG_REQ_REDIS_STTL, "s", "STTL s MEMBERS 2 a b");
+  parse_add_read(tc, MSG_REQ_REDIS_SPTTL, "s", "SPTTL s MEMBERS 1 a");
+  parse_add_read(tc, MSG_REQ_REDIS_SEXPIRETIME, "s",
+                 "sexpiretime s MEMBERS 1 a");
+  parse_add_read(tc, MSG_REQ_REDIS_SPEXPIRETIME, "s",
+                 "SPEXPIRETIME s MEMBERS 1 a");
+  parse_add_read(tc, MSG_REQ_REDIS_BITRANGEINTARRAY, "b",
+                 "BITRANGEINTARRAY b 0 -1 BIT LIMIT 5 ZEROS");
+  parse_add_read(tc, MSG_REQ_REDIS_BITRANGEINTARRAY, "b",
+                 "bitrangeintarray b 0 7");
   parse_add_read(tc, MSG_REQ_REDIS_ECHO, "", "ECHO hello");
   parse_add_read(tc, MSG_REQ_REDIS_ECHO, "", "echo Hi");
   parse_add_write(tc, MSG_REQ_REDIS_GETEX, "k", "GETEX k EX 100");
@@ -1009,6 +1028,13 @@ static void parse_cases_init(void) {
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_DELEX, "", "DELEX");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_INCREX, "", "INCREX");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_DIGEST, "k", "DIGEST k x");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SEXPIRE, "s",
+                        "SEXPIRE s 1 MEMBERS 1");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_SPERSIST, "s",
+                        "SPERSIST s MEMBERS 1");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_STTL, "s", "STTL s MEMBERS");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_BITRANGEINTARRAY, "b",
+                        "BITRANGEINTARRAY b 0");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_ECHO, "", "ECHO");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_ECHO, "", "ECHO a b");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_GETDEL, "k", "GETDEL k x");

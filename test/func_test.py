@@ -591,6 +591,72 @@ def run_delifeq_echo_test(c):
     print("\t-ECHO answered as by the datastore; DELIFEQ deleted the key in "
           "all %d racks, and kept the one with another value" % num_racks)
 
+def run_set_member_expiry_test(c):
+    """Checks the set member expiry commands (SEXPIRE, SPEXPIRE, SEXPIREAT,
+    SPEXPIREAT, SPERSIST, STTL, SPTTL, SEXPIRETIME, SPEXPIRETIME) and
+    BITRANGEINTARRAY (Redis 8.12) against the standalone datastore, and that
+    every rack's datastore holds the same members with the same expiry
+    times. With absolute times, the replies are the same on every replica.
+    A datastore without them refuses them, and Dynomite passes its error
+    on."""
+    print("Running SET_MEMBER_EXPIRY test")
+    s = create_key('SET_MEMBER_EXPIRY', '{s}')
+    b = create_key('SET_MEMBER_EXPIRY', '{b}')
+    standalone = c.standalone_redis.get_connection()
+    if not has_command(standalone, 'SEXPIRE'):
+        replies = raw_replies(c, [('SEXPIRE', s, 10, 'MEMBERS', 1, 'a'),
+                                  ('STTL', s, 'MEMBERS', 1, 'a'),
+                                  ('BITRANGEINTARRAY', b, 0, -1)])
+        assert replies[0] == replies[1], replies
+        print("\t-Not in this datastore: refused as by the datastore")
+        return
+    at = 4102444800  # 2100-01-01
+    run = lambda *args: c.run_verify('execute_command', *args)
+    def check(want, *args):
+        got = run(*args)
+        assert got == want, (args, got, want)
+    run('SADD', s, 'a', 'b', 'c', 'd')
+    check([1, -2], 'SEXPIREAT', s, at, 'MEMBERS', 2, 'a', 'none')
+    check([1], 'SPEXPIREAT', s, at * 1000 + 500, 'NX', 'MEMBERS', 1, 'b')
+    check([at, -1, -2], 'SEXPIRETIME', s, 'MEMBERS', 3, 'a', 'c', 'none')
+    check([at * 1000 + 500], 'SPEXPIRETIME', s, 'MEMBERS', 1, 'b')
+    check([1, -1], 'SPERSIST', s, 'MEMBERS', 2, 'a', 'c')
+    check([-1, -2], 'STTL', s, 'MEMBERS', 2, 'a', 'none')
+    check([-1], 'SPTTL', s, 'MEMBERS', 1, 'c')
+    check([1], 'SEXPIRE', s, 1000, 'MEMBERS', 1, 'd')
+    check([1], 'SPEXPIRE', s, 2000000, 'GT', 'MEMBERS', 1, 'd')
+    ttl = c.run_dynomite_only('execute_command', 'STTL', s, 'MEMBERS', 1, 'd')
+    assert 0 < ttl[0] <= 2000, ttl
+    for offset in (1, 5, 12):
+        run('SETBIT', b, offset, 1)
+    check([1, 5, 12], 'BITRANGEINTARRAY', b, 0, -1)
+    check([1, 5], 'BITRANGEINTARRAY', b, 0, 15, 'BIT', 'LIMIT', 2)
+    check([0, 2, 3, 4, 6, 7], 'BITRANGEINTARRAY', b, 0, 7, 'BIT', 'ZEROS')
+
+    members = ['a', 'b', 'c']
+    def state(conn):
+        return (sorted(conn.smembers(s)),
+                conn.execute_command('SPEXPIRETIME', s, 'MEMBERS',
+                                     len(members), *members))
+    expected = state(standalone)
+    assert expected == ([b'a', b'b', b'c', b'd'],
+                        [-1, at * 1000 + 500, -1]), expected
+    dyno_cluster = c.get_dynomite_cluster()
+    num_racks = sum(len(racks) for racks in dyno_cluster.counts_by_rack.values())
+    # Replication to other DCs is asynchronous: give it a few seconds.
+    for _ in range(50):
+        replicas = [state(conn) for conn in
+                    (node.get_data_store_connection()
+                     for node in dyno_cluster.nodes)
+                    if conn.exists(s)]
+        if len(replicas) == num_racks and all(r == expected for r in replicas):
+            break
+        time.sleep(0.1)
+    assert len(replicas) == num_racks, (num_racks, replicas)
+    assert all(r == expected for r in replicas), (expected, replicas)
+    print("\t-13 commands answered as by the datastore; %d replicas with the "
+          "same members and expiry times" % num_racks)
+
 def run_delex_increx_test(c):
     """Checks DELEX (Valkey 9.2, Redis 8.4), INCREX (Valkey 9.2, Redis 8.8)
     and DIGEST (Redis 8.4) against the standalone datastore, with the options
@@ -1350,6 +1416,7 @@ def comparison_test(redis, dynomite, debug, node_tests=True):
     run_incr_replicas_test(c)
     run_store_replicas_test(c)
     run_hash_field_expiry_test(c)
+    run_set_member_expiry_test(c)
     run_delifeq_echo_test(c)
     run_delex_increx_test(c)
     run_single_key_commands_test(c)

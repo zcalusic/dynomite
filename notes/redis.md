@@ -10,13 +10,13 @@ MGET, MSET, DEL, UNLINK and EXISTS are split per key, so their keys can be on an
 
 ### Commands of newer releases
 
-Some supported commands exist only in newer datastores: the hash field expiry commands HEXPIRE, HPEXPIRE, HEXPIREAT, HPEXPIREAT, HPERSIST, HTTL, HPTTL, HEXPIRETIME and HPEXPIRETIME since Redis 7.4, HSETEX, HGETEX and HGETDEL since Redis 8, all of them in Valkey 9; DELIFEQ in Valkey 9 only; DELEX and INCREX in Valkey 9.2 and since Redis 8.4 (DELEX) and 8.8 (INCREX), where only Redis has DELEX without a condition or with IFDEQ and IFDNE, and only Valkey INCREX's NX and XX; DIGEST (for DELEX's IFDEQ and IFDNE) since Redis 8.4, not in Valkey; GETEX, GETDEL, LPOS, SMISMEMBER and ZMSCORE since Redis 6.2, EXPIRETIME and PEXPIRETIME since Redis 7, and all of these in every Valkey. Dynomite passes them on, and a datastore that doesn't have one refuses it with its unknown command error. Upgrade all the datastores of a cluster before using such a command: while some have it and others don't, a write runs on some replicas and is refused on the others.
+Some supported commands exist only in newer datastores: the hash field expiry commands HEXPIRE, HPEXPIRE, HEXPIREAT, HPEXPIREAT, HPERSIST, HTTL, HPTTL, HEXPIRETIME and HPEXPIRETIME since Redis 7.4, HSETEX, HGETEX and HGETDEL since Redis 8, all of them in Valkey 9; DELIFEQ in Valkey 9 only; DELEX and INCREX in Valkey 9.2 and since Redis 8.4 (DELEX) and 8.8 (INCREX), where only Redis has DELEX without a condition or with IFDEQ and IFDNE, and only Valkey INCREX's NX and XX; DIGEST (for DELEX's IFDEQ and IFDNE) since Redis 8.4, not in Valkey; the set member expiry commands SEXPIRE, SPEXPIRE, SEXPIREAT, SPEXPIREAT, SPERSIST, STTL, SPTTL, SEXPIRETIME and SPEXPIRETIME, and BITRANGEINTARRAY, since Redis 8.12, not in Valkey; GETEX, GETDEL, LPOS, SMISMEMBER and ZMSCORE since Redis 6.2, EXPIRETIME and PEXPIRETIME since Redis 7, and all of these in every Valkey. Dynomite passes them on, and a datastore that doesn't have one refuses it with its unknown command error. Upgrade all the datastores of a cluster before using such a command: while some have it and others don't, a write runs on some replicas and is refused on the others.
 
 GETEX and HGETEX can set or remove TTLs, so they are writes, under the write consistency level, also without options. ZPOPMIN and ZPOPMAX pop the same members on every replica, so unlike SPOP they work with any number of racks.
 
-TTLs set with a relative time (EX, PX, EXPIRE, HEXPIRE, HPEXPIRE and the like) start when each replica runs the write, a few milliseconds apart, so replies in milliseconds (PTTL, PEXPIRETIME, HPTTL, HPEXPIRETIME) can differ between replicas, and a read at DC_QUORUM or a stricter level can fail to reach a quorum. Absolute times (EXAT, PXAT, EXPIREAT, HEXPIREAT and the like) give every replica the same expiry.
+TTLs set with a relative time (EX, PX, EXPIRE, HEXPIRE, HPEXPIRE, SEXPIRE, SPEXPIRE and the like) start when each replica runs the write, a few milliseconds apart, so replies in milliseconds (PTTL, PEXPIRETIME, HPTTL, HPEXPIRETIME, SPTTL, SPEXPIRETIME) can differ between replicas, and a read at DC_QUORUM or a stricter level can fail to reach a quorum. Absolute times (EXAT, PXAT, EXPIREAT, HEXPIREAT, SEXPIREAT and the like) give every replica the same expiry.
 
-Read repairs cover only the commands that record timestamps (GET, SET, DEL, HGET, HSET, HMSET, HDEL, SISMEMBER, SADD, SREM, ZSCORE, ZADD, ZREM). The others' writes, these included, carry none: with read repairs enabled, a key or field that GETDEL, HGETDEL, DELIFEQ, DELEX or an expiry removed on one replica can be repaired back, without its TTL, from a replica that still has it.
+Read repairs cover only the commands that record timestamps (GET, SET, DEL, HGET, HSET, HMSET, HDEL, SISMEMBER, SADD, SREM, ZSCORE, ZADD, ZREM). The others' writes, these included, carry none: with read repairs enabled, a key, field or member that GETDEL, HGETDEL, DELIFEQ, DELEX or an expiry removed on one replica can be repaired back, without its TTL, from a replica that still has it.
 
 ### Keys Command
 
@@ -88,6 +88,8 @@ Read repairs cover only the commands that record timestamps (GET, SET, DEL, HGET
     |      BITCOUNT     |    Yes     | BITCOUNT key [start] [end]                                                                                          |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |       BITOP       |    No      | BITOP operation destkey key [key ...]                                                                               |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |  BITRANGEINTARRAY |    Yes     | BITRANGEINTARRAY key start end [BYTE | BIT] [LIMIT count] [ZEROS]                                                   |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |       DECR        |    Yes     | DECR key                                                                                                            |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
@@ -276,6 +278,24 @@ Read repairs cover only the commands that record timestamps (GET, SET, DEL, HGET
     |   SUNIONSTORE     |    Yes*    | SUNIONSTORE destination key [key ...]                                                                               |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
     |      SSCAN        |    Yes**   | SSCAN key cursor [MATCH pattern] [COUNT count]                                                                      |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      SEXPIRE      |    Yes     | SEXPIRE key seconds [NX | XX | GT | LT] MEMBERS nummembers member [member …]                                        |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      SPEXPIRE     |    Yes     | SPEXPIRE key milliseconds [NX | XX | GT | LT] MEMBERS nummembers member [member …]                                  |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |     SEXPIREAT     |    Yes     | SEXPIREAT key unix-time-seconds [NX | XX | GT | LT] MEMBERS nummembers member [member …]                            |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |     SPEXPIREAT    |    Yes     | SPEXPIREAT key unix-time-milliseconds [NX | XX | GT | LT] MEMBERS nummembers member [member …]                      |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |      SPERSIST     |    Yes     | SPERSIST key MEMBERS nummembers member [member …]                                                                   |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |        STTL       |    Yes     | STTL key MEMBERS nummembers member [member …]                                                                       |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |       SPTTL       |    Yes     | SPTTL key MEMBERS nummembers member [member …]                                                                      |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |    SEXPIRETIME    |    Yes     | SEXPIRETIME key MEMBERS nummembers member [member …]                                                                |
+    +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
+    |    SPEXPIRETIME   |    Yes     | SPEXPIRETIME key MEMBERS nummembers member [member …]                                                               |
     +-------------------+------------+---------------------------------------------------------------------------------------------------------------------+
 
 * SDIFF, SDIFFSTORE, SINTER, SINTERSTORE, SMOVE, SUNION and SUNIONSTORE need all their keys on the same node, see [Commands with more than one key](#commands-with-more-than-one-key).
