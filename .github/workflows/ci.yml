@@ -129,9 +129,9 @@ jobs:
             sha256: a02cb44db1269b699629e419d4949e6e51e984b1f0e9a984e8ee1e1b3b7cc36f
             packages: ca-certificates curl
             server: /opt/backend/bin/valkey-server
-          - name: Redis 8.10.3
-            url: https://github.com/redis/redis/archive/refs/tags/8.10.3.tar.gz
-            sha256: 85ae62e175cc76f638015fa18cb384b549b6808a765425d9e9d47466f69532ea
+          - name: Redis 8.12.0
+            url: https://github.com/redis/redis/archive/refs/tags/8.12.0.tar.gz
+            sha256: 07e2477372566acf587e32c1abc8af088ad901fb2c725388ec9a5bef29c47319
             packages: ca-certificates curl
             server: /opt/backend/bin/redis-server
           - &memcached
