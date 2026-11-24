@@ -251,6 +251,7 @@ struct parse_case {
   struct parse_req reqs[PARSE_REQS_MAX];
   size_t nreqs;
   bool reject; /* the stream ends in a message the parser must reject */
+  bool args_always; /* args are recorded without read repairs too */
 };
 
 /*
@@ -410,8 +411,9 @@ static bool parse_render_args(struct msg *msg, char *out, size_t size,
 }
 
 /*
- * Check the args read repairs recorded for a redis request: each must be a
- * whole bulk string, recorded once, however many mbufs it spans. They must
+ * Check the args recorded for a redis request, with read repairs or for a
+ * case with args_always: each must be a whole bulk string, recorded once,
+ * however many mbufs it spans. They must
  * also be the ones expected, if given.
  */
 static rstatus_t parse_check_args(const struct parse_case *tc, size_t chunk,
@@ -520,7 +522,7 @@ static rstatus_t parse_check(const struct parse_case *tc, size_t chunk,
               tc->reqs[i].rw == 'r' ? "read" : "write");
     return DN_ERROR;
   }
-  if (g_read_repairs_enabled && !tc->response &&
+  if ((g_read_repairs_enabled || tc->args_always) && !tc->response &&
       tc->data_store == DATA_REDIS) {
     return parse_check_args(tc, chunk, i, msg);
   }
@@ -868,12 +870,20 @@ static void parse_cases_init(void) {
   /*
    * Commands with more than one key that go where the first one goes: the
    * other keys are among the args, recorded with or without read repairs
-   * for redis_verify_request(). PFCOUNT took one key only before.
+   * for redis_verify_request(), and checked in both modes. PFCOUNT took one
+   * key only before.
    */
   tc = parse_case_new("redis routed by the first key", DATA_REDIS, false);
+  tc->args_always = true;
   parse_add_args(tc, MSG_REQ_REDIS_RPOPLPUSH, "src", "dst",
                  "RPOPLPUSH src dst");
   parse_add_args(tc, MSG_REQ_REDIS_SMOVE, "src", "dst m", "SMOVE src dst m");
+  parse_add_args(tc, MSG_REQ_REDIS_ZMOVE, "src", "dst MIN COUNT 2",
+                 "ZMOVE src dst MIN COUNT 2");
+  parse_add_args(tc, MSG_REQ_REDIS_ZMOVE, "src", "dst BYSCORE 1 2",
+                 "zmove src dst BYSCORE 1 2");
+  parse_add_args(tc, MSG_REQ_REDIS_ZMOVEMEMBER, "src", "dst NX MEMBERS 1 m",
+                 "ZMOVEMEMBER src dst NX MEMBERS 1 m");
   parse_add_args(tc, MSG_REQ_REDIS_SUNIONSTORE, "d", "a b",
                  "SUNIONSTORE d a b");
   parse_add_args(tc, MSG_REQ_REDIS_SINTER, "a", "b c", "sinter a b c");
@@ -1035,6 +1045,9 @@ static void parse_cases_init(void) {
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_STTL, "s", "STTL s MEMBERS");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_BITRANGEINTARRAY, "b",
                         "BITRANGEINTARRAY b 0");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_ZMOVE, "src", "ZMOVE src dst");
+  parse_add_wrong_arity(tc, MSG_REQ_REDIS_ZMOVEMEMBER, "src",
+                        "ZMOVEMEMBER src dst MEMBERS 1");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_ECHO, "", "ECHO");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_ECHO, "", "ECHO a b");
   parse_add_wrong_arity(tc, MSG_REQ_REDIS_GETDEL, "k", "GETDEL k x");

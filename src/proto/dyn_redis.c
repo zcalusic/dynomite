@@ -185,6 +185,8 @@ static bool redis_routed_by_first_key(struct msg *r) {
   switch (r->type) {
     case MSG_REQ_REDIS_RPOPLPUSH:
     case MSG_REQ_REDIS_SMOVE:
+    case MSG_REQ_REDIS_ZMOVE:
+    case MSG_REQ_REDIS_ZMOVEMEMBER:
     case MSG_REQ_REDIS_SDIFF:
     case MSG_REQ_REDIS_SDIFFSTORE:
     case MSG_REQ_REDIS_SINTER:
@@ -358,6 +360,8 @@ static bool redis_argn(struct msg *r) {
     case MSG_REQ_REDIS_ZMSCORE:
     case MSG_REQ_REDIS_ZPOPMIN:
     case MSG_REQ_REDIS_ZPOPMAX:
+    case MSG_REQ_REDIS_ZMOVE:
+    case MSG_REQ_REDIS_ZMOVEMEMBER:
     case MSG_REQ_REDIS_ZINTERSTORE:
     case MSG_REQ_REDIS_ZRANGE:
     case MSG_REQ_REDIS_ZRANGEBYSCORE:
@@ -420,6 +424,7 @@ static uint32_t redis_argn_min(struct msg *r) {
       return 1;
     case MSG_REQ_REDIS_RESTORE: /* key ttl value [REPLACE] [ABSTTL] ... */
     case MSG_REQ_REDIS_BITRANGEINTARRAY: /* key start end [BYTE|BIT] ... */
+    case MSG_REQ_REDIS_ZMOVE: /* src dst MIN|MAX|BYSCORE lo hi [COUNT n] */
       return 2;
     case MSG_REQ_REDIS_HGETEX:       /* key [opts] FIELDS n field ... */
     case MSG_REQ_REDIS_HGETDEL:      /* key FIELDS n field ... */
@@ -443,6 +448,7 @@ static uint32_t redis_argn_min(struct msg *r) {
     case MSG_REQ_REDIS_SPEXPIRE:   /* key ms [cond] MEMBERS n member ... */
     case MSG_REQ_REDIS_SEXPIREAT:  /* key time [cond] MEMBERS n m ... */
     case MSG_REQ_REDIS_SPEXPIREAT: /* key ms-time [cond] MEMBERS n m */
+    case MSG_REQ_REDIS_ZMOVEMEMBER: /* src dst [NX|XX] MEMBERS n member ... */
       return 4;
     default:
       return 0;
@@ -1176,6 +1182,12 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 5:
+            if (str5icmp(m, 'z', 'm', 'o', 'v', 'e')) {
+              r->type = MSG_REQ_REDIS_ZMOVE;
+              r->is_read = 0;
+              break;
+            }
+
             if (str5icmp(m, 's', 'p', 't', 't', 'l')) {
               r->type = MSG_REQ_REDIS_SPTTL;
               r->is_read = 1;
@@ -1849,6 +1861,13 @@ void redis_parse_req(struct msg *r, struct context *ctx) {
             break;
 
           case 11:
+            if (str11icmp(m, 'z', 'm', 'o', 'v', 'e', 'm', 'e', 'm', 'b', 'e',
+                          'r')) {
+              r->type = MSG_REQ_REDIS_ZMOVEMEMBER;
+              r->is_read = 0;
+              break;
+            }
+
             if (str11icmp(m, 's', 'e', 'x', 'p', 'i', 'r', 'e', 't', 'i', 'm',
                           'e')) {
               r->type = MSG_REQ_REDIS_SEXPIRETIME;
@@ -4146,14 +4165,14 @@ static bool redis_arg_is(const struct argpos *arg, const char *word) {
 
 /*
  * The args of r, a command routed by its first key, that are keys too,
- * flagged in is_key (of array_n(r->args)): the second key of RPOPLPUSH and
- * SMOVE, all args of SDIFF, SINTER, SUNION, their STORE forms and PFCOUNT,
- * all but the path of JSON.MGET, numkeys keys after ZINTERSTORE's and
- * ZUNIONSTORE's destination, and the STORE (and STOREDIST) destinations of
- * SORT and GEORADIUS. Options are read as Redis reads them, up to one it
- * doesn't know; SORT's BY and GET patterns name other keys too, which can't
- * be checked. SORT and GEORADIUS with a destination become writes, so that
- * the result is stored in every rack.
+ * flagged in is_key (of array_n(r->args)): the second key of RPOPLPUSH,
+ * SMOVE, ZMOVE and ZMOVEMEMBER, all args of SDIFF, SINTER, SUNION, their STORE
+ * forms and PFCOUNT, all but the path of JSON.MGET, numkeys keys after
+ * ZINTERSTORE's and ZUNIONSTORE's destination, and the STORE (and STOREDIST)
+ * destinations of SORT and GEORADIUS. Options are read as Redis reads them, up
+ * to one it doesn't know; SORT's BY and GET patterns name other keys too, which
+ * can't be checked. SORT and GEORADIUS with a destination become writes, so
+ * that the result is stored in every rack.
  */
 static void redis_flag_key_args(struct msg *r, bool *is_key) {
   uint32_t n = array_n(r->args), i, first = 0;
@@ -4161,6 +4180,8 @@ static void redis_flag_key_args(struct msg *r, bool *is_key) {
   switch (r->type) {
     case MSG_REQ_REDIS_RPOPLPUSH:
     case MSG_REQ_REDIS_SMOVE:
+    case MSG_REQ_REDIS_ZMOVE:
+    case MSG_REQ_REDIS_ZMOVEMEMBER:
       if (n > 0) is_key[0] = true;
       return;
 

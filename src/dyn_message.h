@@ -207,6 +207,8 @@
   ACTION(REQ_REDIS_ZMSCORE)                                                    \
   ACTION(REQ_REDIS_ZPOPMIN)                                                    \
   ACTION(REQ_REDIS_ZPOPMAX)                                                    \
+  ACTION(REQ_REDIS_ZMOVE)                                                      \
+  ACTION(REQ_REDIS_ZMOVEMEMBER)                                                \
   ACTION(REQ_REDIS_ZUNIONSTORE)                                                \
   ACTION(REQ_REDIS_ZSCAN)                                                      \
   ACTION(REQ_REDIS_EVAL) /* redis requests - eval */                           \

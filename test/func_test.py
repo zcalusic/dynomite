@@ -657,6 +657,65 @@ def run_set_member_expiry_test(c):
     print("\t-13 commands answered as by the datastore; %d replicas with the "
           "same members and expiry times" % num_racks)
 
+def run_zmove_test(c):
+    """Checks ZMOVE and ZMOVEMEMBER (Redis 8.12), with keys sharing a hash
+    tag, against the standalone datastore, and that every rack's datastore
+    holds the same source and destination afterwards: ZMOVE takes members by
+    their order, which is the same on every replica, ties in score included.
+    A datastore without them refuses them, and Dynomite passes its error
+    on."""
+    print("Running ZMOVE test")
+    src = '{ZMOVE}src'
+    dst = '{ZMOVE}dst'
+    other = '{ZMOVE}other'
+    standalone = c.standalone_redis.get_connection()
+    if not has_command(standalone, 'ZMOVE'):
+        replies = raw_replies(c, [('ZMOVE', src, dst, 'MIN'),
+                                  ('ZMOVEMEMBER', src, dst, 'MEMBERS', 1, 'a')])
+        assert replies[0] == replies[1], replies
+        print("\t-Not in this datastore: refused as by the datastore")
+        return
+    run = lambda *args: c.run_verify('execute_command', *args)
+    def check(want, *args):
+        got = run(*args)
+        assert got == want, (args, got, want)
+    run('ZADD', src, 1, 'x', 1, 'w', 2, 'y', 3, 'z', 4, 'v', 5, 'u')
+    check([[b'w', b'1']], 'ZMOVE', src, dst, 'MIN')
+    check([[b'x', b'1'], [b'y', b'2']], 'ZMOVE', src, dst, 'MIN', 'COUNT', 2)
+    check([[b'u', b'5']], 'ZMOVE', src, dst, 'MAX')
+    check([[b'z', b'3']], 'ZMOVE', src, dst, 'BYSCORE', 3, 3)
+    # Nothing moved: a nil array.
+    check(None, 'ZMOVE', '{ZMOVE}none', dst, 'MIN')
+    run('ZADD', other, 10, 'x', 20, 'n', 30, 'v')
+    check([[b'n', b'20']], 'ZMOVEMEMBER', other, dst, 'NX', 'MEMBERS', 2,
+          'x', 'n')
+    check([[b'x', b'10']], 'ZMOVEMEMBER', other, dst, 'XX', 'MEMBERS', 1, 'x')
+    check(None, 'ZMOVEMEMBER', other, dst, 'MEMBERS', 1, 'none')
+
+    def state(conn):
+        return tuple(conn.zrange(key, 0, -1, withscores=True)
+                     for key in (src, dst, other))
+    expected = state(standalone)
+    assert expected == ([(b'v', 4.0)],
+                        [(b'w', 1.0), (b'y', 2.0), (b'z', 3.0), (b'u', 5.0),
+                         (b'x', 10.0), (b'n', 20.0)],
+                        [(b'v', 30.0)]), expected
+    dyno_cluster = c.get_dynomite_cluster()
+    num_racks = sum(len(racks) for racks in dyno_cluster.counts_by_rack.values())
+    # Replication to other DCs is asynchronous: give it a few seconds.
+    for _ in range(50):
+        replicas = [state(conn) for conn in
+                    (node.get_data_store_connection()
+                     for node in dyno_cluster.nodes)
+                    if conn.exists(dst)]
+        if len(replicas) == num_racks and all(r == expected for r in replicas):
+            break
+        time.sleep(0.1)
+    assert len(replicas) == num_racks, (num_racks, replicas)
+    assert all(r == expected for r in replicas), (expected, replicas)
+    print("\t-8 moves answered as by the datastore; %d replicas with the same "
+          "sorted sets" % num_racks)
+
 def run_delex_increx_test(c):
     """Checks DELEX (Valkey 9.2, Redis 8.4), INCREX (Valkey 9.2, Redis 8.8)
     and DIGEST (Redis 8.4) against the standalone datastore, with the options
@@ -861,10 +920,16 @@ def run_random_set_test(c):
     print("\t-SPOP refused, SRANDMEMBER answered under DC_SAFE_QUORUM, "
           "%d replicas alike after SREM" % num_racks)
 
-def multikey_commands(k):
+def multikey_commands(k, zmove=False):
     """The commands with more than one key that go where their first key
-    goes, for the keys k(0), k(1), ...: (name, args, destination or None)."""
-    return [
+    goes, for the keys k(0), k(1), ...: (name, args, destination or None).
+    With zmove, also ZMOVE and ZMOVEMEMBER (Redis 8.12)."""
+    zmoves = [
+        ('execute_command', ('ZMOVE', k(12), k(13), 'MIN', 'COUNT', 2), k(13)),
+        ('execute_command',
+         ('ZMOVEMEMBER', k(12), k(13), 'NX', 'MEMBERS', 1, 'y'), k(13)),
+    ] if zmove else []
+    return zmoves + [
         ('rpoplpush', (k(0), k(1)), k(1)),
         ('smove', (k(2), k(3), 'a'), k(3)),
         ('sdiff', ([k(2), k(3)],), None),
@@ -894,6 +959,7 @@ def multikey_setup(conn, k):
     conn.pfadd(k(8), 'a', 'b')
     conn.pfadd(k(9), 'c')
     conn.geoadd(k(10), (13.361389, 38.115556, 'Palermo'))
+    conn.zadd(k(12), {'w': 1, 'x': 1, 'y': 2, 'z': 3})
 
 def multikey_verify(c, plain):
     """run_verify() for each command, at the cluster's consistency level:
@@ -908,15 +974,16 @@ def run_multikey_routing_test(c):
     """Checks the commands with more than one key that go where their first
     key goes, whole (RPOPLPUSH, SMOVE, SDIFF, SINTER, SUNION and their STORE
     forms, ZUNIONSTORE, ZINTERSTORE, PFCOUNT, SORT and GEORADIUS with STORE,
-    EVAL): with keys sharing a hash tag they answer as Redis does, and so do
+    EVAL, and ZMOVE and ZMOVEMEMBER where the datastore has them): with keys sharing a hash tag they answer as Redis does, and so do
     keys on the same node in every rack, as in clusters with one node per
     rack. Keys on different nodes are refused, and nothing is written:
     before, the request went to the first key's node, which read or wrote
     keys it doesn't own."""
     print("Running MULTIKEY_ROUTING test")
     dyno_cluster = c.get_dynomite_cluster()
+    zmove = has_command(c.redis_conn, 'ZMOVE')
     plain, with_options = multikey_commands(
-        lambda i: '{MULTIKEY_ROUTING}k%d' % i)
+        lambda i: '{MULTIKEY_ROUTING}k%d' % i, zmove)
     multikey_setup(c.redis_conn, lambda i: '{MULTIKEY_ROUTING}k%d' % i)
     multikey_setup(c.dyno_conn, lambda i: '{MULTIKEY_ROUTING}k%d' % i)
     multikey_verify(c, plain)
@@ -956,10 +1023,10 @@ def run_multikey_routing_test(c):
                 return holders[0]
             time.sleep(0.1)
         assert False, key
-    first_keys = (0, 2, 5, 8, 10)
+    first_keys = (0, 2, 5, 8, 10, 12)
     node_a = owner('MULTIKEY_ROUTING_spread_0')
     keys = {}
-    for j in range(12):
+    for j in range(14):
         n = 0
         while True:
             key = 'MULTIKEY_ROUTING_spread_%d_%d' % (j, n)
@@ -968,7 +1035,7 @@ def run_multikey_routing_test(c):
                 break
             n += 1
     k = lambda j: keys[j]
-    plain, with_options = multikey_commands(k)
+    plain, with_options = multikey_commands(k, zmove)
     multikey_setup(c.dyno_conn, k)
     refused = 0
     for name, args, dst in plain:
@@ -996,7 +1063,7 @@ def run_multikey_routing_test(c):
         assert 'Keys in the script cannot span multiple nodes' in str(e), e
         refused += 1
     # Nothing was written to a destination, on any node.
-    for dst in [k(1), k(4), k(7), k(11)]:
+    for dst in [k(1), k(4), k(7), k(11)] + ([k(13)] if zmove else []):
         for node in dyno_cluster.nodes:
             assert not node.get_data_store_connection().exists(dst), \
                 (dst, node.ip)
@@ -1417,6 +1484,7 @@ def comparison_test(redis, dynomite, debug, node_tests=True):
     run_store_replicas_test(c)
     run_hash_field_expiry_test(c)
     run_set_member_expiry_test(c)
+    run_zmove_test(c)
     run_delifeq_echo_test(c)
     run_delex_increx_test(c)
     run_single_key_commands_test(c)

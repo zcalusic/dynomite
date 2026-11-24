@@ -838,6 +838,8 @@ static void req_redis_stats(struct context *ctx, struct msg *req) {
     case MSG_REQ_REDIS_ZREVRANGEBYLEX:
     case MSG_REQ_REDIS_ZPOPMIN:
     case MSG_REQ_REDIS_ZPOPMAX:
+    case MSG_REQ_REDIS_ZMOVE:
+    case MSG_REQ_REDIS_ZMOVEMEMBER:
       stats_server_incr(ctx, redis_req_sortedsets);
       break;
     case MSG_REQ_REDIS_HINCRBY:
